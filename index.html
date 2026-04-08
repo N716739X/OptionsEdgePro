@@ -31,7 +31,7 @@ body { background: var(--bg); color: var(--text); font-family: 'Courier New', mo
 .live-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--green); animation: blink 1.5s infinite; margin-right: 4px; }
 .live-dot.dead { background: var(--red); animation: none; }
 @keyframes blink { 0%,100%{opacity:1}50%{opacity:0.3} }
-.clock { color: var(--text2); font-size: 13px; }
+.clock { color: var(--text2); font-size: 12px; }
 
 /* ── STATUS ── */
 .status-bar { background: var(--bg2); border-bottom: 1px solid var(--border); padding: 8px 18px; display: flex; gap: 16px; align-items: center; font-size: 12px; flex-wrap: wrap; }
@@ -227,8 +227,46 @@ function saveKeys(){
   startDashboard();
 }
 
-function updateClock(){
-  document.getElementById('clock').textContent='NYC '+new Date().toLocaleTimeString('en-US',{timeZone:'America/New_York',hour:'2-digit',minute:'2-digit',hour12:false});
+function updateClock() {
+  const now = new Date();
+  
+  // CST clock
+  const cst = now.toLocaleTimeString('en-US', { timeZone: 'America/Chicago', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
+  
+  // Market hours in ET: 9:30am - 4:00pm
+  const etNow = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
+  const etHour = etNow.getHours();
+  const etMin = etNow.getMinutes();
+  const etSec = etNow.getSeconds();
+  const etDay = etNow.getDay(); // 0=Sun, 6=Sat
+  
+  const marketOpen = etHour * 60 + etMin >= 9 * 60 + 30;
+  const marketClose = etHour * 60 + etMin >= 16 * 60;
+  const isWeekend = etDay === 0 || etDay === 6;
+  const isMarketOpen = !isWeekend && marketOpen && !marketClose;
+
+  let countdown = '';
+  if (isWeekend) {
+    countdown = '<span style="color:var(--red);">● CLOSED (Weekend)</span>';
+  } else if (!marketOpen) {
+    // Time until open
+    const totalSecs = ((9 * 60 + 30) - (etHour * 60 + etMin)) * 60 - etSec;
+    const h = Math.floor(totalSecs / 3600);
+    const m = Math.floor((totalSecs % 3600) / 60);
+    const s = totalSecs % 60;
+    countdown = `<span style="color:var(--yellow);">● PRE-MARKET · Opens in ${h}h ${m}m ${s}s</span>`;
+  } else if (isMarketOpen) {
+    // Time until close
+    const totalSecs = ((16 * 60) - (etHour * 60 + etMin)) * 60 - etSec;
+    const h = Math.floor(totalSecs / 3600);
+    const m = Math.floor((totalSecs % 3600) / 60);
+    const s = totalSecs % 60;
+    countdown = `<span style="color:var(--green);">● MARKET OPEN · Closes in ${h}h ${m}m ${s}s</span>`;
+  } else {
+    countdown = `<span style="color:var(--red);">● MARKET CLOSED</span>`;
+  }
+
+  document.getElementById('clock').innerHTML = `CST ${cst} &nbsp;|&nbsp; ${countdown}`;
 }
 
 function setStatus(api,type,txt){
@@ -722,7 +760,7 @@ function renderLeaps(d,el){
 }
 
 // ── Init ──
-updateClock(); setInterval(updateClock,30000);
+updateClock(); setInterval(updateClock, 1000);
 document.getElementById('view-dashboard').style.display='grid';
 ['put','cc','leaps'].forEach(v=>document.getElementById('view-'+v).style.display='none');
 startDashboard();
