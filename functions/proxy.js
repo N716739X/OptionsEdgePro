@@ -60,7 +60,7 @@ exports.handler = async function(event, context) {
       });
     });
 
-    req.setTimeout(10000, () => {
+    req.setTimeout(25000, () => {
       req.destroy();
       resolve({
         statusCode: 504,
