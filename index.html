@@ -602,7 +602,7 @@ function renderPut(d,el){
   ];
   const fails=checks.filter(c=>c.pass===false).length;
   const vc=fails===0?'good':fails<=2?'warn':'bad';
-  const opraNote=d.chain.length===0?`<div class="info-msg">⚠ No options data returned from MarketData.app — options markets may be closed, or the proxy function needs to be deployed. Try again during market hours (9:30am–4pm ET).</div>`:'';
+  const opraNote=d.chain.length===0?`<div class="info-msg">⚠ No options data in 30-50 DTE window — earnings may conflict with available expiries, or market is closed. Try a different ticker or check back during market hours.</div>`:'';
   el.innerHTML=`
     <div class="result-box ${vc}">
       <div class="result-src">${d.ticker} · $${d.price.toFixed(2)} · TWELVE DATA + MARKETDATA.APP · LIVE</div>
@@ -636,7 +636,7 @@ function renderCC(d,el){
   ];
   const fails=checks.filter(c=>c.pass===false).length;
   const vc=fails===0?'good':fails<=2?'warn':'bad';
-  const opraNote=d.chain.length===0?`<div class="info-msg">⚠ No options data — upgrade to Trader + sign OPRA on marketdata.app.</div>`:'';
+  const opraNote=d.chain.length===0?`<div class="info-msg">⚠ No options data in 30-50 DTE window — earnings may conflict with available expiries, or market is closed. Try a different ticker.</div>`:'';
   el.innerHTML=`
     <div class="result-box ${vc}">
       <div class="result-src">${d.ticker} · $${d.price.toFixed(2)} · TWELVE DATA + MARKETDATA.APP · LIVE</div>
@@ -698,7 +698,7 @@ function renderLeaps(d,el){
   const fails=checks.filter(c=>c.pass===false).length;
   const vc=fails===0?'good':fails===1?'warn':'bad';
   const r27=oRow(b27,'2027'), r28=oRow(b28,'2028');
-  const opraNote=d.chain.length===0?`<div class="info-msg">⚠ No LEAPS data — upgrade to Trader + sign OPRA on marketdata.app for live options.</div>`:'';
+  const opraNote=d.chain.length===0?`<div class="info-msg">⚠ No LEAPS data found — may be outside market hours or no contracts available in 18+ month window.</div>`:'';
 
   el.innerHTML=`
     <div class="result-box ${vc}">
