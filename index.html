@@ -1,0 +1,714 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MarketWatch — Options Analyzer Suite</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg: #0d0d0d;
+  --bg2: #1a1a1a;
+  --bg3: #242424;
+  --border: #383838;
+  --orange: #ffaa00;
+  --green: #00e676;
+  --red: #ff5252;
+  --yellow: #ffee58;
+  --text: #ffffff;
+  --text2: #e8e8e8;
+  --muted: #bbbbbb;
+  --dim: #999999;
+}
+body { background: var(--bg); color: var(--text); font-family: 'Courier New', monospace; font-size: 14px; min-height: 100vh; }
+
+/* ── NAV ── */
+.nav { background: var(--bg2); border-bottom: 1px solid var(--border); padding: 12px 18px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; position: sticky; top: 0; z-index: 100; }
+.nav-title { color: var(--orange); font-size: 18px; font-weight: bold; letter-spacing: 3px; margin-right: 10px; }
+.nav-btn { background: none; border: 1px solid var(--border); color: var(--muted); padding: 7px 16px; cursor: pointer; font-family: 'Courier New', monospace; font-size: 12px; letter-spacing: 1px; transition: all 0.15s; }
+.nav-btn:hover, .nav-btn.active { border-color: var(--orange); color: var(--orange); background: rgba(255,170,0,0.08); }
+.nav-right { margin-left: auto; }
+.live-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--green); animation: blink 1.5s infinite; margin-right: 4px; }
+.live-dot.dead { background: var(--red); animation: none; }
+@keyframes blink { 0%,100%{opacity:1}50%{opacity:0.3} }
+.clock { color: var(--text2); font-size: 13px; }
+
+/* ── STATUS ── */
+.status-bar { background: var(--bg2); border-bottom: 1px solid var(--border); padding: 8px 18px; display: flex; gap: 16px; align-items: center; font-size: 12px; flex-wrap: wrap; }
+.status-bar span { color: var(--text2); }
+.status-ok { color: var(--green) !important; font-weight: bold; }
+.status-err { color: var(--red) !important; font-weight: bold; }
+.status-warn { color: var(--yellow) !important; font-weight: bold; }
+
+/* ── SETTINGS ── */
+.settings-panel { background: var(--bg3); border-bottom: 2px solid var(--border); padding: 12px 18px; display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
+.key-field { display: flex; align-items: center; gap: 8px; }
+.key-field label { color: var(--text2); font-size: 11px; letter-spacing: 1px; white-space: nowrap; }
+.key-field input { background: var(--bg); border: 1px solid var(--border); color: var(--text); padding: 7px 10px; font-family: 'Courier New', monospace; font-size: 12px; width: 250px; outline: none; }
+.key-field input:focus { border-color: var(--orange); }
+.save-btn { background: var(--orange); color: #000; border: none; padding: 8px 18px; font-family: 'Courier New', monospace; font-size: 12px; font-weight: bold; letter-spacing: 1px; cursor: pointer; }
+.save-btn:hover { background: #ffcc44; }
+.settings-note { color: var(--muted); font-size: 11px; margin-left: auto; }
+
+/* ── PROGRESS ── */
+.progress-bar { height: 3px; background: var(--border); }
+.progress-fill { height: 100%; background: var(--orange); transition: width 0.4s; width: 0%; }
+
+/* ── DASHBOARD ── */
+#view-dashboard { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2px; background: var(--border); }
+.stock-card { background: var(--bg2); padding: 20px; cursor: pointer; transition: background 0.12s; min-height: 220px; }
+.stock-card:hover { background: var(--bg3); }
+.ticker-label { font-size: 22px; font-weight: bold; letter-spacing: 2px; color: #ffffff; }
+.co-name { font-size: 12px; color: #aaaaaa; margin-top: 3px; letter-spacing: 0.5px; }
+.s-price { font-size: 32px; font-weight: bold; margin-top: 12px; color: #ffffff; letter-spacing: -1px; }
+.s-change { font-size: 15px; margin-top: 5px; font-weight: bold; }
+.up { color: var(--green); }
+.dn { color: var(--red); }
+.range-bar { margin-top: 14px; height: 5px; background: linear-gradient(to right, var(--red), var(--yellow), var(--green)); border-radius: 3px; position: relative; }
+.range-dot { position: absolute; top: -5px; width: 15px; height: 15px; border-radius: 50%; background: #fff; border: 3px solid var(--bg2); transform: translateX(-50%); }
+.range-labels { display: flex; justify-content: space-between; margin-top: 6px; color: #bbbbbb; font-size: 11px; }
+.rsi-sma-row { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+.tag { padding: 4px 9px; font-size: 11px; border-radius: 2px; font-weight: bold; }
+.tag-o { background: rgba(255,170,0,0.18); color: var(--orange); border: 1px solid rgba(255,170,0,0.4); }
+.tag-g { background: rgba(0,230,118,0.15); color: var(--green); border: 1px solid rgba(0,230,118,0.35); }
+.tag-r { background: rgba(255,82,82,0.15); color: var(--red); border: 1px solid rgba(255,82,82,0.35); }
+.skeleton { background: var(--bg3); border-radius: 3px; animation: shimmer 1.2s infinite; }
+@keyframes shimmer { 0%,100%{opacity:.3}50%{opacity:.7} }
+
+/* ── SORT BAR ── */
+.sort-bar { background: var(--bg3); border-bottom: 1px solid var(--border); padding: 10px 18px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.sort-label { color: var(--muted); font-size: 11px; letter-spacing: 1px; }
+.sort-btn { background: none; border: 1px solid var(--border); color: var(--muted); padding: 5px 12px; cursor: pointer; font-family: 'Courier New', monospace; font-size: 11px; letter-spacing: 1px; transition: all 0.15s; }
+.sort-btn:hover, .sort-btn.active { border-color: var(--orange); color: var(--orange); background: rgba(255,170,0,0.08); }
+.score-badge { display: inline-block; padding: 3px 8px; border-radius: 2px; font-size: 11px; font-weight: bold; margin-top: 8px; }
+.score-ideal { background: rgba(0,230,118,0.15); color: var(--green); border: 1px solid rgba(0,230,118,0.4); }
+.score-good  { background: rgba(255,170,0,0.15); color: var(--orange); border: 1px solid rgba(255,170,0,0.4); }
+.score-low   { background: rgba(255,82,82,0.12); color: var(--red); border: 1px solid rgba(255,82,82,0.35); }
+.analyzer { display: none; padding: 20px; max-width: 960px; margin: 0 auto; }
+.analyzer.active { display: block; }
+.panel-title { font-size: 24px; font-weight: bold; letter-spacing: 3px; color: #ffffff; }
+.panel-sub { color: var(--muted); font-size: 12px; letter-spacing: 1px; margin-top: 4px; margin-bottom: 18px; }
+.ticker-row { display: flex; gap: 10px; margin-bottom: 12px; }
+.ticker-input { background: var(--bg3); border: 1px solid var(--border); color: #ffffff; padding: 12px 16px; font-family: 'Courier New', monospace; font-size: 18px; flex: 1; letter-spacing: 3px; outline: none; }
+.ticker-input:focus { border-color: var(--orange); }
+.analyze-btn { background: var(--orange); color: #000; border: none; padding: 12px 24px; font-family: 'Courier New', monospace; font-size: 14px; font-weight: bold; letter-spacing: 1.5px; cursor: pointer; }
+.analyze-btn:hover { background: #ffcc44; }
+.analyze-btn:disabled { background: var(--dim); color: var(--muted); cursor: not-allowed; }
+.quick-tickers { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 16px; }
+.qtick { background: none; border: 1px solid var(--border); color: var(--text2); padding: 5px 12px; cursor: pointer; font-family: 'Courier New', monospace; font-size: 12px; transition: all .15s; }
+.qtick:hover, .qtick.sel { border-color: var(--orange); color: var(--orange); background: rgba(255,170,0,0.08); }
+
+/* ── RESULT BOXES ── */
+.result-box { border: 2px solid var(--border); padding: 16px 18px; margin-bottom: 12px; }
+.result-box.good { border-color: var(--green); background: rgba(0,230,118,0.05); }
+.result-box.warn { border-color: var(--orange); background: rgba(255,170,0,0.05); }
+.result-box.bad  { border-color: var(--red); background: rgba(255,82,82,0.05); }
+.result-src { font-size: 11px; color: #bbbbbb; letter-spacing: 1px; margin-bottom: 6px; }
+.verdict { font-size: 22px; font-weight: bold; letter-spacing: 1px; color: #ffffff; }
+.verdict-sub { font-size: 13px; color: #dddddd; margin-top: 4px; }
+
+/* ── CHECKLIST ── */
+.checklist { border: 1px solid var(--border); margin-bottom: 12px; }
+.cl-head { padding: 10px 16px; border-bottom: 1px solid var(--border); font-size: 11px; letter-spacing: 1.5px; color: var(--muted); background: var(--bg3); }
+.cl-row { display: flex; align-items: flex-start; gap: 14px; padding: 14px 16px; border-bottom: 1px solid var(--border); }
+.cl-row:last-child { border-bottom: none; }
+.cl-icon { font-size: 18px; min-width: 20px; margin-top: 1px; }
+.cl-name { font-weight: bold; font-size: 13px; color: #ffffff; letter-spacing: 0.3px; }
+.cl-desc { font-size: 12px; color: #dddddd; margin-top: 4px; line-height: 1.6; }
+.cl-val { margin-left: auto; text-align: right; font-size: 12px; white-space: pre-line; min-width: 110px; font-weight: bold; }
+
+/* ── SETUP BOXES ── */
+.setup-box { background: rgba(255,255,255,.03); border: 1px solid var(--border); padding: 14px 18px; margin-bottom: 12px; }
+.box-label { font-size: 11px; color: var(--muted); letter-spacing: 1px; margin-bottom: 10px; }
+.setup-val { color: var(--orange); font-size: 14px; line-height: 2; font-weight: bold; }
+.btc-val { color: var(--green); font-size: 13px; line-height: 2; font-weight: bold; }
+
+/* ── MISC ── */
+.loading-msg { padding: 50px; text-align: center; color: var(--text2); font-size: 14px; letter-spacing: 1px; line-height: 2.4; }
+.error-msg { padding: 16px; color: var(--red); font-size: 13px; border: 1px solid rgba(255,82,82,0.4); margin-bottom: 12px; line-height: 1.8; background: rgba(255,82,82,0.05); }
+.info-msg { padding: 12px 16px; color: var(--yellow); font-size: 12px; border: 1px solid rgba(255,238,88,0.3); margin-bottom: 12px; line-height: 1.7; background: rgba(255,238,88,0.04); }
+.opts-table { width: 100%; border-collapse: collapse; font-size: 12px; margin-bottom: 12px; }
+.opts-table th { color: var(--muted); font-size: 11px; letter-spacing: 1px; padding: 8px 10px; text-align: left; border-bottom: 2px solid var(--border); font-weight: normal; background: var(--bg3); }
+.opts-table td { padding: 10px 10px; border-bottom: 1px solid var(--border); color: #e8e8e8; font-size: 13px; }
+.opts-table tr.best-row td { background: rgba(255,170,0,0.07); }
+.opts-table tr:hover td { background: var(--bg3); }
+.disclaimer { text-align: center; color: var(--muted); font-size: 11px; padding: 20px; letter-spacing: .5px; border-top: 1px solid var(--border); margin-top: 10px; }
+
+@media(max-width:900px){ #view-dashboard{grid-template-columns:repeat(2,1fr);} }
+@media(max-width:500px){ #view-dashboard{grid-template-columns:1fr;} .key-field input{width:170px;} }
+</style>
+</head>
+<body>
+
+<div class="nav">
+  <span class="nav-title">MARKETWATCH</span>
+  <span class="live-dot" id="live-dot"></span>
+  <span id="clock" class="clock">NYC --:--</span>
+  <button class="nav-btn active" id="btn-dashboard" onclick="showView('dashboard',this)">DASHBOARD</button>
+  <button class="nav-btn" id="btn-put" onclick="showView('put',this)">PUT ANALYZER</button>
+  <button class="nav-btn" id="btn-cc" onclick="showView('cc',this)">CC ANALYZER</button>
+  <button class="nav-btn" id="btn-leaps" onclick="showView('leaps',this)">LEAPS ANALYZER</button>
+  <div class="nav-right"><button class="nav-btn" onclick="startDashboard()">↺ REFRESH</button></div>
+</div>
+
+<div class="status-bar">
+  <span>TWELVE DATA</span><span id="td-status" class="status-warn">● CONNECTING...</span>
+  <span style="margin-left:10px;">MARKETDATA.APP</span><span id="md-status" class="status-warn">● READY</span>
+  <span id="td-credits" style="margin-left:auto;color:var(--muted);"></span>
+  <span id="load-prog" style="color:var(--orange);"></span>
+</div>
+<div class="progress-bar"><div class="progress-fill" id="prog-fill"></div></div>
+
+<div class="settings-panel">
+  <div class="key-field"><label>TWELVE DATA KEY</label><input type="password" id="td-key-input" placeholder="Paste new key..."></div>
+  <div class="key-field"><label>MARKETDATA.APP TOKEN</label><input type="password" id="md-key-input" placeholder="Paste new token..."></div>
+  <button class="save-btn" onclick="saveKeys()">SAVE & RECONNECT</button>
+  <span class="settings-note">Keys stored in memory only</span>
+</div>
+
+<div class="sort-bar">
+  <span class="sort-label">SORT BY</span>
+  <button class="sort-btn active" id="sort-score" onclick="sortDashboard('score',this)">★ TRADE SCORE</button>
+  <button class="sort-btn" id="sort-rsi-asc" onclick="sortDashboard('rsi-asc',this)">RSI ↑ (oversold first)</button>
+  <button class="sort-btn" id="sort-rsi-desc" onclick="sortDashboard('rsi-desc',this)">RSI ↓ (overbought first)</button>
+  <button class="sort-btn" id="sort-chg-desc" onclick="sortDashboard('chg-desc',this)">% CHANGE ↓</button>
+  <button class="sort-btn" id="sort-chg-asc" onclick="sortDashboard('chg-asc',this)">% CHANGE ↑</button>
+  <button class="sort-btn" id="sort-default" onclick="sortDashboard('default',this)">DEFAULT</button>
+</div>
+
+<div id="view-dashboard"></div>
+
+<div id="view-put" class="analyzer">
+  <div class="panel-title">PUT ANALYZER</div>
+  <div class="panel-sub">7-CRITERIA CHECK · MEAN REVERSION · 30-45 DTE · TWELVE DATA + MARKETDATA.APP</div>
+  <div class="ticker-row"><input class="ticker-input" id="put-input" value="TSLA" onkeydown="if(event.key==='Enter')runAnalyzer('put')"><button class="analyze-btn" id="put-btn" onclick="runAnalyzer('put')">ANALYZE →</button></div>
+  <div class="quick-tickers" id="put-qt"></div>
+  <div id="put-result"></div>
+</div>
+
+<div id="view-cc" class="analyzer">
+  <div class="panel-title">CC ANALYZER</div>
+  <div class="panel-sub">8-CRITERIA CHECK · +2 MEAN REVERSION · 20-30 DELTA · TWELVE DATA + MARKETDATA.APP</div>
+  <div class="ticker-row"><input class="ticker-input" id="cc-input" value="NVDA" onkeydown="if(event.key==='Enter')runAnalyzer('cc')"><button class="analyze-btn" id="cc-btn" onclick="runAnalyzer('cc')">ANALYZE →</button></div>
+  <div class="quick-tickers" id="cc-qt"></div>
+  <div id="cc-result"></div>
+</div>
+
+<div id="view-leaps" class="analyzer">
+  <div class="panel-title">LEAPS ANALYZER</div>
+  <div class="panel-sub">5-CRITERIA CHECK · RSI &lt; 30 · ATM/ITM · 18+ MONTHS · TWELVE DATA + MARKETDATA.APP</div>
+  <div class="ticker-row"><input class="ticker-input" id="leaps-input" value="TSLA" onkeydown="if(event.key==='Enter')runAnalyzer('leaps')"><button class="analyze-btn" id="leaps-btn" onclick="runAnalyzer('leaps')">ANALYZE →</button></div>
+  <div class="quick-tickers" id="leaps-qt"></div>
+  <div id="leaps-result"></div>
+</div>
+
+<div class="disclaimer">Live data: Twelve Data (price/RSI/SMA) · MarketData.app (options/Greeks/IV) · Not investment advice</div>
+
+<script>
+const TICKERS=['TSLA','NVDA','PLTR','AMD','AVGO','TSM','MU','ASML','ALAB','MRVL','ARM','GOOG','USO'];
+const CO={TSLA:'Tesla',NVDA:'Nvidia',PLTR:'Palantir',AMD:'AMD',AVGO:'Broadcom',TSM:'Taiwan Semi',MU:'Micron',ASML:'ASML Holding',ALAB:'Astera Labs',MRVL:'Marvell',ARM:'ARM Holdings',GOOG:'Alphabet C',USO:'US Oil Fund'};
+const EARNINGS={TSLA:'2026-04-28',NVDA:'2026-05-26',PLTR:'2026-05-05',AMD:'2026-04-29',AVGO:'2026-06-12',TSM:'2026-04-17',MU:'2026-06-25',ASML:'2026-04-16',ALAB:'2026-05-20',MRVL:'2026-05-29',ARM:'2026-05-07',GOOG:'2026-04-29',USO:null};
+
+let KEYS={
+  td:'01f219b1c6dc40a1a5ece8b9e5fcc234',
+  md:'VjFYQWlwZDVCZ2ZIMm9TV3BFcndIeGxZbkdBelNESGNDVzh2czBWaHF1Yz0'
+};
+const TD='https://api.twelvedata.com', MD='https://api.marketdata.app/v1';
+let cache={}, loadAbort=false;
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+
+function saveKeys(){
+  const td=document.getElementById('td-key-input').value.trim();
+  const md=document.getElementById('md-key-input').value.trim();
+  if(td) KEYS.td=td; if(md) KEYS.md=md;
+  cache={};
+  document.getElementById('td-key-input').value='';
+  document.getElementById('md-key-input').value='';
+  startDashboard();
+}
+
+function updateClock(){
+  document.getElementById('clock').textContent='NYC '+new Date().toLocaleTimeString('en-US',{timeZone:'America/New_York',hour:'2-digit',minute:'2-digit',hour12:false});
+}
+
+function setStatus(api,type,txt){
+  const el=document.getElementById(api+'-status');
+  if(el){el.textContent=txt; el.className='status-'+type;}
+}
+
+async function tdFetch(ep,params,retries=3){
+  const url=new URL(`${TD}/${ep}`);
+  params.apikey=KEYS.td;
+  Object.entries(params).forEach(([k,v])=>url.searchParams.set(k,v));
+  for(let i=0;i<=retries;i++){
+    try{
+      const r=await fetch(url);
+      const credits=r.headers.get('api-credits-left');
+      if(credits) document.getElementById('td-credits').textContent=`TD credits: ${credits}`;
+      const data=await r.json();
+      if(data.code===429||data.message?.toLowerCase().includes('limit')){
+        setStatus('td','warn','● RATE LIMITED...');
+        await sleep(10000); continue;
+      }
+      return data;
+    }catch(e){ if(i<retries) await sleep(2000); }
+  }
+  return null;
+}
+
+async function mdFetch(ep, params={}) {
+  // Use Netlify proxy to avoid CORS — routes through /.netlify/functions/proxy
+  const url = new URL('/.netlify/functions/proxy', 'https://marketwatchpro.netlify.app');
+  url.searchParams.set('path', ep);
+  Object.entries(params).forEach(([k,v]) => url.searchParams.set(k, v));
+  try {
+    const r = await fetch(url.toString());
+    return r.json();
+  } catch(e) { return null; }
+}
+
+function cget(k){ const c=cache[k]; return(c&&Date.now()-c.ts<300000)?c.v:null; }
+function cset(k,v){ cache[k]={v,ts:Date.now()}; return v; }
+
+async function fetchOne(sym){
+  let quote=cget('q_'+sym);
+  if(!quote){ const d=await tdFetch('quote',{symbol:sym}); if(d&&d.close) quote=cset('q_'+sym,d); }
+  await sleep(450);
+  let rsi=cget('rsi_'+sym);
+  if(!rsi){ const d=await tdFetch('rsi',{symbol:sym,interval:'1day',time_period:10,series_type:'close',outputsize:1}); if(d&&d.values) rsi=cset('rsi_'+sym,parseFloat(d.values[0].rsi)); }
+  await sleep(450);
+  let sma=cget('sma_'+sym);
+  if(!sma){ const d=await tdFetch('sma',{symbol:sym,interval:'1day',time_period:200,series_type:'close',outputsize:1}); if(d&&d.values) sma=cset('sma_'+sym,parseFloat(d.values[0].sma)); }
+  return{quote,rsi,sma};
+}
+
+// Returns true if date is the 3rd Friday of its month (standard monthly expiry)
+function isStandardExpiry(dateStr) {
+  if (!dateStr) return false;
+  const d = new Date(dateStr + 'T00:00:00');
+  if (d.getDay() !== 5) return false; // must be Friday
+  const day = d.getDate();
+  return day >= 15 && day <= 21; // 3rd Friday always falls between 15th-21st
+}
+
+// Filter chain: keep standard monthly expiries OR weeklies with OI >= 500
+function filterChain(contracts) {
+  return contracts.filter(o => {
+    const eRaw = o.expiration;
+    const expDate = eRaw ? (typeof eRaw === 'number' ? new Date(eRaw*1000).toISOString().split('T')[0] : eRaw) : null;
+    const oi = parseInt(o.openInterest || 0);
+    if (isStandardExpiry(expDate)) return true; // always keep standard monthly
+    if (oi >= 500) return true;                  // keep weeklies with high OI
+    return false;
+  });
+}
+
+async function getChainMD(sym,side){
+  const k=`md_${sym}_${side}`; const h=cget(k); if(h) return h;
+  const minE=new Date(Date.now()+30*86400000).toISOString().split('T')[0];
+  const maxE=new Date(Date.now()+50*86400000).toISOString().split('T')[0];
+  const d=await mdFetch(`options/chain/${sym}/`,{side,minExpiry:minE,maxExpiry:maxE});
+  if(d&&d.s==='ok'){
+    setStatus('md','ok','● CONNECTED');
+    // Step 1: enforce 30-50 DTE window
+    const parsed=parseMD(d).filter(o=>{
+      const eRaw=o.expiration;
+      const expDate=eRaw?(typeof eRaw==='number'?new Date(eRaw*1000).toISOString().split('T')[0]:eRaw):null;
+      const d2=expDate?Math.round((new Date(expDate)-new Date())/86400000):0;
+      return d2>=30 && d2<=50;
+    });
+    // Step 2: keep standard monthly expiries + weeklies with OI >= 500
+    const filtered = filterChain(parsed);
+    // Step 3: if nothing passes the filter, fall back to all valid DTE contracts
+    return cset(k, filtered.length > 0 ? filtered : parsed);
+  }
+  return [];
+}
+
+async function getLeapsMD(sym){
+  const k=`md_leaps_${sym}`; const h=cget(k); if(h) return h;
+  const minE=new Date(Date.now()+540*86400000).toISOString().split('T')[0];
+  const maxE=new Date(Date.now()+1100*86400000).toISOString().split('T')[0];
+  const d=await mdFetch(`options/chain/${sym}/`,{side:'call',minExpiry:minE,maxExpiry:maxE});
+  if(d&&d.s==='ok'){ setStatus('md','ok','● CONNECTED'); return cset(k,parseMD(d)); }
+  return [];
+}
+
+function parseMD(data){
+  if(!data||data.s!=='ok') return [];
+  const keys=['optionSymbol','expiration','side','strike','bid','ask','mid','last','volume','openInterest','iv','delta','gamma','theta','vega','dte','inTheMoney','intrinsicValue','extrinsicValue','underlyingPrice','updated'];
+  const len=(data.optionSymbol||data.bid||[]).length;
+  return Array.from({length:len},(_,i)=>{ const o={}; keys.forEach(k=>{ if(data[k]) o[k]=data[k][i]; }); return o; });
+}
+
+function bestContract(chain,tgt){
+  if(!chain?.length) return null;
+  return chain.filter(o=>o.delta!=null).map(o=>({...o,sc:Math.abs(Math.abs(parseFloat(o.delta))-Math.abs(tgt))})).sort((a,b)=>a.sc-b.sc)[0]||null;
+}
+
+function getInfo(chain,tgt){
+  const opt=bestContract(chain,tgt);
+  if(!opt) return {};
+  const bid=parseFloat(opt.bid||0), ask=parseFloat(opt.ask||0), mid=parseFloat(opt.mid||(bid+ask)/2||0);
+  const strike=parseFloat(opt.strike||0);
+  const eRaw=opt.expiration;
+  const expDate=eRaw?(typeof eRaw==='number'?new Date(eRaw*1000).toISOString().split('T')[0]:eRaw):null;
+  const expDte=expDate?Math.round((new Date(expDate)-new Date())/86400000):null;
+  const delta=opt.delta!=null?Math.abs(parseFloat(opt.delta)).toFixed(2):null;
+  const iv=opt.iv?parseFloat(opt.iv)*100:null;
+  const oi=opt.openInterest||null;
+  return{opt,bid,ask,mid,strike,expDate,expDte,delta,iv,oi};
+}
+
+function chainTable(chain,tgt,price,label){
+  if(!chain?.length) return '';
+  const best=bestContract(chain,tgt);
+  const rows=chain.slice(0,10).map(o=>{
+    const isBest=o===best;
+    const b=parseFloat(o.bid||0), a=parseFloat(o.ask||0), mid=parseFloat(o.mid||(b+a)/2||0);
+    const dlt=parseFloat(o.delta||0), iv=o.iv?parseFloat(o.iv)*100:null;
+    const prem=price&&mid?(mid/price*100):0;
+    const eRaw=o.expiration;
+    const exp=eRaw?(typeof eRaw==='number'?new Date(eRaw*1000).toISOString().split('T')[0]:eRaw):'—';
+    return `<tr class="${isBest?'best-row':''}">
+      <td style="color:var(--orange);font-weight:bold;">${isBest?'★ ':''}${exp}</td>
+      <td style="color:#fff;font-weight:bold;">$${parseFloat(o.strike||0).toFixed(0)}</td>
+      <td style="color:var(--orange);">Δ${dlt.toFixed(2)}</td>
+      <td style="color:${iv&&iv>30?'var(--green)':'var(--yellow)'};">${iv?iv.toFixed(0):'—'}%</td>
+      <td style="color:var(--text2);">${(o.openInterest||0).toLocaleString()||'—'}</td>
+      <td style="color:var(--text2);">$${b.toFixed(2)} / $${a.toFixed(2)}</td>
+      <td style="color:var(--orange);font-weight:bold;">$${mid.toFixed(2)}</td>
+      <td style="color:${prem>=2?'var(--green)':'var(--red)'};">${prem.toFixed(2)}%</td>
+    </tr>`;
+  }).join('');
+  return `<div class="checklist"><div class="cl-head">${label} · ★ = BEST FIT (MARKETDATA.APP)</div><table class="opts-table"><thead><tr><th>EXPIRY</th><th>STRIKE</th><th>DELTA</th><th>IV</th><th>OI</th><th>BID / ASK</th><th>MID</th><th>PREM %</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+}
+
+const icon=p=>p===true?'<span style="color:var(--green);font-size:16px;">✓</span>':p===false?'<span style="color:var(--red);font-size:16px;">✗</span>':'<span style="color:var(--yellow);font-size:16px;">△</span>';
+const clRow=(pass,name,desc,val)=>`<div class="cl-row"><div class="cl-icon">${icon(pass)}</div><div style="flex:1"><div class="cl-name">${name}</div><div class="cl-desc">${desc}</div></div><div class="cl-val" style="color:${pass===true?'var(--green)':pass===false?'var(--red)':'var(--yellow)'}">${val}</div></div>`;
+const fmtD=s=>s?new Date(s+'T00:00:00').toLocaleDateString('en-US',{day:'numeric',month:'short',year:'numeric'}):'—';
+const dte=s=>s?Math.round((new Date(s)-new Date())/86400000):999;
+
+// ── Trade Score ───────────────────────────────────────────
+// Stores loaded data per ticker for sorting
+let tickerData = {};
+
+function calcTradeScore(t) {
+  const d = tickerData[t];
+  if (!d || !d.quote) return { put: 0, cc: 0, total: 0, label: '—' };
+  const price = parseFloat(d.quote.close || 0);
+  const rsi = d.rsi || 50;
+  const sma = d.sma || null;
+  const abvSMA = sma ? price > sma : null;
+  const earDte = EARNINGS[t] ? Math.round((new Date(EARNINGS[t]) - new Date()) / 86400000) : 999;
+
+  // PUT score (7 criteria, each worth 1 point)
+  let putScore = 0;
+  if (rsi < 30) putScore++;
+  if (abvSMA === false) putScore++;
+  putScore++; // strike — always calculable
+  putScore++; // DTE — always has a valid expiry
+  putScore++; // premium — benefit of doubt without live options
+  putScore++; // IV — benefit of doubt
+  if (earDte > 45) putScore++; // no earnings before expiry
+
+  // CC score (7 criteria)
+  let ccScore = 0;
+  if (rsi > 70) ccScore++;
+  if (abvSMA === true) ccScore++;
+  ccScore++; // strike
+  ccScore++; // DTE
+  ccScore++; // premium
+  ccScore++; // IV
+  if (earDte > 45) ccScore++;
+
+  // Best of put or cc
+  const best = Math.max(putScore, ccScore);
+  const type = putScore >= ccScore ? 'PUT' : 'CC';
+  const total = best;
+
+  let label;
+  if (total >= 6) label = 'IDEAL';
+  else if (total >= 4) label = 'WATCH';
+  else label = 'NOT READY';
+
+  return { put: putScore, cc: ccScore, total, type, label, rsi, chgPct: d.chgPct || 0 };
+}
+
+let currentSort = 'score';
+
+function sortDashboard(mode, btn) {
+  currentSort = mode;
+  document.querySelectorAll('.sort-btn').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+
+  const cont = document.getElementById('view-dashboard');
+  const cards = Array.from(cont.children).filter(el => el.classList.contains('stock-card'));
+  const tickers = cards.map(el => el.id.replace('card-', ''));
+
+  tickers.sort((a, b) => {
+    const sa = calcTradeScore(a), sb = calcTradeScore(b);
+    if (mode === 'score')    return sb.total - sa.total;
+    if (mode === 'rsi-asc')  return (sa.rsi||50) - (sb.rsi||50);
+    if (mode === 'rsi-desc') return (sb.rsi||50) - (sa.rsi||50);
+    if (mode === 'chg-desc') return (sb.chgPct||0) - (sa.chgPct||0);
+    if (mode === 'chg-asc')  return (sa.chgPct||0) - (sb.chgPct||0);
+    return TICKERS.indexOf(a) - TICKERS.indexOf(b); // default
+  });
+
+  // Re-order DOM
+  tickers.forEach(t => {
+    const el = document.getElementById('card-' + t);
+    if (el) cont.appendChild(el);
+  });
+}
+
+
+function buildCard(t, quote, rsi, sma) {
+  // Store data for sorting
+  const price = parseFloat(quote?.close || 0);
+  const open  = parseFloat(quote?.open  || price);
+  tickerData[t] = { quote, rsi, sma, chgPct: open ? (price-open)/open*100 : 0 };
+
+  if (!quote || !quote.close) return `<div class="stock-card" id="card-${t}"><div class="ticker-label">${t}</div><div class="co-name">${CO[t]||''}</div><div style="color:var(--red);font-size:13px;margin-top:16px;">⚠ Load error</div></div>`;
+
+  const p=price, o=open, chg=p-o, pct=o?(chg/o*100):0, up=chg>=0;
+  const h=parseFloat(quote.fifty_two_week?.high||p*1.3), l=parseFloat(quote.fifty_two_week?.low||p*0.7);
+  const rp=Math.max(0,Math.min(100,((p-l)/(h-l)*100))).toFixed(0);
+  const abv=sma?p>sma:null;
+
+  // Trade score badge
+  const score = calcTradeScore(t);
+  const badgeClass = score.label==='IDEAL'?'score-ideal':score.label==='WATCH'?'score-good':'score-low';
+
+  return `<div class="stock-card" id="card-${t}" onclick="openDash('${t}')">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">
+      <div><div class="ticker-label">${t}</div><div class="co-name">${(CO[t]||'').toUpperCase()}</div></div>
+      <span class="score-badge ${badgeClass}">${score.label} · ${score.type} ${score.total}/7</span>
+    </div>
+    <div class="s-price">${p.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
+    <div class="s-change ${up?'up':'dn'}">${up?'+':''}${chg.toFixed(2)} &nbsp; (${up?'+':''}${pct.toFixed(2)}%) &nbsp; ${up?'▲':'▼'}</div>
+    <div class="range-bar"><div class="range-dot" style="left:${rp}%"></div></div>
+    <div class="range-labels"><span>52W L: ${l.toFixed(2)}</span><span>52W H: ${h.toFixed(2)}</span></div>
+    <div class="rsi-sma-row">
+      <span class="tag tag-o">RSI(10) ${rsi?rsi.toFixed(1):'—'}</span>
+      ${abv!==null?`<span class="tag ${abv?'tag-g':'tag-r'}">${abv?'▲ ABOVE':'▼ BELOW'} 200 SMA &nbsp; $${sma.toFixed(2)}</span>`:''}
+    </div>
+  </div>`;
+}
+
+function skelCard(t){
+  return `<div class="stock-card" id="card-${t}" style="opacity:.4;">
+    <div class="ticker-label">${t}</div>
+    <div class="skeleton" style="height:32px;width:60%;margin-top:14px;"></div>
+    <div class="skeleton" style="height:16px;width:45%;margin-top:10px;"></div>
+    <div class="skeleton" style="height:5px;margin-top:16px;"></div>
+    <div class="skeleton" style="height:14px;width:90%;margin-top:12px;"></div>
+  </div>`;
+}
+
+async function startDashboard(){
+  loadAbort=false;
+  const cont=document.getElementById('view-dashboard');
+  cont.innerHTML=TICKERS.map(t=>skelCard(t)).join('');
+  setStatus('td','warn','● LOADING...');
+  let n=0;
+  for(const t of TICKERS){
+    if(loadAbort) break;
+    document.getElementById('load-prog').textContent=`Loading ${t}... (${n+1}/${TICKERS.length})`;
+    document.getElementById('prog-fill').style.width=((n/TICKERS.length)*100)+'%';
+    try{
+      const{quote,rsi,sma}=await fetchOne(t);
+      const el=document.getElementById('card-'+t);
+      if(el) el.outerHTML=buildCard(t,quote,rsi,sma);
+    }catch(e){}
+    n++;
+    if(n<TICKERS.length) await sleep(2000);
+  }
+  document.getElementById('prog-fill').style.width='100%';
+  document.getElementById('load-prog').textContent=`${n}/${TICKERS.length} loaded ✓`;
+  setStatus('td','ok','● CONNECTED');
+  document.getElementById('live-dot').classList.remove('dead');
+  // Auto sort by trade score once all loaded
+  sortDashboard('score', document.getElementById('sort-score'));
+  setTimeout(()=>{document.getElementById('load-prog').textContent='';document.getElementById('prog-fill').style.width='0%';},5000);
+}
+
+function showView(v,btn){
+  loadAbort=true;
+  ['dashboard','put','cc','leaps'].forEach(x=>{ const e=document.getElementById('view-'+x); if(e){e.style.display='none';e.classList.remove('active');} });
+  document.querySelectorAll('.nav-btn').forEach(b=>b.classList.remove('active'));
+  if(btn) btn.classList.add('active');
+  if(v==='dashboard'){ loadAbort=false; document.getElementById('view-dashboard').style.display='grid'; }
+  else{ const e=document.getElementById('view-'+v); e.style.display='block'; e.classList.add('active'); buildQt(v); if(!document.getElementById(v+'-result').innerHTML) runAnalyzer(v); }
+}
+function buildQt(p){ const c=document.getElementById(p+'-qt'); if(!c) return; const cur=document.getElementById(p+'-input').value.toUpperCase(); c.innerHTML=TICKERS.map(t=>`<button class="qtick ${t===cur?'sel':''}" onclick="selTick('${p}','${t}')">${t}</button>`).join(''); }
+function selTick(p,t){ document.getElementById(p+'-input').value=t; buildQt(p); runAnalyzer(p); }
+function openDash(t){ ['put','cc','leaps'].forEach(v=>{document.getElementById(v+'-input').value=t; document.getElementById(v+'-result').innerHTML='';}); showView('put',document.getElementById('btn-put')); }
+
+async function runAnalyzer(type){
+  const ticker=document.getElementById(type+'-input').value.toUpperCase().trim()||'TSLA';
+  document.getElementById(type+'-input').value=ticker; buildQt(type);
+  const btn=document.getElementById(type+'-btn'), el=document.getElementById(type+'-result');
+  btn.disabled=true;
+  el.innerHTML=`<div class="loading-msg">FETCHING LIVE DATA FOR ${ticker}<br><span style="font-size:12px;color:var(--muted);">Twelve Data: price · RSI(10) · 200 SMA<br>MarketData.app: options chain · Greeks · IV · bid/ask</span></div>`;
+  try{
+    const q=await tdFetch('quote',{symbol:ticker}); await sleep(500);
+    const rd=await tdFetch('rsi',{symbol:ticker,interval:'1day',time_period:10,series_type:'close',outputsize:1}); await sleep(500);
+    const sd=await tdFetch('sma',{symbol:ticker,interval:'1day',time_period:200,series_type:'close',outputsize:1}); await sleep(300);
+    const chain=type==='leaps'?await getLeapsMD(ticker):await getChainMD(ticker,type==='cc'?'call':'put');
+    if(!q||q.status==='error'||!q.close) throw new Error(`Quote failed for ${ticker} — check Twelve Data key`);
+    const price=parseFloat(q.close);
+    const rsi=rd?.values?.[0]?parseFloat(rd.values[0].rsi):null;
+    const sma=sd?.values?.[0]?parseFloat(sd.values[0].sma):null;
+    const d={ticker,price,rsi:rsi||50,sma:sma||null,earnings:EARNINGS[ticker]||null,chain:chain||[]};
+    if(type==='put') renderPut(d,el);
+    else if(type==='cc') renderCC(d,el);
+    else renderLeaps(d,el);
+    setStatus('td','ok','● CONNECTED');
+  }catch(e){
+    el.innerHTML=`<div class="error-msg">⚠ ERROR: ${e.message}<br><br>· Rate limit — wait 60s and retry<br>· Invalid key — update in settings above<br>· MarketData.app: upgrade to Trader + sign OPRA for live options</div>`;
+    setStatus('td','err','● ERROR');
+  }
+  btn.disabled=false;
+}
+
+function renderPut(d,el){
+  const{bid,ask,mid,strike,expDate,expDte,delta,iv,oi}=getInfo(d.chain,-0.25);
+  const sk=strike||Math.round(d.price*0.91/5)*5;
+  const ed=expDate||'2026-05-15'; const dt=expDte||42;
+  const prem=mid&&d.price?(mid/d.price*100).toFixed(2):null;
+  const cap=sk*100, btc=mid?(mid*0.20).toFixed(2):null;
+  const profit=mid&&btc?((mid-parseFloat(btc))*100).toFixed(0):null;
+  const abv=d.sma?d.price>d.sma:null;
+  const earOK=!d.earnings||dte(d.earnings)>dt;
+  const checks=[
+    {pass:d.rsi<30,name:'Mean Reversion (−2 Zone)',desc:`RSI(10) ${d.rsi.toFixed(1)} — ${d.rsi<30?'dip confirmed, put entry valid':'waiting for RSI < 30 oversold signal'}`,val:`RSI ${d.rsi.toFixed(1)}`},
+    {pass:abv===null?'warn':!abv,name:'200 SMA',desc:abv===null?'SMA unavailable':abv?`$${d.price.toFixed(2)} above SMA $${d.sma.toFixed(2)} — uptrend, put riskier`:`$${d.price.toFixed(2)} below SMA $${d.sma.toFixed(2)} — downtrend confirmed`,val:d.sma?`${abv?'Above':'Below'} SMA\n$${d.sma.toFixed(2)}`:'N/A'},
+    {pass:true,name:'Strike (Δ 0.20–0.30)',desc:`Strike $${sk} · ${delta?'Δ'+delta:'~0.25'} · ~${((d.price-sk)/d.price*100).toFixed(1)}% OTM`,val:`$${sk}${delta?'\nΔ'+delta:''}`},
+    {pass:dt>=30&&dt<=50,name:'Duration 30–45 DTE',desc:`${fmtD(ed)} (${dt} DTE) · OI: ${oi?.toLocaleString()||'—'}`,val:`${fmtD(ed)}\n${dt} DTE`},
+    {pass:prem?parseFloat(prem)>=2:null,name:'Premium > 2% of Stock Price',desc:mid?`Bid $${bid.toFixed(2)} · Ask $${ask.toFixed(2)} · Mid $${mid.toFixed(2)} · ${prem}% of stock`:'No options data — upgrade MarketData.app to Trader + sign OPRA',val:mid?`Mid $${mid.toFixed(2)}\n${prem}%`:'—'},
+    {pass:iv?(iv>=90?true:iv>=70?'warn':false):null,name:'IV Rank > 90%',desc:iv?`IV ${iv.toFixed(0)}% — ${iv>=90?'excellent — high IV, maximum premium for put entry':iv>=70?'moderate — acceptable but wait for IV > 90% for best premium':'low IV — not enough premium to justify the risk. Wait.'}`:'IV not available — upgrade MarketData.app to Trader + sign OPRA',val:iv?`${iv.toFixed(0)}% IV`:'—'},
+    {pass:earOK,name:'No Earnings Before Expiry',desc:d.earnings?(earOK?`Earnings ${fmtD(d.earnings)} — after expiry, safe`:`Earnings ${fmtD(d.earnings)} BEFORE expiry — shorten DTE`):'No earnings date',val:d.earnings?fmtD(d.earnings):'—'},
+    {pass:true,name:'Capital (Strike × 100)',desc:`$${sk} × 100 = $${cap.toLocaleString()} cash reserve per contract`,val:`$${cap.toLocaleString()}`}
+  ];
+  const fails=checks.filter(c=>c.pass===false).length;
+  const vc=fails===0?'good':fails<=2?'warn':'bad';
+  const opraNote=d.chain.length===0?`<div class="info-msg">⚠ No options data — MarketData.app Starter plan requires upgrading to Trader ($30/mo) and signing the OPRA agreement for live options data.</div>`:'';
+  el.innerHTML=`
+    <div class="result-box ${vc}">
+      <div class="result-src">${d.ticker} · $${d.price.toFixed(2)} · TWELVE DATA + MARKETDATA.APP · LIVE</div>
+      <div class="verdict">${fails===0?'IDEAL SETUP':fails<=2?'WAIT — NOT YET IDEAL':'DO NOT ENTER'}</div>
+      <div class="verdict-sub">${fails} criteri${fails===1?'on':'a'} not met.</div>
+    </div>
+    ${opraNote}
+    <div class="checklist"><div class="cl-head">CHECKLIST — 7 PUT ENTRY CRITERIA</div>${checks.map(c=>clRow(c.pass,c.name,c.desc,c.val)).join('')}</div>
+    ${chainTable(d.chain,-0.25,d.price,'OPTIONS CHAIN — PUTS')}
+    ${mid?`<div class="setup-box"><div class="box-label">RECOMMENDED SETUP</div><div class="setup-val">${d.ticker} $${sk} Put · ${fmtD(ed)} · ${dt} DTE · ${delta?'Δ'+delta:'Δ~0.25'} · Mid $${mid.toFixed(2)} (${prem}%) · Capital $${cap.toLocaleString()}</div></div><div class="setup-box"><div class="box-label">BUY-TO-CLOSE AT 80% PROFIT (OR 21 DTE)</div><div class="btc-val">${d.ticker} $${sk} Put ${fmtD(ed)} · BTC @ $${btc} · 80% Profit = $${profit} per contract</div></div>`:''}`;
+}
+
+function renderCC(d,el){
+  const{bid,ask,mid,strike,expDate,expDte,delta,iv,oi}=getInfo(d.chain,0.22);
+  const sk=strike||Math.round(d.price*1.155/5)*5;
+  const ed=expDate||'2026-05-15'; const dt=expDte||42;
+  const prem=mid&&d.price?(mid/d.price*100).toFixed(2):null;
+  const otm=((sk-d.price)/d.price*100).toFixed(1);
+  const btc=mid?(mid*0.20).toFixed(2):null;
+  const profit=mid&&btc?((mid-parseFloat(btc))*100).toFixed(0):null;
+  const abv=d.sma?d.price>d.sma:null;
+  const earOK=!d.earnings||dte(d.earnings)>dt;
+  const checks=[
+    {pass:d.rsi>70,name:'Mean Reversion (+2 Zone · RSI > 70)',desc:`RSI(10) ${d.rsi.toFixed(1)} — ${d.rsi>70?'overbought spike, CC entry valid':'waiting for RSI > 70'}`,val:`RSI ${d.rsi.toFixed(1)}`},
+    {pass:abv===null?'warn':abv?true:'warn',name:'200 SMA',desc:abv===null?'SMA unavailable':abv?`$${d.price.toFixed(2)} above SMA $${d.sma.toFixed(2)} — uptrend, CC suitable`:`$${d.price.toFixed(2)} below SMA — elevated risk`,val:d.sma?`${abv?'Above':'Below'} SMA\n$${d.sma.toFixed(2)}`:'N/A'},
+    {pass:true,name:'Strike (Δ 0.20–0.30 · 10–20% OTM)',desc:`Strike $${sk} · ${otm}% OTM · ${delta?'Δ'+delta:'~0.22'}`,val:`$${sk}${delta?'\nΔ'+delta:''}`},
+    {pass:dt>=30&&dt<=50,name:'Duration 30–45 DTE',desc:`${fmtD(ed)} (${dt} DTE) · OI: ${oi?.toLocaleString()||'—'}`,val:`${fmtD(ed)}\n${dt} DTE`},
+    {pass:prem?parseFloat(prem)>=2:null,name:'Premium ≥ 2% of Stock Price',desc:mid?`Bid $${bid.toFixed(2)} · Ask $${ask.toFixed(2)} · Mid $${mid.toFixed(2)} · ${prem}% of stock`:'No options data — upgrade MarketData.app',val:mid?`Mid $${mid.toFixed(2)}\n${prem}%`:'—'},
+    {pass:iv?(iv>=90?true:iv>=70?'warn':false):null,name:'IV Rank > 90%',desc:iv?`IV ${iv.toFixed(0)}% — ${iv>=90?'excellent — high IV, maximum premium for CC entry':iv>=70?'moderate — acceptable but wait for IV > 90% for best premium':'low IV — not enough premium to justify capping your upside. Wait.'}`:'IV not available — upgrade MarketData.app to Trader + sign OPRA',val:iv?`${iv.toFixed(0)}% IV`:'—'},
+    {pass:earOK,name:'No Earnings Before Expiry',desc:d.earnings?(earOK?`Earnings ${fmtD(d.earnings)} — safe`:`Earnings ${fmtD(d.earnings)} BEFORE expiry — shorten DTE`):'No earnings date',val:d.earnings?fmtD(d.earnings):'—'}
+  ];
+  const fails=checks.filter(c=>c.pass===false).length;
+  const vc=fails===0?'good':fails<=2?'warn':'bad';
+  const opraNote=d.chain.length===0?`<div class="info-msg">⚠ No options data — upgrade to Trader + sign OPRA on marketdata.app.</div>`:'';
+  el.innerHTML=`
+    <div class="result-box ${vc}">
+      <div class="result-src">${d.ticker} · $${d.price.toFixed(2)} · TWELVE DATA + MARKETDATA.APP · LIVE</div>
+      <div class="verdict">${fails===0?'IDEAL SETUP':fails<=2?'WAIT — NOT YET IDEAL':'DO NOT ENTER'}</div>
+      <div class="verdict-sub">${fails} criteri${fails===1?'on':'a'} not met.</div>
+    </div>
+    ${opraNote}
+    <div class="checklist"><div class="cl-head">CHECKLIST — 7 CC ENTRY CRITERIA</div>${checks.map(c=>clRow(c.pass,c.name,c.desc,c.val)).join('')}</div>
+    ${chainTable(d.chain,0.22,d.price,'OPTIONS CHAIN — CALLS')}
+    ${mid?`<div class="setup-box"><div class="box-label">RECOMMENDED SETUP</div><div class="setup-val">${d.ticker} $${sk} Call · ${fmtD(ed)} · ${dt} DTE · ${delta?'Δ'+delta:'Δ~0.22'} · Mid $${mid.toFixed(2)} (${prem}%)</div></div><div class="setup-box"><div class="box-label">BUY-TO-CLOSE AT 80% PROFIT (OR 21 DTE)</div><div class="btc-val">${d.ticker} $${sk} Call ${fmtD(ed)} · BTC @ $${btc} · 80% Profit = $${profit} per contract</div></div>`:''}`;
+}
+
+function renderLeaps(d,el){
+  const by27=d.chain.filter(o=>{ const e=o.expiration; return (typeof e==='number'?new Date(e*1000):new Date(e+'T00:00:00')).getFullYear()===2027; });
+  const by28=d.chain.filter(o=>{ const e=o.expiration; return (typeof e==='number'?new Date(e*1000):new Date(e+'T00:00:00')).getFullYear()===2028; });
+  const b27=bestContract(by27,0.65), b28=bestContract(by28,0.65), sel=b28||b27;
+  const sm=sel?parseFloat(sel.mid||(parseFloat(sel.bid||0)+parseFloat(sel.ask||0))/2||0):0;
+  const ss=sel?parseFloat(sel.strike||0):Math.round(d.price/5)*5;
+  const seRaw=sel?.expiration;
+  const se=seRaw?(typeof seRaw==='number'?new Date(seRaw*1000).toISOString().split('T')[0]:seRaw):null;
+  const sd2=se?dte(se):0;
+  const sdlt=sel?.delta?Math.abs(parseFloat(sel.delta)).toFixed(2):null;
+  const siv=sel?.iv?parseFloat(sel.iv)*100:null;
+  const soi=sel?.openInterest||null;
+  const sbe=sm?(ss+sm).toFixed(2):null;
+  const scagr=sbe&&sd2>0?(((parseFloat(sbe)/d.price)**(1/(sd2/365))-1)*100).toFixed(1):null;
+
+  function oRow(opt,label){
+    if(!opt) return null;
+    const b=parseFloat(opt.bid||0), a=parseFloat(opt.ask||0), mid=parseFloat(opt.mid||(b+a)/2||0);
+    const sk=parseFloat(opt.strike||0);
+    const eRaw=opt.expiration; const ed=typeof eRaw==='number'?new Date(eRaw*1000).toISOString().split('T')[0]:eRaw;
+    const d2=ed?dte(ed):0;
+    const dlt=opt.delta?Math.abs(parseFloat(opt.delta)).toFixed(2):'—';
+    const iv2=opt.iv?(parseFloat(opt.iv)*100).toFixed(0):'—';
+    const oi=opt.openInterest?.toLocaleString()||'—';
+    const be=(sk+mid).toFixed(2);
+    const cagr=d2>0?(((parseFloat(be)/d.price)**(1/(d2/365))-1)*100).toFixed(1):'—';
+    return `<tr>
+      <td style="color:var(--orange);font-weight:bold;">${label}</td>
+      <td style="color:#fff;">$${sk} Call · ${fmtD(ed)}</td>
+      <td style="color:var(--orange);">Δ${dlt}</td>
+      <td style="color:var(--text2);">~${iv2}%</td>
+      <td style="color:var(--text2);">${oi}</td>
+      <td style="color:#fff;">$${be}</td>
+      <td style="color:var(--green);font-weight:bold;">${cagr}%/yr</td>
+      <td style="color:var(--orange);font-weight:bold;">$${mid.toFixed(2)} (${d.price?(mid/d.price*100).toFixed(1):'—'}%)</td>
+      <td style="color:var(--green);font-weight:bold;">$${(mid*100).toLocaleString('en-US',{maximumFractionDigits:0})}</td>
+    </tr>`;
+  }
+
+  const checks=[
+    {pass:d.rsi<30,name:'Timing — RSI < 30 (Mean Reversion −2)',desc:`RSI(10) ${d.rsi.toFixed(1)} — ${d.rsi<30?'deep dip, LEAPS entry ideal':'not yet oversold, waiting for RSI < 30'}`,val:`RSI ${d.rsi.toFixed(1)}`},
+    {pass:siv?siv<55:true,name:'IV (buy low)',desc:siv?`IV ${siv.toFixed(0)}% — ${siv<55?'reasonable, LEAPS priced fairly':'elevated, more expensive'}`:'IV estimated',val:siv?`${siv.toFixed(0)}% IV`:'~55% est.'},
+    {pass:true,name:'Strike — ATM / slightly ITM (Δ 0.50–0.65)',desc:`Strike $${ss} · ${sdlt?'Δ'+sdlt:'ATM'}`,val:`$${ss}${sdlt?'\nΔ'+sdlt:''}`},
+    {pass:sd2>=540,name:'Duration — min. 18 months',desc:`${fmtD(se)} (${sd2} DTE)`,val:`${fmtD(se)}\n${sd2} DTE`},
+    {pass:soi?soi>=300:true,name:'Liquidity — OI ≥ 300',desc:soi?`OI: ${soi.toLocaleString()}`:'OI unavailable',val:soi?`OI: ${soi.toLocaleString()}`:'—'}
+  ];
+  const fails=checks.filter(c=>c.pass===false).length;
+  const vc=fails===0?'good':fails===1?'warn':'bad';
+  const r27=oRow(b27,'2027'), r28=oRow(b28,'2028');
+  const opraNote=d.chain.length===0?`<div class="info-msg">⚠ No LEAPS data — upgrade to Trader + sign OPRA on marketdata.app for live options.</div>`:'';
+
+  el.innerHTML=`
+    <div class="result-box ${vc}">
+      <div class="result-src">${d.ticker} · $${d.price.toFixed(2)} · TWELVE DATA + MARKETDATA.APP · LIVE</div>
+      <div class="verdict">${fails===0?'IDEAL ENTRY':fails===1?'WAIT — NOT YET IDEAL':'DO NOT ENTER'}</div>
+      <div class="verdict-sub">${fails} criteri${fails===1?'on':'a'} not yet optimal.</div>
+    </div>
+    ${opraNote}
+    <div class="checklist"><div class="cl-head">CHECKLIST — 5 LEAPS ENTRY CRITERIA</div>${checks.map(c=>clRow(c.pass,c.name,c.desc,c.val)).join('')}</div>
+    ${(r27||r28)?`<div class="checklist"><div class="cl-head">AVAILABLE LEAPS — CALLS (MARKETDATA.APP)</div><table class="opts-table"><thead><tr><th>YEAR</th><th>CONTRACT</th><th>DELTA</th><th>IV</th><th>OI</th><th>BREAKEVEN</th><th>CAGR</th><th>MID</th><th>COST/CONTRACT</th></tr></thead><tbody>${[r27,r28].filter(Boolean).join('')}</tbody></table></div>`:opraNote||'<div class="error-msg">No LEAPS data returned.</div>'}
+    ${sm&&sbe?`<div class="setup-box"><div class="box-label">RECOMMENDED SETUP</div><div class="setup-val">${d.ticker} $${ss} Call · ${fmtD(se)} · ${sd2} DTE · ${sdlt?'Δ'+sdlt:'Δ~0.65'} · Mid $${sm.toFixed(2)} (${d.price?(sm/d.price*100).toFixed(1):'—'}%) · Cost $${(sm*100).toLocaleString('en-US',{maximumFractionDigits:0})}/contract · BE: $${sbe} · CAGR ${scagr}%/yr</div></div>`:''}`;
+}
+
+// ── Init ──
+updateClock(); setInterval(updateClock,30000);
+document.getElementById('view-dashboard').style.display='grid';
+['put','cc','leaps'].forEach(v=>document.getElementById('view-'+v).style.display='none');
+startDashboard();
+</script>
+</body>
+</html>
