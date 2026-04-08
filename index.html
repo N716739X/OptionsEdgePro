@@ -558,14 +558,11 @@ function buildCard(t, quote, rsi, sma) {
     </div>
     <div class="s-price" style="color:${priceColor};">${p.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
     <div class="s-change ${up?'up':'dn'}">${up?'+':''}${chg.toFixed(2)} &nbsp; (${up?'+':''}${pct.toFixed(2)}%) &nbsp; ${up?'▲':'▼'}</div>
-    <div style="display:flex;align-items:center;gap:8px;margin-top:12px;">
-      <div style="flex:1;height:4px;background:#333;border-radius:2px;">
-        <div style="width:${rangePct.toFixed(0)}%;height:100%;border-radius:2px;background:linear-gradient(to right,#ff5252,#ffee58,#00e676);"></div>
-      </div>
-      <div style="font-size:11px;color:#bbbbbb;min-width:32px;text-align:right;">${rangePct.toFixed(0)}%</div>
+    <div style="margin-top:12px;">
+      <span style="padding:4px 12px;border-radius:2px;font-size:11px;font-weight:bold;letter-spacing:0.5px;${posStyle}">${posLabel}</span>
     </div>
-    <div style="display:flex;justify-content:space-between;font-size:10px;color:#666;margin-top:3px;">
-      <span>L $${l.toFixed(2)}</span><span>H $${h.toFixed(2)}</span>
+    <div style="display:flex;justify-content:space-between;margin-top:6px;color:var(--dim);font-size:10px;">
+      <span>52W L: $${l.toFixed(2)}</span><span>52W H: $${h.toFixed(2)}</span>
     </div>
     <div class="rsi-sma-row">
       <span class="tag tag-o">RSI(10) ${rsi?rsi.toFixed(1):'—'}</span>
