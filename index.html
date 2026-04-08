@@ -303,26 +303,38 @@ function filterChain(contracts) {
   });
 }
 
-async function getChainMD(sym,side){
-  const k=`md_${sym}_${side}`; const h=cget(k); if(h) return h;
-  const minE=new Date(Date.now()+30*86400000).toISOString().split('T')[0];
-  const maxE=new Date(Date.now()+50*86400000).toISOString().split('T')[0];
-  const d=await mdFetch(`options/chain/${sym}/`,{side,minExpiry:minE,maxExpiry:maxE});
-  if(d&&d.s==='ok'){
-    setStatus('md','ok','● CONNECTED');
-    // Step 1: enforce 30-50 DTE window
-    const parsed=parseMD(d).filter(o=>{
-      const eRaw=o.expiration;
-      const expDate=eRaw?(typeof eRaw==='number'?new Date(eRaw*1000).toISOString().split('T')[0]:eRaw):null;
-      const d2=expDate?Math.round((new Date(expDate)-new Date())/86400000):0;
-      return d2>=30 && d2<=50;
+async function getChainMD(sym, side) {
+  const k = `md_${sym}_${side}`; const h = cget(k); if (h) return h;
+  try {
+    // Step 1: get available expirations
+    const expData = await mdFetch(`options/expirations/${sym}/`, {});
+    if (!expData || expData.s !== 'ok' || !expData.expirations) return [];
+
+    // Step 2: find best expiry in 30-50 DTE window
+    const today = new Date();
+    const validExp = expData.expirations.filter(e => {
+      const d = Math.round((new Date(e) - today) / 86400000);
+      return d >= 30 && d <= 50;
     });
-    // Step 2: keep standard monthly expiries + weeklies with OI >= 500
-    const filtered = filterChain(parsed);
-    // Step 3: if nothing passes the filter, fall back to all valid DTE contracts
-    return cset(k, filtered.length > 0 ? filtered : parsed);
-  }
-  return [];
+    if (!validExp.length) return [];
+
+    // Step 3: prefer standard monthly (3rd Friday) or highest OI weekly
+    const bestExp = validExp.find(e => isStandardExpiry(e)) || validExp[0];
+
+    // Step 4: fetch chain for that specific expiry
+    const d = await mdFetch(`options/chain/${sym}/`, { side, expiration: bestExp, limit: 30 });
+    if (d && d.s === 'ok') {
+      setStatus('md', 'ok', '● CONNECTED');
+      const parsed = parseMD(d);
+      // Filter OTM contracts only for cleaner results
+      const filtered = parsed.filter(o => {
+        const delta = Math.abs(parseFloat(o.delta || 0));
+        return delta >= 0.10 && delta <= 0.50;
+      });
+      return cset(k, filtered.length > 0 ? filtered : parsed);
+    }
+    return [];
+  } catch(e) { return []; }
 }
 
 async function getLeapsMD(sym){
