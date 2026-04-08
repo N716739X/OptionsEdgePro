@@ -75,7 +75,17 @@ body { background: var(--bg); color: var(--text); font-family: 'Courier New', mo
 .skeleton { background: var(--bg3); border-radius: 3px; animation: shimmer 1.2s infinite; }
 @keyframes shimmer { 0%,100%{opacity:.3}50%{opacity:.7} }
 
-/* ── SORT BAR ── */
+/* ── TICKER MANAGER ── */
+.ticker-mgr { background: var(--bg3); border-bottom: 1px solid var(--border); padding: 10px 18px; display: none; flex-wrap: wrap; gap: 8px; align-items: center; }
+.ticker-mgr.open { display: flex; }
+.ticker-pill { display: inline-flex; align-items: center; gap: 5px; background: var(--bg2); border: 1px solid var(--border); padding: 4px 10px; font-size: 12px; font-weight: bold; color: var(--text2); border-radius: 2px; }
+.ticker-pill button { background: none; border: none; color: var(--red); cursor: pointer; font-size: 14px; font-weight: bold; padding: 0; line-height: 1; }
+.ticker-pill button:hover { color: #ff0000; }
+.ticker-add-wrap { display: flex; gap: 6px; align-items: center; }
+.ticker-add-input { background: var(--bg); border: 1px solid var(--border); color: var(--text); padding: 5px 10px; font-family: 'Courier New', monospace; font-size: 13px; width: 100px; outline: none; letter-spacing: 2px; text-transform: uppercase; }
+.ticker-add-input:focus { border-color: var(--orange); }
+.ticker-add-btn { background: var(--orange); color: #000; border: none; padding: 5px 14px; font-family: 'Courier New', monospace; font-size: 12px; font-weight: bold; cursor: pointer; }
+.ticker-add-btn:hover { background: #ffcc44; }
 .sort-bar { background: var(--bg3); border-bottom: 1px solid var(--border); padding: 10px 18px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .sort-label { color: var(--muted); font-size: 11px; letter-spacing: 1px; }
 .sort-btn { background: none; border: 1px solid var(--border); color: var(--muted); padding: 5px 12px; cursor: pointer; font-family: 'Courier New', monospace; font-size: 11px; letter-spacing: 1px; transition: all 0.15s; }
@@ -149,7 +159,17 @@ body { background: var(--bg); color: var(--text); font-family: 'Courier New', mo
   <button class="nav-btn" id="btn-put" onclick="showView('put',this)">PUT ANALYZER</button>
   <button class="nav-btn" id="btn-cc" onclick="showView('cc',this)">CC ANALYZER</button>
   <button class="nav-btn" id="btn-leaps" onclick="showView('leaps',this)">LEAPS ANALYZER</button>
-  <div class="nav-right"><button class="nav-btn" onclick="startDashboard()">↺ REFRESH</button></div>
+  <div class="nav-right"><button class="nav-btn" onclick="startDashboard()">↺ REFRESH</button> <button class="nav-btn" onclick="toggleTickerMgr()">⚙ TICKERS</button></div>
+</div>
+
+<div id="ticker-mgr" class="ticker-mgr">
+  <span style="color:var(--muted);font-size:11px;letter-spacing:1px;margin-right:4px;">WATCHLIST</span>
+  <div id="ticker-pills"></div>
+  <div class="ticker-add-wrap">
+    <input class="ticker-add-input" id="ticker-add-input" placeholder="SYMBOL" maxlength="6" onkeydown="if(event.key==='Enter')addTicker()">
+    <button class="ticker-add-btn" onclick="addTicker()">+ ADD</button>
+  </div>
+  <button class="save-btn" style="margin-left:8px;" onclick="applyTickers()">✓ APPLY & RELOAD</button>
 </div>
 
 <div class="status-bar">
@@ -448,7 +468,57 @@ const clRow=(pass,name,desc,val)=>`<div class="cl-row"><div class="cl-icon">${ic
 const fmtD=s=>s?new Date(s+'T00:00:00').toLocaleDateString('en-US',{day:'numeric',month:'short',year:'numeric'}):'—';
 const dte=s=>s?Math.round((new Date(s)-new Date())/86400000):999;
 
-// ── Trade Score ───────────────────────────────────────────
+// ── Ticker Manager ─────────────────────────────────────────
+function toggleTickerMgr() {
+  const mgr = document.getElementById('ticker-mgr');
+  mgr.classList.toggle('open');
+  if (mgr.classList.contains('open')) renderPills();
+}
+
+function renderPills() {
+  document.getElementById('ticker-pills').innerHTML = TICKERS.map(t =>
+    `<span class="ticker-pill">${t}<button onclick="removeTicker('${t}')" title="Remove">×</button></span>`
+  ).join('');
+}
+
+function removeTicker(t) {
+  const idx = TICKERS.indexOf(t);
+  if (idx > -1) { TICKERS.splice(idx, 1); renderPills(); }
+}
+
+function addTicker() {
+  const input = document.getElementById('ticker-add-input');
+  const sym = input.value.toUpperCase().trim().replace(/[^A-Z]/g,'');
+  if (!sym) return;
+  if (TICKERS.includes(sym)) { input.value=''; return; }
+  TICKERS.push(sym);
+  // Add empty earnings entry
+  if (!EARNINGS[sym]) EARNINGS[sym] = null;
+  input.value = '';
+  renderPills();
+}
+
+function applyTickers() {
+  document.getElementById('ticker-mgr').classList.remove('open');
+  // Save to localStorage
+  try { localStorage.setItem('mw_tickers', JSON.stringify(TICKERS)); } catch(e) {}
+  cache = {}; optionsScoreData = {}; tickerData = {};
+  startDashboard();
+}
+
+// Load saved tickers on startup
+try {
+  const saved = localStorage.getItem('mw_tickers');
+  if (saved) {
+    const parsed = JSON.parse(saved);
+    if (Array.isArray(parsed) && parsed.length > 0) {
+      TICKERS.length = 0;
+      parsed.forEach(t => TICKERS.push(t));
+    }
+  }
+} catch(e) {}
+
+
 let tickerData = {};
 let optionsScoreData = {}; // stores full 7-criteria scores after background fetch
 
