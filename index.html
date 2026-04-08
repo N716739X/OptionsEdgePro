@@ -650,21 +650,13 @@ function buildCard(t, quote, rsi, sma) {
     <div style="display:flex;justify-content:space-between;font-size:10px;color:#666;margin-top:3px;">
       <span>L $${l.toFixed(2)}</span><span>H $${h.toFixed(2)}</span>
     </div>
-    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:12px;text-align:center;">
-      <div style="background:#242424;padding:6px 4px;border-radius:2px;">
-        <div style="font-size:9px;color:#555;letter-spacing:1px;">RSI(10)</div>
-        <div style="font-size:13px;font-weight:bold;color:#ffaa00;margin-top:2px;">${rsi?rsi.toFixed(1):'—'}</div>
-      </div>
-      <div style="background:#242424;padding:6px 4px;border-radius:2px;">
-        <div style="font-size:9px;color:#555;letter-spacing:1px;">52W POS</div>
-        <div style="font-size:13px;font-weight:bold;color:${rangePct>=80?'var(--orange)':rangePct<=25?'var(--green)':'#e8e8e8'};margin-top:2px;">${rangePct.toFixed(0)}%</div>
-      </div>
-      <div style="background:#242424;padding:6px 4px;border-radius:2px;">
-        <div style="font-size:9px;color:#555;letter-spacing:1px;">200 SMA</div>
-        <div style="font-size:13px;font-weight:bold;color:${abv===true?'var(--green)':abv===false?'var(--red)':'#888'};margin-top:2px;">${abv===true?'▲ ABOVE':abv===false?'▼ BELOW':'—'}</div>
-      </div>
+    <div class="rsi-sma-row">
+      <span class="tag tag-o">RSI(10) ${rsi?rsi.toFixed(1):'—'}</span>
+      ${abv!==null?`<span class="tag ${abv?'tag-g':'tag-r'}">${abv?'▲ ABOVE':'▼ BELOW'} 200 SMA &nbsp; $${sma.toFixed(2)}</span>`:''}
+      ${EARNINGS[t]?`<span class="tag ${dte(EARNINGS[t])<=45?'tag-r':'tag-g'}">EARN ${fmtD(EARNINGS[t])}</span>`:''}
     </div>
   </div>`;
+}
 }
 
 function skelCard(t){
