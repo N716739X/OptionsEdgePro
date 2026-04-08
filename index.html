@@ -435,9 +435,9 @@ function calcTradeScore(t) {
   const type = putScore >= ccScore ? 'PUT' : 'CC';
 
   let label;
-  if (best >= 3) label = 'WATCH';      // All 3 known criteria pass
-  else if (best >= 2) label = 'WATCH';
-  else label = 'NOT READY';
+  if (best >= 3) label = 'IDEAL';      // All 3 known criteria pass — strong signal
+  else if (best >= 2) label = 'WATCH'; // 2 of 3 pass — worth analyzing
+  else label = 'NOT READY';            // 0-1 pass — skip
 
   // Only show IDEAL from the full analyzer, not dashboard
   return { put: putScore, cc: ccScore, total: best, type, label, rsi, chgPct: d.chgPct || 0 };
