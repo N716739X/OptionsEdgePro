@@ -64,9 +64,6 @@ body { background: var(--bg); color: var(--text); font-family: 'Courier New', mo
 .s-change { font-size: 15px; margin-top: 5px; font-weight: bold; }
 .up { color: var(--green); }
 .dn { color: var(--red); }
-.range-bar { margin-top: 14px; height: 5px; background: linear-gradient(to right, var(--red), var(--yellow), var(--green)); border-radius: 3px; position: relative; }
-.range-dot { position: absolute; top: -5px; width: 15px; height: 15px; border-radius: 50%; background: #fff; border: 3px solid var(--bg2); transform: translateX(-50%); }
-.range-labels { display: flex; justify-content: space-between; margin-top: 6px; color: #bbbbbb; font-size: 11px; }
 .rsi-sma-row { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
 .tag { padding: 4px 9px; font-size: 11px; border-radius: 2px; font-weight: bold; }
 .tag-o { background: rgba(255,170,0,0.18); color: var(--orange); border: 1px solid rgba(255,170,0,0.4); }
@@ -535,8 +532,8 @@ function buildCard(t, quote, rsi, sma) {
     posStyle = 'background:rgba(0,230,118,0.12);color:var(--green);border:1px solid rgba(0,230,118,0.35);';
   } else {
     posLabel = `MID RANGE · ${rangePct.toFixed(0)}%`;
-    posColor = 'var(--text2)';
-    posStyle = 'background:rgba(255,255,255,0.06);color:var(--text2);border:1px solid rgba(255,255,255,0.15);';
+    posColor = '#ffffff';
+    posStyle = 'background:rgba(255,255,255,0.1);color:#ffffff;border:1px solid rgba(255,255,255,0.3);';
   }
 
   // Color-code the price based on range position
@@ -554,7 +551,7 @@ function buildCard(t, quote, rsi, sma) {
     <div class="s-price" style="color:${priceColor};">${p.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
     <div class="s-change ${up?'up':'dn'}">${up?'+':''}${chg.toFixed(2)} &nbsp; (${up?'+':''}${pct.toFixed(2)}%) &nbsp; ${up?'▲':'▼'}</div>
     <div style="margin-top:12px;">
-      <span style="padding:3px 10px;border-radius:2px;font-size:10px;font-weight:bold;letter-spacing:0.5px;${posStyle}">${posLabel}</span>
+      <span style="padding:4px 12px;border-radius:2px;font-size:11px;font-weight:bold;letter-spacing:0.5px;${posStyle}">${posLabel}</span>
     </div>
     <div style="display:flex;justify-content:space-between;margin-top:6px;color:var(--dim);font-size:10px;">
       <span>52W L: $${l.toFixed(2)}</span><span>52W H: $${h.toFixed(2)}</span>
@@ -572,7 +569,7 @@ function skelCard(t){
     <div class="ticker-label">${t}</div>
     <div class="skeleton" style="height:32px;width:60%;margin-top:14px;"></div>
     <div class="skeleton" style="height:16px;width:45%;margin-top:10px;"></div>
-    <div class="skeleton" style="height:5px;margin-top:16px;"></div>
+    <div class="skeleton" style="height:22px;width:55%;margin-top:14px;border-radius:2px;"></div>
     <div class="skeleton" style="height:14px;width:90%;margin-top:12px;"></div>
   </div>`;
 }
