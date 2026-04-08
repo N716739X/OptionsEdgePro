@@ -445,45 +445,127 @@ const fmtD=s=>s?new Date(s+'T00:00:00').toLocaleDateString('en-US',{day:'numeric
 const dte=s=>s?Math.round((new Date(s)-new Date())/86400000):999;
 
 // ── Trade Score ───────────────────────────────────────────
-// Stores loaded data per ticker for sorting
 let tickerData = {};
+let optionsScoreData = {}; // stores full 7-criteria scores after background fetch
 
 function calcTradeScore(t) {
+  // If we have full options data, use 7-criteria score
+  if (optionsScoreData[t]) return optionsScoreData[t];
+
+  // Otherwise use 3-criteria score from dashboard data
   const d = tickerData[t];
-  if (!d || !d.quote) return { put: 0, cc: 0, total: 0, label: '—' };
+  if (!d || !d.quote) return { put: 0, cc: 0, total: 0, label: '—', type: 'CC', partial: true };
   const price = parseFloat(d.quote.close || 0);
   const rsi = d.rsi || 50;
   const sma = d.sma || null;
   const abvSMA = sma ? price > sma : null;
   const earDte = EARNINGS[t] ? Math.round((new Date(EARNINGS[t]) - new Date()) / 86400000) : 999;
 
-  // Only score criteria we ACTUALLY know from dashboard data
-  // Unknown criteria (IV, Premium, Strike delta) = 0 points — don't assume they pass
-
-  // PUT score — only RSI, SMA, and Earnings are knowable from dashboard
   let putScore = 0;
-  if (rsi < 30) putScore++;           // RSI oversold ✓ knowable
-  if (abvSMA === false) putScore++;   // Below SMA ✓ knowable
-  if (earDte > 45) putScore++;        // No earnings ✓ knowable
-  // Strike, DTE, Premium, IV = unknown without options data = 0 points each
+  if (rsi < 30) putScore++;
+  if (abvSMA === false) putScore++;
+  if (earDte > 45) putScore++;
 
-  // CC score — only RSI, SMA, and Earnings are knowable
   let ccScore = 0;
-  if (rsi > 70) ccScore++;            // RSI overbought ✓ knowable
-  if (abvSMA === true) ccScore++;     // Above SMA ✓ knowable
-  if (earDte > 45) ccScore++;         // No earnings ✓ knowable
-  // Strike, DTE, Premium, IV = unknown without options data = 0 points each
+  if (rsi > 70) ccScore++;
+  if (abvSMA === true) ccScore++;
+  if (earDte > 45) ccScore++;
 
   const best = Math.max(putScore, ccScore);
   const type = putScore >= ccScore ? 'PUT' : 'CC';
+  let label = best >= 3 ? 'IDEAL' : best >= 2 ? 'WATCH' : 'NOT READY';
+  return { put: putScore, cc: ccScore, total: best, type, label, rsi, chgPct: d.chgPct || 0, partial: true };
+}
 
-  let label;
-  if (best >= 3) label = 'IDEAL';      // All 3 known criteria pass — strong signal
-  else if (best >= 2) label = 'WATCH'; // 2 of 3 pass — worth analyzing
-  else label = 'NOT READY';            // 0-1 pass — skip
+async function calcFullScore(t) {
+  const d = tickerData[t];
+  if (!d || !d.quote) return;
+  const price = parseFloat(d.quote.close || 0);
+  const rsi = d.rsi || 50;
+  const sma = d.sma || null;
+  const abvSMA = sma ? price > sma : null;
+  const earDte = EARNINGS[t] ? Math.round((new Date(EARNINGS[t]) - new Date()) / 86400000) : 999;
 
-  // Only show IDEAL from the full analyzer, not dashboard
-  return { put: putScore, cc: ccScore, total: best, type, label, rsi, chgPct: d.chgPct || 0 };
+  // Determine if PUT or CC candidate based on RSI/SMA
+  const isCCCandidate = rsi > 55 && abvSMA;
+  const side = isCCCandidate ? 'call' : 'put';
+  const deltaTgt = isCCCandidate ? 0.22 : -0.25;
+
+  try {
+    // Fetch expirations
+    const expData = await mdFetch(`options/expirations/${t}/`, {});
+    if (!expData || expData.s !== 'ok') return;
+
+    const today = new Date();
+    const validExp = (expData.expirations || []).filter(e => {
+      const d2 = Math.round((new Date(e) - today) / 86400000);
+      return d2 >= 30 && d2 <= 50;
+    });
+    if (!validExp.length) return;
+
+    const bestExp = validExp.find(e => isStandardExpiry(e)) || validExp[0];
+    const expDte = Math.round((new Date(bestExp) - today) / 86400000);
+
+    // Fetch chain for that expiry
+    const chainData = await mdFetch(`options/chain/${t}/`, { side, expiration: bestExp, limit: 20 });
+    if (!chainData || chainData.s !== 'ok') return;
+
+    const chain = parseMD(chainData);
+    const { mid, strike, iv, oi, expDte: cDte } = getInfo(chain, deltaTgt);
+    const prem = mid && price ? (mid / price * 100) : 0;
+    const finalDte = cDte || expDte;
+    const earOK = !EARNINGS[t] || dte(EARNINGS[t]) > finalDte;
+
+    // Full 7-criteria CC score
+    let ccScore = 0;
+    if (rsi > 70) ccScore++;
+    if (abvSMA === true) ccScore++;
+    if (strike) ccScore++; // strike calculable
+    if (finalDte >= 30 && finalDte <= 50) ccScore++;
+    if (prem >= 2) ccScore++;
+    if (iv && iv >= 90) ccScore++;
+    if (earOK) ccScore++;
+
+    // Full 7-criteria PUT score
+    let putScore = 0;
+    if (rsi < 30) putScore++;
+    if (abvSMA === false) putScore++;
+    if (strike) putScore++;
+    if (finalDte >= 30 && finalDte <= 50) putScore++;
+    if (prem >= 2) putScore++;
+    if (iv && iv >= 90) putScore++;
+    if (earOK) putScore++;
+
+    const best = Math.max(putScore, ccScore);
+    const type = putScore >= ccScore ? 'PUT' : 'CC';
+    let label = best >= 6 ? 'IDEAL' : best >= 4 ? 'WATCH' : 'NOT READY';
+
+    const scoreObj = { put: putScore, cc: ccScore, total: best, type, label, rsi, chgPct: d.chgPct || 0, partial: false, outOf: 7 };
+    optionsScoreData[t] = scoreObj;
+
+    // Update badge on card
+    const card = document.getElementById('card-' + t);
+    if (card) {
+      const badgeEl = card.querySelector('.score-badge');
+      if (badgeEl) {
+        const badgeClass = label === 'IDEAL' ? 'score-ideal' : label === 'WATCH' ? 'score-good' : 'score-low';
+        badgeEl.className = 'score-badge ' + badgeClass;
+        badgeEl.textContent = `${label} · ${type} ${best}/7`;
+      }
+    }
+  } catch(e) {}
+}
+
+async function backgroundScoreUpdate() {
+  document.getElementById('load-prog').textContent = '⟳ Updating full scores...';
+  for (const t of TICKERS) {
+    await calcFullScore(t);
+    await sleep(2000); // respect rate limits
+  }
+  // Re-sort after all scores updated
+  sortDashboard(currentSort, document.querySelector('.sort-btn.active'));
+  document.getElementById('load-prog').textContent = '✓ All scores updated (7/7)';
+  setTimeout(() => { document.getElementById('load-prog').textContent = ''; }, 4000);
 }
 
 let currentSort = 'score';
@@ -550,26 +632,39 @@ function buildCard(t, quote, rsi, sma) {
   // Trade score badge
   const score = calcTradeScore(t);
   const badgeClass = score.label==='IDEAL'?'score-ideal':score.label==='WATCH'?'score-good':'score-low';
+  const badgeText = score.partial ? `${score.label} · ${score.type} ⟳` : `${score.label} · ${score.type} ${score.total}/7`;
 
   return `<div class="stock-card" id="card-${t}" onclick="openDash('${t}')">
     <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">
       <div><div class="ticker-label">${t}</div><div class="co-name">${(CO[t]||'').toUpperCase()}</div></div>
-      <span class="score-badge ${badgeClass}">${score.label} · ${score.type}</span>
+      <span class="score-badge ${badgeClass}">${badgeText}</span>
     </div>
     <div class="s-price" style="color:${priceColor};">${p.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
     <div class="s-change ${up?'up':'dn'}">${up?'+':''}${chg.toFixed(2)} &nbsp; (${up?'+':''}${pct.toFixed(2)}%) &nbsp; ${up?'▲':'▼'}</div>
-    <div style="margin-top:12px;">
-      <span style="padding:4px 12px;border-radius:2px;font-size:11px;font-weight:bold;letter-spacing:0.5px;${posStyle}">${posLabel}</span>
+    <div style="display:flex;align-items:center;gap:8px;margin-top:12px;">
+      <div style="flex:1;height:4px;background:#333;border-radius:2px;">
+        <div style="width:${rangePct.toFixed(0)}%;height:100%;border-radius:2px;background:linear-gradient(to right,#ff5252,#ffee58,#00e676);"></div>
+      </div>
+      <div style="font-size:11px;color:#bbbbbb;min-width:32px;text-align:right;">${rangePct.toFixed(0)}%</div>
     </div>
-    <div style="display:flex;justify-content:space-between;margin-top:6px;color:var(--dim);font-size:10px;">
-      <span>52W L: $${l.toFixed(2)}</span><span>52W H: $${h.toFixed(2)}</span>
+    <div style="display:flex;justify-content:space-between;font-size:10px;color:#666;margin-top:3px;">
+      <span>L $${l.toFixed(2)}</span><span>H $${h.toFixed(2)}</span>
     </div>
-    <div class="rsi-sma-row">
-      <span class="tag tag-o">RSI(10) ${rsi?rsi.toFixed(1):'—'}</span>
-      ${abv!==null?`<span class="tag ${abv?'tag-g':'tag-r'}">${abv?'▲ ABOVE':'▼ BELOW'} 200 SMA &nbsp; $${sma.toFixed(2)}</span>`:''}
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:12px;text-align:center;">
+      <div style="background:#242424;padding:6px 4px;border-radius:2px;">
+        <div style="font-size:9px;color:#555;letter-spacing:1px;">RSI(10)</div>
+        <div style="font-size:13px;font-weight:bold;color:#ffaa00;margin-top:2px;">${rsi?rsi.toFixed(1):'—'}</div>
+      </div>
+      <div style="background:#242424;padding:6px 4px;border-radius:2px;">
+        <div style="font-size:9px;color:#555;letter-spacing:1px;">52W POS</div>
+        <div style="font-size:13px;font-weight:bold;color:${rangePct>=80?'var(--orange)':rangePct<=25?'var(--green)':'#e8e8e8'};margin-top:2px;">${rangePct.toFixed(0)}%</div>
+      </div>
+      <div style="background:#242424;padding:6px 4px;border-radius:2px;">
+        <div style="font-size:9px;color:#555;letter-spacing:1px;">200 SMA</div>
+        <div style="font-size:13px;font-weight:bold;color:${abv===true?'var(--green)':abv===false?'var(--red)':'#888'};margin-top:2px;">${abv===true?'▲ ABOVE':abv===false?'▼ BELOW':'—'}</div>
+      </div>
     </div>
   </div>`;
-}
 }
 
 function skelCard(t){
@@ -609,6 +704,8 @@ async function startDashboard(){
   document.getElementById('td-credits').textContent=`Last updated: ${now} CST`;
   // Auto sort by trade score once all loaded
   sortDashboard('score', document.getElementById('sort-score'));
+  // Start background full 7-criteria score update
+  setTimeout(() => backgroundScoreUpdate(), 2000);
   setTimeout(()=>{document.getElementById('prog-fill').style.width='0%';},5000);
 }
 
