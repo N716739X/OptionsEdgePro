@@ -295,8 +295,8 @@ async function tdFetch(ep,params,retries=3){
 }
 
 async function mdFetch(ep, params={}) {
-  // Use Netlify proxy to avoid CORS — routes through /.netlify/functions/proxy
-  const url = new URL('/.netlify/functions/proxy', window.location.origin);
+  // Use Cloudflare Worker proxy to avoid CORS
+  const url = new URL('https://marketwatchpro.mattdavis-7f2.workers.dev/');
   url.searchParams.set('path', ep);
   Object.entries(params).forEach(([k,v]) => url.searchParams.set(k, v));
   try {
