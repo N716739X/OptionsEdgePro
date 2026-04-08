@@ -210,7 +210,7 @@ const CO={TSLA:'Tesla',NVDA:'Nvidia',PLTR:'Palantir',AMD:'AMD',AVGO:'Broadcom',T
 const EARNINGS={TSLA:'2026-04-28',NVDA:'2026-05-26',PLTR:'2026-05-05',AMD:'2026-04-29',AVGO:'2026-06-12',TSM:'2026-04-17',MU:'2026-06-25',ASML:'2026-04-16',ALAB:'2026-05-20',MRVL:'2026-05-29',ARM:'2026-05-07',GOOG:'2026-04-29',USO:null};
 
 let KEYS={
-  td:'01f219b1c6dc40a1a5ece8b9e5fcc234',
+  td:'170a58b2c2094e3987e4289f4fe39a08',
   md:'VjFYQWlwZDVCZ2ZIMm9TV3BFcndIeGxZbkdBelNESGNDVzh2czBWaHF1Yz0'
 };
 const TD='https://api.twelvedata.com', MD='https://api.marketdata.app/v1';
@@ -258,7 +258,7 @@ async function tdFetch(ep,params,retries=3){
 
 async function mdFetch(ep, params={}) {
   // Use Netlify proxy to avoid CORS — routes through /.netlify/functions/proxy
-  const url = new URL('/.netlify/functions/proxy', 'https://marketwatchpro.netlify.app');
+  const url = new URL('/.netlify/functions/proxy', window.location.origin);
   url.searchParams.set('path', ep);
   Object.entries(params).forEach(([k,v]) => url.searchParams.set(k, v));
   try {
@@ -273,10 +273,10 @@ function cset(k,v){ cache[k]={v,ts:Date.now()}; return v; }
 async function fetchOne(sym){
   let quote=cget('q_'+sym);
   if(!quote){ const d=await tdFetch('quote',{symbol:sym}); if(d&&d.close) quote=cset('q_'+sym,d); }
-  await sleep(450);
+  await sleep(100);
   let rsi=cget('rsi_'+sym);
   if(!rsi){ const d=await tdFetch('rsi',{symbol:sym,interval:'1day',time_period:10,series_type:'close',outputsize:1}); if(d&&d.values) rsi=cset('rsi_'+sym,parseFloat(d.values[0].rsi)); }
-  await sleep(450);
+  await sleep(100);
   let sma=cget('sma_'+sym);
   if(!sma){ const d=await tdFetch('sma',{symbol:sym,interval:'1day',time_period:200,series_type:'close',outputsize:1}); if(d&&d.values) sma=cset('sma_'+sym,parseFloat(d.values[0].sma)); }
   return{quote,rsi,sma};
@@ -523,7 +523,7 @@ async function startDashboard(){
       if(el) el.outerHTML=buildCard(t,quote,rsi,sma);
     }catch(e){}
     n++;
-    if(n<TICKERS.length) await sleep(2000);
+    if(n<TICKERS.length) await sleep(1000);
   }
   document.getElementById('prog-fill').style.width='100%';
   document.getElementById('load-prog').textContent=`${n}/${TICKERS.length} loaded ✓`;
@@ -553,9 +553,9 @@ async function runAnalyzer(type){
   btn.disabled=true;
   el.innerHTML=`<div class="loading-msg">FETCHING LIVE DATA FOR ${ticker}<br><span style="font-size:12px;color:var(--muted);">Twelve Data: price · RSI(10) · 200 SMA<br>MarketData.app: options chain · Greeks · IV · bid/ask</span></div>`;
   try{
-    const q=await tdFetch('quote',{symbol:ticker}); await sleep(500);
-    const rd=await tdFetch('rsi',{symbol:ticker,interval:'1day',time_period:10,series_type:'close',outputsize:1}); await sleep(500);
-    const sd=await tdFetch('sma',{symbol:ticker,interval:'1day',time_period:200,series_type:'close',outputsize:1}); await sleep(300);
+    const q=await tdFetch('quote',{symbol:ticker}); await sleep(100);
+    const rd=await tdFetch('rsi',{symbol:ticker,interval:'1day',time_period:10,series_type:'close',outputsize:1}); await sleep(100);
+    const sd=await tdFetch('sma',{symbol:ticker,interval:'1day',time_period:200,series_type:'close',outputsize:1}); await sleep(100);
     const chain=type==='leaps'?await getLeapsMD(ticker):await getChainMD(ticker,type==='cc'?'call':'put');
     if(!q||q.status==='error'||!q.close) throw new Error(`Quote failed for ${ticker} — check Twelve Data key`);
     const price=parseFloat(q.close);
@@ -594,7 +594,7 @@ function renderPut(d,el){
   ];
   const fails=checks.filter(c=>c.pass===false).length;
   const vc=fails===0?'good':fails<=2?'warn':'bad';
-  const opraNote=d.chain.length===0?`<div class="info-msg">⚠ No options data — MarketData.app Starter plan requires upgrading to Trader ($30/mo) and signing the OPRA agreement for live options data.</div>`:'';
+  const opraNote=d.chain.length===0?`<div class="info-msg">⚠ No options data returned from MarketData.app — options markets may be closed, or the proxy function needs to be deployed. Try again during market hours (9:30am–4pm ET).</div>`:'';
   el.innerHTML=`
     <div class="result-box ${vc}">
       <div class="result-src">${d.ticker} · $${d.price.toFixed(2)} · TWELVE DATA + MARKETDATA.APP · LIVE</div>
