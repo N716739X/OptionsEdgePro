@@ -492,7 +492,7 @@ function buildCard(t, quote, rsi, sma) {
   return `<div class="stock-card" id="card-${t}" onclick="openDash('${t}')">
     <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">
       <div><div class="ticker-label">${t}</div><div class="co-name">${(CO[t]||'').toUpperCase()}</div></div>
-      <span class="score-badge ${badgeClass}">${score.label} · ${score.type} ${score.total}/3</span>
+      <span class="score-badge ${badgeClass}">${score.label} · ${score.type}</span>
     </div>
     <div class="s-price">${p.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
     <div class="s-change ${up?'up':'dn'}">${up?'+':''}${chg.toFixed(2)} &nbsp; (${up?'+':''}${pct.toFixed(2)}%) &nbsp; ${up?'▲':'▼'}</div>
@@ -552,7 +552,16 @@ function showView(v,btn){
 }
 function buildQt(p){ const c=document.getElementById(p+'-qt'); if(!c) return; const cur=document.getElementById(p+'-input').value.toUpperCase(); c.innerHTML=TICKERS.map(t=>`<button class="qtick ${t===cur?'sel':''}" onclick="selTick('${p}','${t}')">${t}</button>`).join(''); }
 function selTick(p,t){ document.getElementById(p+'-input').value=t; buildQt(p); runAnalyzer(p); }
-function openDash(t){ ['put','cc','leaps'].forEach(v=>{document.getElementById(v+'-input').value=t; document.getElementById(v+'-result').innerHTML='';}); showView('put',document.getElementById('btn-put')); }
+function openDash(t) {
+  const score = calcTradeScore(t);
+  // Route to the analyzer that gave the best score
+  const targetView = score.type === 'CC' ? 'cc' : 'put';
+  ['put','cc','leaps'].forEach(v => {
+    document.getElementById(v+'-input').value = t;
+    document.getElementById(v+'-result').innerHTML = '';
+  });
+  showView(targetView, document.getElementById('btn-' + targetView));
+}
 
 async function runAnalyzer(type){
   const ticker=document.getElementById(type+'-input').value.toUpperCase().trim()||'TSLA';
