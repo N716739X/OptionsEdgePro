@@ -75,7 +75,15 @@ body { background: var(--bg); color: var(--text); font-family: 'Courier New', mo
 .skeleton { background: var(--bg3); border-radius: 3px; animation: shimmer 1.2s infinite; }
 @keyframes shimmer { 0%,100%{opacity:.3}50%{opacity:.7} }
 
-/* ── TICKER MANAGER ── */
+/* ── TIMEFRAME BAR ── */
+.tf-bar { background: var(--bg2); border-bottom: 1px solid var(--border); padding: 8px 18px; display: flex; align-items: center; gap: 10px; }
+.tf-label { color: var(--muted); font-size: 11px; letter-spacing: 1px; }
+.tf-btn { background: none; border: 1px solid var(--border); color: var(--muted); padding: 5px 16px; cursor: pointer; font-family: 'Courier New', monospace; font-size: 12px; font-weight: bold; letter-spacing: 1px; transition: all 0.15s; }
+.tf-btn:hover { border-color: var(--orange); color: var(--orange); }
+.tf-btn.active { border-color: var(--orange); color: #000; background: var(--orange); }
+.tf-note { color: var(--dim); font-size: 11px; margin-left: 6px; }
+
+/* ── SORT BAR ── */
 .ticker-mgr { background: var(--bg3); border-bottom: 1px solid var(--border); padding: 10px 18px; display: none; flex-wrap: wrap; gap: 8px; align-items: center; }
 .ticker-mgr.open { display: flex; }
 .ticker-pill { display: inline-flex; align-items: center; gap: 5px; background: var(--bg2); border: 1px solid var(--border); padding: 4px 10px; font-size: 12px; font-weight: bold; color: var(--text2); border-radius: 2px; }
@@ -176,6 +184,7 @@ body { background: var(--bg); color: var(--text); font-family: 'Courier New', mo
   <span>TWELVE DATA</span><span id="td-status" class="status-warn">● CONNECTING...</span>
   <span style="margin-left:10px;">MARKETDATA.APP</span><span id="md-status" class="status-warn">● READY</span>
   <span id="td-credits" style="margin-left:auto;color:var(--muted);"></span>
+  <span id="refresh-timer" style="color:var(--green);font-size:11px;margin-left:12px;"></span>
   <span id="load-prog" style="color:var(--orange);"></span>
 </div>
 <div class="progress-bar"><div class="progress-fill" id="prog-fill"></div></div>
@@ -185,6 +194,14 @@ body { background: var(--bg); color: var(--text); font-family: 'Courier New', mo
   <div class="key-field"><label>MARKETDATA.APP TOKEN</label><input type="password" id="md-key-input" placeholder="Paste new token..."></div>
   <button class="save-btn" onclick="saveKeys()">SAVE & RECONNECT</button>
   <span class="settings-note">Keys stored in memory only</span>
+</div>
+
+<div class="tf-bar">
+  <span class="tf-label">TIMEFRAME</span>
+  <button class="tf-btn active" id="tf-4h" onclick="setTimeframe('4h',this)">4H</button>
+  <button class="tf-btn" id="tf-12h" onclick="setTimeframe('12h',this)">12H</button>
+  <button class="tf-btn" id="tf-1day" onclick="setTimeframe('1day',this)">1D</button>
+  <span class="tf-note" id="tf-note">RSI(10) · 200 SMA · 4-Hour candles</span>
 </div>
 
 <div class="sort-bar">
@@ -338,14 +355,16 @@ function lsGet(k){ try{ const c=JSON.parse(localStorage.getItem('mw_'+k)); retur
 function cgetWithFallback(k){ return cget(k) || lsGet(k); }
 
 async function fetchOne(sym){
+  const tf = TF_CONFIG[currentTF];
+  const cacheKey = `${currentTF}_`;
   let quote=cgetWithFallback('q_'+sym);
   if(!quote){ const d=await tdFetch('quote',{symbol:sym}); if(d&&d.close) quote=cset('q_'+sym,d); }
   await sleep(100);
-  let rsi=cgetWithFallback('rsi_'+sym);
-  if(!rsi){ const d=await tdFetch('rsi',{symbol:sym,interval:'1day',time_period:10,series_type:'close',outputsize:1}); if(d&&d.values) rsi=cset('rsi_'+sym,parseFloat(d.values[0].rsi)); }
+  let rsi=cgetWithFallback(cacheKey+'rsi_'+sym);
+  if(!rsi){ const d=await tdFetch('rsi',{symbol:sym,interval:tf.interval,time_period:tf.rsiPeriod,series_type:'close',outputsize:1}); if(d&&d.values) rsi=cset(cacheKey+'rsi_'+sym,parseFloat(d.values[0].rsi)); }
   await sleep(100);
-  let sma=cgetWithFallback('sma_'+sym);
-  if(!sma){ const d=await tdFetch('sma',{symbol:sym,interval:'1day',time_period:200,series_type:'close',outputsize:1}); if(d&&d.values) sma=cset('sma_'+sym,parseFloat(d.values[0].sma)); }
+  let sma=cgetWithFallback(cacheKey+'sma_'+sym);
+  if(!sma){ const d=await tdFetch('sma',{symbol:sym,interval:tf.interval,time_period:tf.smaPeriod,series_type:'close',outputsize:1}); if(d&&d.values) sma=cset(cacheKey+'sma_'+sym,parseFloat(d.values[0].sma)); }
   return{quote,rsi,sma};
 }
 
@@ -676,6 +695,24 @@ async function backgroundScoreUpdate() {
 }
 
 let currentSort = 'score';
+let currentTF = '4h'; // active timeframe
+
+const TF_CONFIG = {
+  '4h':  { interval: '4h',   rsiPeriod: 10, smaPeriod: 200, label: 'RSI(10) · 200 SMA · 4-Hour candles' },
+  '12h': { interval: '12h',  rsiPeriod: 10, smaPeriod: 200, label: 'RSI(10) · 200 SMA · 12-Hour candles' },
+  '1day':{ interval: '1day', rsiPeriod: 10, smaPeriod: 200, label: 'RSI(10) · 200 SMA · Daily candles' }
+};
+
+function setTimeframe(tf, btn) {
+  if (currentTF === tf) return;
+  currentTF = tf;
+  document.querySelectorAll('.tf-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('tf-note').textContent = TF_CONFIG[tf].label;
+  // Clear cache so new timeframe data is fetched fresh
+  cache = {}; tickerData = {}; optionsScoreData = {};
+  startDashboard();
+}
 
 function sortDashboard(mode, btn) {
   currentSort = mode;
@@ -848,9 +885,10 @@ async function runAnalyzer(type){
   btn.disabled=true;
   el.innerHTML=`<div class="loading-msg">FETCHING LIVE DATA FOR ${ticker}<br><span style="font-size:12px;color:var(--muted);">Twelve Data: price · RSI(10) · 200 SMA<br>MarketData.app: options chain · Greeks · IV · bid/ask</span></div>`;
   try{
+    const tf = TF_CONFIG[currentTF];
     const q=await tdFetch('quote',{symbol:ticker}); await sleep(100);
-    const rd=await tdFetch('rsi',{symbol:ticker,interval:'1day',time_period:10,series_type:'close',outputsize:1}); await sleep(100);
-    const sd=await tdFetch('sma',{symbol:ticker,interval:'1day',time_period:200,series_type:'close',outputsize:1}); await sleep(100);
+    const rd=await tdFetch('rsi',{symbol:ticker,interval:tf.interval,time_period:tf.rsiPeriod,series_type:'close',outputsize:1}); await sleep(100);
+    const sd=await tdFetch('sma',{symbol:ticker,interval:tf.interval,time_period:tf.smaPeriod,series_type:'close',outputsize:1}); await sleep(100);
     const chain=type==='leaps'?await getLeapsMD(ticker):await getChainMD(ticker,type==='cc'?'call':'put');
     if(!q||q.status==='error'||!q.close) throw new Error(`Quote failed for ${ticker} — check Twelve Data key`);
     const price=parseFloat(q.close);
@@ -998,6 +1036,59 @@ function renderLeaps(d,el){
     ${(r27||r28)?`<div class="checklist"><div class="cl-head">AVAILABLE LEAPS — CALLS (MARKETDATA.APP)</div><table class="opts-table"><thead><tr><th>YEAR</th><th>CONTRACT</th><th>DELTA</th><th>IV</th><th>OI</th><th>BREAKEVEN</th><th>CAGR</th><th>MID</th><th>COST/CONTRACT</th></tr></thead><tbody>${[r27,r28].filter(Boolean).join('')}</tbody></table></div>`:opraNote||'<div class="error-msg">No LEAPS data returned.</div>'}
     ${sm&&sbe?`<div class="setup-box"><div class="box-label">RECOMMENDED SETUP</div><div class="setup-val">${d.ticker} $${ss} Call · ${fmtD(se)} · ${sd2} DTE · ${sdlt?'Δ'+sdlt:'Δ~0.65'} · Mid $${sm.toFixed(2)} (${d.price?(sm/d.price*100).toFixed(1):'—'}%) · Cost $${(sm*100).toLocaleString('en-US',{maximumFractionDigits:0})}/contract · BE: $${sbe} · CAGR ${scagr}%/yr</div></div>`:''}`;
 }
+
+
+// ── Auto-refresh ──
+function isMarketOpen() {
+  const et = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
+  const day = et.getDay();
+  const mins = et.getHours() * 60 + et.getMinutes();
+  return day > 0 && day < 6 && mins >= 570 && mins < 960;
+}
+
+function autoRefresh() {
+  const dashVisible = document.getElementById('view-dashboard').style.display !== 'none';
+  if (dashVisible && isMarketOpen()) {
+    cache = {};
+    startDashboard();
+  }
+}
+
+// ── Auto Refresh ───────────────────────────────────────────
+function isMarketOpen() {
+  const et = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
+  const day = et.getDay();
+  const mins = et.getHours() * 60 + et.getMinutes();
+  return day > 0 && day < 6 && mins >= 570 && mins < 960;
+}
+
+function autoRefresh() {
+  if (!isMarketOpen()) return;
+  // Only refresh if on dashboard view
+  if (document.getElementById('view-dashboard').style.display !== 'none') {
+    cache = {}; tickerData = {}; optionsScoreData = {};
+    startDashboard();
+  }
+}
+
+let refreshCountdown = 300;
+setInterval(() => {
+  const timerEl = document.getElementById('refresh-timer');
+  if (!timerEl) return;
+  if (!isMarketOpen()) {
+    timerEl.textContent = '';
+    refreshCountdown = 300;
+    return;
+  }
+  refreshCountdown--;
+  if (refreshCountdown <= 0) {
+    refreshCountdown = 300;
+    autoRefresh();
+  }
+  const m = Math.floor(refreshCountdown / 60);
+  const s = refreshCountdown % 60;
+  timerEl.textContent = `↺ ${m}:${s.toString().padStart(2,'0')}`;
+}, 1000);
 
 // ── Init ──
 updateClock(); setInterval(updateClock, 1000);
