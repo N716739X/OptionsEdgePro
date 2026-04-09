@@ -1121,12 +1121,6 @@ function renderSynth(d, el) {
       name: 'Bid/Ask Spread — Both Legs ≤ $1.00',
       desc: `Call spread: $${callSpread.toFixed(2)} · Put spread: $${putSpread.toFixed(2)} · Wide spreads cost more to enter and exit`,
       val: `C: $${callSpread.toFixed(2)}\nP: $${putSpread.toFixed(2)}`
-    },
-    {
-      pass: earOK,
-      name: 'No Earnings Before Expiry',
-      desc: d.earnings ? (earOK ? `Earnings ${fmtD(d.earnings)} — after expiry, safe` : `Earnings ${fmtD(d.earnings)} BEFORE expiry — massive risk, avoid`) : 'No earnings date on file',
-      val: d.earnings ? fmtD(d.earnings) : '—'
     }
   ];
 
