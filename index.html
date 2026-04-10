@@ -1259,6 +1259,9 @@ function updateCard(ticker) {
     ? '<span class="' + badgeCls + ' card-badge" style="font-size:9px;padding:1px 6px">' + badgeTxt + '</span> ' + score + '/6'
     : score + '/6 <span class="loading-dot"></span>';
 
+  // Click navigates to best analyzer for this ticker
+  el.style.cursor = 'pointer';
+  el.onclick = function() { navigateToAnalyzer(ticker, d.rsi); };
   el.className = 'card';
   el.innerHTML =
     '<div class="card-header">' +
@@ -1922,6 +1925,40 @@ async function runSynth() {
     setStatus('synth-status', '✗ ' + e.message, 'error');
     document.getElementById('synth-results').innerHTML = '<div class="notice">'+e.message+'</div>';
   } finally { btn.disabled = false; }
+}
+
+// ═══════════════════════════════════════════════════════
+// CARD CLICK — NAVIGATE TO ANALYZER
+// ═══════════════════════════════════════════════════════
+function navigateToAnalyzer(ticker, rsi) {
+  // Pick best analyzer based on RSI:
+  // RSI < 40  → Cash-Secured Put
+  // RSI > 60  → Covered Call
+  // Otherwise → Cash-Secured Put (default)
+  var tabId, inputId;
+  if (!isNaN(rsi) && rsi > 60) {
+    tabId   = 'cc';
+    inputId = 'cc-ticker';
+  } else {
+    tabId   = 'put';
+    inputId = 'put-ticker';
+  }
+
+  // Switch tab
+  document.querySelectorAll('.tab').forEach(function(t) { t.classList.remove('active'); });
+  document.querySelectorAll('.panel').forEach(function(p) { p.classList.remove('active'); });
+  document.querySelector('.tab[data-tab="' + tabId + '"]').classList.add('active');
+  document.getElementById('panel-' + tabId).classList.add('active');
+
+  // Pre-fill ticker
+  document.getElementById(inputId).value = ticker;
+
+  // Auto-run analysis
+  if (tabId === 'put') runPut();
+  else if (tabId === 'cc') runCC();
+
+  // Scroll to top
+  window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
 // ═══════════════════════════════════════════════════════
