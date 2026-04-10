@@ -1038,15 +1038,48 @@ async function fetchPriceData(ticker) {
   return { price, change, changePct, week52H, week52L, rsi, sma200 };
 }
 
-async function fetchIVRank(ticker) {
+// IV Rank derived from chain IV values (ATM IV vs chain min/max)
+// Returns { ivRank, atmIV } or null
+async function fetchIVData(ticker, expiration) {
   try {
-    var data = await fetchMD('options/ivrank/' + ticker + '/');
-    if (data && data.ivRank && data.ivRank[0] !== undefined) {
-      var raw = parseFloat(data.ivRank[0]);
-      return raw <= 1 ? raw * 100 : raw;
+    // Use put chain to get IV values across strikes
+    var chain = await fetchMD('options/chain/' + ticker + '/', {
+      expiration: expiration,
+      side: 'put'
+    });
+    if (!chain || !chain.iv || chain.iv.length === 0) return null;
+
+    // Collect valid IV values
+    var ivs = [];
+    for (var i = 0; i < chain.iv.length; i++) {
+      var v = chain.iv[i];
+      if (v !== null && v !== undefined && !isNaN(v) && v > 0) {
+        ivs.push(v <= 1 ? v * 100 : v); // normalize to percentage
+      }
     }
-    return null;
+    if (ivs.length === 0) return null;
+
+    // ATM IV = median of middle third of strikes (most liquid area)
+    ivs.sort(function(a, b) { return a - b; });
+    var mid = Math.floor(ivs.length / 2);
+    var atmIV = ivs[mid];
+
+    var ivMin = ivs[0];
+    var ivMax = ivs[ivs.length - 1];
+    var ivRange = ivMax - ivMin;
+
+    // IV Rank = position of ATM IV within chain's IV range (0-100)
+    var ivRank = ivRange > 0 ? ((atmIV - ivMin) / ivRange) * 100 : 50;
+    ivRank = Math.min(100, Math.max(0, ivRank));
+
+    return { ivRank: ivRank, atmIV: atmIV };
   } catch(e) { return null; }
+}
+
+// Legacy wrapper — returns just ivRank number or null
+async function fetchIVRank(ticker, expiration) {
+  var result = await fetchIVData(ticker, expiration);
+  return result ? result.ivRank : null;
 }
 
 async function fetchExpirations(ticker) {
@@ -1135,11 +1168,8 @@ async function fetchTickerData(ticker) {
     updateCard(ticker);
 
     // Phase 2: options data (slower)
-    var [ivRank, expirations] = await Promise.all([
-      fetchIVRank(ticker),
-      fetchExpirations(ticker).catch(function() { return []; })
-    ]);
-
+    // Step 1: get expirations
+    var expirations = await fetchExpirations(ticker).catch(function() { return []; });
     var bestExpiry = findBestExpiry(expirations, 30, 50);
     if (!bestExpiry) bestExpiry = findBestExpiry(expirations, 25, 60);
 
@@ -1149,11 +1179,17 @@ async function fetchTickerData(ticker) {
     var bestPremium = null;
     var bestStrike  = null;
     var bestDelta   = null;
+    var ivRank      = null;
 
     if (bestExpiry) {
       try {
-        // Try both put and call to get best score
+        // Fetch put chain — use it for both IV rank and best strike
         var putChain = await fetchChain(ticker, bestExpiry, 'put');
+
+        // Derive IV rank from chain
+        var ivResult = await fetchIVData(ticker, bestExpiry);
+        if (ivResult) ivRank = ivResult.ivRank;
+
         if (putChain && putChain.strike) {
           var bestDiff = Infinity;
           for (var i = 0; i < putChain.strike.length; i++) {
@@ -1484,9 +1520,6 @@ async function runPut() {
     setStatus('put-status', spinner() + 'Price & indicators…', 'loading');
     var pd = await fetchPriceData(ticker);
 
-    setStatus('put-status', spinner() + 'IV Rank…', 'loading');
-    var ivRank = await fetchIVRank(ticker);
-
     setStatus('put-status', spinner() + 'Expirations…', 'loading');
     var expirations = await fetchExpirations(ticker);
     var bestExpiry  = findBestExpiry(expirations, 30, 50) || findBestExpiry(expirations, 25, 60);
@@ -1495,8 +1528,13 @@ async function runPut() {
 
     var earningsRisk = earningsBeforeExpiry(ticker, bestExpiry);
 
-    setStatus('put-status', spinner() + 'Put chain…', 'loading');
+    setStatus('put-status', spinner() + 'Put chain & IV…', 'loading');
     var chain = await fetchChain(ticker, bestExpiry, 'put');
+
+    // IV Rank derived from chain IV distribution
+    var ivResult = await fetchIVData(ticker, bestExpiry);
+    var ivRank = ivResult ? ivResult.ivRank : null;
+    var atmIV  = ivResult ? ivResult.atmIV  : null;
 
     var bestStrike = null, bestDelta = null, bestPremium = null;
     if (chain && chain.strike) {
@@ -1563,9 +1601,6 @@ async function runCC() {
     setStatus('cc-status', spinner() + 'Price & indicators…', 'loading');
     var pd = await fetchPriceData(ticker);
 
-    setStatus('cc-status', spinner() + 'IV Rank…', 'loading');
-    var ivRank = await fetchIVRank(ticker);
-
     setStatus('cc-status', spinner() + 'Expirations…', 'loading');
     var expirations = await fetchExpirations(ticker);
     var bestExpiry  = findBestExpiry(expirations, 30, 50) || findBestExpiry(expirations, 25, 60);
@@ -1574,8 +1609,13 @@ async function runCC() {
 
     var earningsRisk = earningsBeforeExpiry(ticker, bestExpiry);
 
-    setStatus('cc-status', spinner() + 'Call chain…', 'loading');
+    setStatus('cc-status', spinner() + 'Call chain & IV…', 'loading');
     var chain = await fetchChain(ticker, bestExpiry, 'call');
+
+    // IV Rank derived from chain IV distribution (use put chain for IV data)
+    var ivResult = await fetchIVData(ticker, bestExpiry);
+    var ivRank = ivResult ? ivResult.ivRank : null;
+    var atmIV  = ivResult ? ivResult.atmIV  : null;
 
     var bestStrike = null, bestDelta = null, bestPremium = null;
     if (chain && chain.strike) {
@@ -1644,17 +1684,6 @@ async function runLeaps() {
     setStatus('leaps-status', spinner() + 'Price & indicators…', 'loading');
     var pd = await fetchPriceData(ticker);
 
-    setStatus('leaps-status', spinner() + 'IV Rank…', 'loading');
-    var ivRank    = await fetchIVRank(ticker);
-    var currentIV = null;
-    try {
-      var ivData = await fetchMD('options/ivrank/' + ticker + '/');
-      if (ivData && ivData.iv && ivData.iv[0] !== undefined) {
-        var rawIV = parseFloat(ivData.iv[0]);
-        currentIV = rawIV <= 1 ? rawIV * 100 : rawIV;
-      }
-    } catch(e) { /* ignore */ }
-
     setStatus('leaps-status', spinner() + 'Expirations…', 'loading');
     var expirations   = await fetchExpirations(ticker);
     var leapsExpiries = expirations.filter(function(e) { return dteFromStr(e) >= 540; }).slice(0,4);
@@ -1663,10 +1692,16 @@ async function runLeaps() {
     }
     if (leapsExpiries.length === 0) throw new Error('No LEAPS expirations found (18+ months).');
 
-    setStatus('leaps-status', spinner() + 'LEAPS chains…', 'loading');
+    setStatus('leaps-status', spinner() + 'LEAPS chains & IV…', 'loading');
     var chains = await Promise.all(leapsExpiries.map(function(exp) {
       return fetchChain(ticker, exp, 'call').catch(function() { return null; });
     }));
+
+    // IV from nearest standard expiry (30-50 DTE) for more reliable IV Rank
+    var nearExpiry = findBestExpiry(expirations, 30, 60);
+    var ivResult   = nearExpiry ? await fetchIVData(ticker, nearExpiry) : null;
+    var ivRank     = ivResult ? ivResult.ivRank : null;
+    var currentIV  = ivResult ? ivResult.atmIV  : null;
 
     // Grade from first expiry
     var repChain = chains[0];
