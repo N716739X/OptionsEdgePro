@@ -500,8 +500,8 @@ async function fetchMD(endpoint, params) {
 async function fetchPriceData(ticker) {
   var [quoteData, rsiData, smaData] = await Promise.all([
     fetchTD('quote', { symbol: ticker }),
-    fetchTD('rsi', { symbol: ticker, interval: 'daily', time_period: 10, outputsize: 1 }),
-    fetchTD('sma', { symbol: ticker, interval: 'daily', time_period: 200, outputsize: 1 })
+    fetchTD('rsi', { symbol: ticker, interval: '1day', time_period: 10, outputsize: 1 }),
+    fetchTD('sma', { symbol: ticker, interval: '1day', time_period: 200, outputsize: 1 })
   ]);
 
   var price = parseFloat(quoteData.close || quoteData.price);
