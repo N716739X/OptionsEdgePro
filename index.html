@@ -905,6 +905,7 @@ document.querySelectorAll('.tab').forEach(function(tab) {
     document.querySelectorAll('.panel').forEach(function(p) { p.classList.remove('active'); });
     tab.classList.add('active');
     document.getElementById('panel-' + tab.dataset.tab).classList.add('active');
+    renderTickerStrip(); // update strip labels based on active tab
   });
 });
 
@@ -2110,12 +2111,14 @@ var activeStripTicker = null;
 
 function renderTickerStrip() {
   var strip = document.getElementById('ticker-strip');
+  var activeTab = document.querySelector('.tab.active');
+  var onDashboard = !activeTab || activeTab.dataset.tab === 'dashboard';
   var html  = '<span class="strip-label">Watchlist:</span>';
   tickers.forEach(function(t) {
     var d     = cardData[t];
-    var grade = (d && d.phase >= 2) ? scoreToGrade(d.score, d.phase) : '';
-    var strat = (d && d.phase >= 2) ? d.strategy : '';
-    var gradeStyle = grade ? ' style="color:var(--grade-' + grade + ')"' : '';
+    var grade = (onDashboard && d && d.phase >= 2) ? scoreToGrade(d.score, d.phase) : '';
+    var strat = (onDashboard && d && d.phase >= 2) ? d.strategy : '';
+    var gradeStyle = grade ? ' style="color:var(--grade-' + grade.toLowerCase() + ')"' : '';
     var isActive   = t === activeStripTicker;
     html += '<div class="ticker-chip' + (isActive ? ' active' : '') + '" onclick="stripSelect(\'' + t + '\')">'
       + t
