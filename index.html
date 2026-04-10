@@ -1603,9 +1603,10 @@ function buildChainTable(chain, targetDelta, price, isPut) {
 // ═══════════════════════════════════════════════════════
 // PUT ANALYZER
 // ═══════════════════════════════════════════════════════
-async function runPut() {
-  var ticker = document.getElementById('put-ticker').value.trim().toUpperCase();
+async function runPut(forceTicker) {
+  var ticker = forceTicker || document.getElementById('put-ticker').value.trim().toUpperCase();
   if (!ticker) return;
+  var inp = document.getElementById('put-ticker'); if (inp) inp.value = ticker;
   var btn = document.getElementById('put-btn');
   if (btn) btn.disabled = true;
   document.getElementById('put-results').innerHTML = '';
@@ -1684,9 +1685,10 @@ async function runPut() {
 // ═══════════════════════════════════════════════════════
 // CC ANALYZER
 // ═══════════════════════════════════════════════════════
-async function runCC() {
-  var ticker = document.getElementById('cc-ticker').value.trim().toUpperCase();
+async function runCC(forceTicker) {
+  var ticker = forceTicker || document.getElementById('cc-ticker').value.trim().toUpperCase();
   if (!ticker) return;
+  var inp = document.getElementById('cc-ticker'); if (inp) inp.value = ticker;
   var btn = document.getElementById('cc-btn');
   if (btn) btn.disabled = true;
   document.getElementById('cc-results').innerHTML = '';
@@ -1767,8 +1769,8 @@ async function runCC() {
 // ═══════════════════════════════════════════════════════
 // LEAPS ANALYZER
 // ═══════════════════════════════════════════════════════
-async function runLeaps() {
-  var ticker = document.getElementById('leaps-ticker').value.trim().toUpperCase();
+async function runLeaps(forceTicker) {
+  var ticker = forceTicker || document.getElementById('leaps-ticker').value.trim().toUpperCase();
   if (!ticker) return;
   var btn = document.getElementById('leaps-btn');
   if (btn) btn.disabled = true;
@@ -1917,8 +1919,8 @@ async function runLeaps() {
 // ═══════════════════════════════════════════════════════
 // SYNTHETIC LONG ANALYZER
 // ═══════════════════════════════════════════════════════
-async function runSynth() {
-  var ticker = document.getElementById('synth-ticker').value.trim().toUpperCase();
+async function runSynth(forceTicker) {
+  var ticker = forceTicker || document.getElementById('synth-ticker').value.trim().toUpperCase();
   if (!ticker) return;
   var btn = document.getElementById('synth-btn');
   if (btn) btn.disabled = true;
@@ -2101,11 +2103,11 @@ function stripSelect(ticker) {
     return;
   }
 
-  // Run the correct analyzer
-  if (tabId === 'put')   runPut();
-  else if (tabId === 'cc')    runCC();
-  else if (tabId === 'leaps') runLeaps();
-  else if (tabId === 'synth') runSynth();
+  // Run the correct analyzer — pass ticker directly
+  if (tabId === 'put')   runPut(ticker);
+  else if (tabId === 'cc')    runCC(ticker);
+  else if (tabId === 'leaps') runLeaps(ticker);
+  else if (tabId === 'synth') runSynth(ticker);
 }
 
 // Re-render strip whenever tickers or card data updates
@@ -2147,9 +2149,9 @@ function navigateToAnalyzer(ticker, strategy) {
   // Pre-fill ticker
   document.getElementById(inputId).value = ticker;
 
-  // Auto-run analysis
-  if (tabId === 'put') runPut();
-  else if (tabId === 'cc') runCC();
+  // Auto-run analysis — pass ticker directly to avoid hidden input timing issues
+  if (tabId === 'put') runPut(ticker);
+  else if (tabId === 'cc') runCC(ticker);
 
   // Scroll to top
   window.scrollTo({ top: 0, behavior: 'smooth' });
