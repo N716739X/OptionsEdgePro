@@ -1607,7 +1607,7 @@ async function runPut() {
   var ticker = document.getElementById('put-ticker').value.trim().toUpperCase();
   if (!ticker) return;
   var btn = document.getElementById('put-btn');
-  btn.disabled = true;
+  if (btn) btn.disabled = true;
   document.getElementById('put-results').innerHTML = '';
   try {
     setStatus('put-status', spinner() + 'Price & indicators…', 'loading');
@@ -1678,7 +1678,7 @@ async function runPut() {
   } catch(e) {
     setStatus('put-status', '✗ ' + e.message, 'error');
     document.getElementById('put-results').innerHTML = '<div class="notice">'+e.message+'</div>';
-  } finally { btn.disabled = false; }
+  } finally { if (btn) btn.disabled = false; }
 }
 
 // ═══════════════════════════════════════════════════════
@@ -1688,7 +1688,7 @@ async function runCC() {
   var ticker = document.getElementById('cc-ticker').value.trim().toUpperCase();
   if (!ticker) return;
   var btn = document.getElementById('cc-btn');
-  btn.disabled = true;
+  if (btn) btn.disabled = true;
   document.getElementById('cc-results').innerHTML = '';
   try {
     setStatus('cc-status', spinner() + 'Price & indicators…', 'loading');
@@ -1761,7 +1761,7 @@ async function runCC() {
   } catch(e) {
     setStatus('cc-status', '✗ ' + e.message, 'error');
     document.getElementById('cc-results').innerHTML = '<div class="notice">'+e.message+'</div>';
-  } finally { btn.disabled = false; }
+  } finally { if (btn) btn.disabled = false; }
 }
 
 // ═══════════════════════════════════════════════════════
@@ -1771,7 +1771,7 @@ async function runLeaps() {
   var ticker = document.getElementById('leaps-ticker').value.trim().toUpperCase();
   if (!ticker) return;
   var btn = document.getElementById('leaps-btn');
-  btn.disabled = true;
+  if (btn) btn.disabled = true;
   document.getElementById('leaps-results').innerHTML = '';
   try {
     setStatus('leaps-status', spinner() + 'Price & indicators…', 'loading');
@@ -1911,7 +1911,7 @@ async function runLeaps() {
   } catch(e) {
     setStatus('leaps-status', '✗ ' + e.message, 'error');
     document.getElementById('leaps-results').innerHTML = '<div class="notice">'+e.message+'</div>';
-  } finally { btn.disabled = false; }
+  } finally { if (btn) btn.disabled = false; }
 }
 
 // ═══════════════════════════════════════════════════════
@@ -1921,7 +1921,7 @@ async function runSynth() {
   var ticker = document.getElementById('synth-ticker').value.trim().toUpperCase();
   if (!ticker) return;
   var btn = document.getElementById('synth-btn');
-  btn.disabled = true;
+  if (btn) btn.disabled = true;
   document.getElementById('synth-results').innerHTML = '';
   try {
     setStatus('synth-status', spinner() + 'Price & indicators…', 'loading');
@@ -2052,7 +2052,7 @@ async function runSynth() {
   } catch(e) {
     setStatus('synth-status', '✗ ' + e.message, 'error');
     document.getElementById('synth-results').innerHTML = '<div class="notice">'+e.message+'</div>';
-  } finally { btn.disabled = false; }
+  } finally { if (btn) btn.disabled = false; }
 }
 
 // ═══════════════════════════════════════════════════════
