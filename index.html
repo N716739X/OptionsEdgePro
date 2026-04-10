@@ -382,7 +382,6 @@
 <script>
 // ─── CONFIG ──────────────────────────────────────────────────────────────────
 const TD_KEY   = '170a58b2c2094e3987e4289f4fe39a08';
-const MD_TOKEN = 'VjFYQWlwZDVCZ2ZIMm9TV3BFcndIeGxZbkdBelNESGNDVzh2czBWaHF1Yz0';
 const CF_PROXY = 'https://marketwatchpro.mattdavis-7f2.workers.dev/';
 
 // ─── TABS ─────────────────────────────────────────────────────────────────────
@@ -479,14 +478,15 @@ async function fetchTD(endpoint, params) {
 }
 
 async function fetchMD(endpoint, params) {
+  // Worker uses 'path' param and BASE = 'https://api.marketdata.app/v1'
+  // so strip leading /v1/ from endpoint before passing as path
+  var path = endpoint.replace(/^\/v1\//, '');
   var url = new URL(CF_PROXY);
-  url.searchParams.set('endpoint', endpoint);
+  url.searchParams.set('path', path);
   if (params) {
     Object.keys(params).forEach(function(k) { url.searchParams.set(k, params[k]); });
   }
-  var r = await fetch(url.toString(), {
-    headers: { 'Authorization': 'Bearer ' + MD_TOKEN }
-  });
+  var r = await fetch(url.toString());
   if (!r.ok) {
     var errText = await r.text();
     throw new Error('MarketData HTTP ' + r.status + ': ' + errText);
