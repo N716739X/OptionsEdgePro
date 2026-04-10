@@ -1125,7 +1125,7 @@ function buildSkeletonCard(ticker) {
     '</div>' +
     '<div style="height:60px;background:var(--surface2);border-radius:6px;margin-bottom:8px"></div>' +
     '<div class="criteria-row">' +
-      ['IV','RSI','EARN','PREM','DTE','STRIKE'].map(function(l) {
+      ['IV','RSI','EARN','PREM','DTE','DELTA'].map(function(l) {
         return '<div class="mini-box mini-na"><span class="mini-label">' + l + '</span>' +
                '<span class="mini-val">—</span></div>';
       }).join('') +
@@ -1352,7 +1352,7 @@ function updateCard(ticker) {
       miniBox('EARN',   d.c3, earnDisp) +
       miniBox('PREM',   d.c4, premDisp) +
       miniBox('DTE',    d.c6, dteDisp) +
-      miniBox('STRIKE', d.c5, strkDisp) +
+      miniBox('DELTA', d.c5, strkDisp) +
     '</div>' +
     '<div class="card-footer">' +
       '<span class="score-text">' + scoreText + '</span>' +
