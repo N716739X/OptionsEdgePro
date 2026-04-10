@@ -609,6 +609,32 @@ header {
 .info-item .info-label { font-size:9px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:2px; }
 .info-item .info-val   { font-size:14px;font-weight:700;color:var(--accent); }
 
+/* Trade Summary Box */
+.trade-summary {
+  background: var(--surface2);
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  padding: 14px 16px;
+  margin-bottom: 16px;
+  box-shadow: 0 0 12px rgba(0,255,255,0.08);
+}
+.trade-summary h4 {
+  font-size: 10px; font-weight: 800; color: var(--accent);
+  text-transform: uppercase; letter-spacing: 1px;
+  margin: 0 0 10px 0;
+}
+.trade-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 10px 16px;
+}
+.ts-item .ts-label { font-size:9px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:3px; }
+.ts-item .ts-val   { font-size:16px;font-weight:800; }
+.ts-item .ts-note  { font-size:9px;color:var(--text-muted);margin-top:2px; }
+.ts-gain  { color: var(--green); }
+.ts-loss  { color: var(--red); }
+.ts-neutral { color: var(--accent); }
+
 /* Chain Table */
 .chain-section h3 { font-size:11px;font-weight:800;color:var(--text-muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px; }
 .chain-table-wrap { overflow-x:auto;border-radius:8px;border:1px solid var(--border);margin-bottom:16px; }
@@ -1664,6 +1690,26 @@ async function runPut(forceTicker) {
       '<div class="info-item"><div class="info-label">Prem %</div><div class="info-val">' + (premPct !== null ? fmt(premPct,2) + '%' : '—') + '</div></div>' +
       '<div class="info-item"><div class="info-label">IV Rank</div><div class="info-val">' + (ivRank !== null ? fmt(ivRank,1) + '%' : '—') + '</div></div>' +
     '</div>';
+    // Trade Summary calculations
+    var maxGain    = bestPremium ? bestPremium * 100 : null;
+    var maxLoss    = (bestStrike && bestPremium) ? (bestStrike - bestPremium) * 100 : null;
+    var breakeven  = (bestStrike && bestPremium) ? bestStrike - bestPremium : null;
+    var roc        = (maxGain && assignCap) ? (maxGain / assignCap * 100) : null;
+    var annReturn  = (roc && dte) ? (roc * (365 / dte)) : null;
+
+    function tsItem(label, val, cls, note) {
+      return '<div class="ts-item"><div class="ts-label">' + label + '</div>' +
+        '<div class="ts-val ' + cls + '">' + val + '</div>' +
+        (note ? '<div class="ts-note">' + note + '</div>' : '') + '</div>';
+    }
+    html += '<div class="trade-summary"><h4>Trade Summary — 1 Contract (100 shares)</h4><div class="trade-summary-grid">' +
+      tsItem('Max Gain',        maxGain  ? '$' + fmt(maxGain,2)  : '—', 'ts-gain',    'Premium collected') +
+      tsItem('Max Loss',        maxLoss  ? '$' + fmt(maxLoss,2)  : '—', 'ts-loss',    'If stock goes to $0') +
+      tsItem('Breakeven',       breakeven ? fmtDollar(breakeven) : '—', 'ts-neutral', 'Price at expiry') +
+      tsItem('Return on Capital', roc    ? fmt(roc,2) + '%'      : '—', 'ts-neutral', 'Per contract') +
+      tsItem('Annualized Return', annReturn ? fmt(annReturn,1) + '%' : '—', 'ts-neutral', 'Projected annual') +
+    '</div></div>';
+
     html += '<div class="scorecard"><h3>Cash-Secured Put — Score</h3><div class="criteria-list">';
     html += critRow(1,'IV Rank > 90%', c1, ivRank !== null ? fmt(ivRank,1)+'%' : 'N/A');
     html += critRow(2,'RSI(10) < 30 (Oversold)', c2, fmt(pd.rsi,1));
