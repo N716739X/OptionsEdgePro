@@ -746,7 +746,7 @@ tbody td:first-child { text-align:left; }
     <div class="market-status closed" id="mkt-status">CLOSED</div>
     <button class="hbtn" onclick="toggleTheme()">◑ THEME</button>
     <button class="hbtn" onclick="openTickerModal()">⚙ TICKERS</button>
-    <button class="hbtn" onclick="refreshDashboard()">↺ REFRESH</button>
+    <button class="hbtn" onclick="refreshDashboard(true)">↺ REFRESH</button>
   </div>
 </header>
 
@@ -1098,7 +1098,45 @@ async function fetchTD(endpoint, params) {
   return data;
 }
 
+// ═══════════════════════════════════════════════════════
+// MARKETDATA CACHE (15-minute TTL in localStorage)
+// ═══════════════════════════════════════════════════════
+var MD_CACHE_TTL = 15 * 60 * 1000; // 15 minutes in ms
+
+function mdCacheKey(path, params) {
+  var key = 'owp_md_' + path;
+  if (params) key += '_' + Object.keys(params).sort().map(function(k){ return k+'='+params[k]; }).join('&');
+  return key;
+}
+
+function mdCacheGet(key) {
+  try {
+    var raw = localStorage.getItem(key);
+    if (!raw) return null;
+    var entry = JSON.parse(raw);
+    if (Date.now() - entry.ts > MD_CACHE_TTL) { localStorage.removeItem(key); return null; }
+    return entry.data;
+  } catch(e) { return null; }
+}
+
+function mdCacheSet(key, data) {
+  try { localStorage.setItem(key, JSON.stringify({ ts: Date.now(), data: data })); } catch(e) {}
+}
+
+function clearMDCache() {
+  try {
+    Object.keys(localStorage).forEach(function(k) {
+      if (k.startsWith('owp_md_')) localStorage.removeItem(k);
+    });
+  } catch(e) {}
+}
+
 async function fetchMD(path, params) {
+  // Check cache first
+  var cacheKey = mdCacheKey(path, params);
+  var cached = mdCacheGet(cacheKey);
+  if (cached) return cached;
+
   // Symbol goes IN the path: options/expirations/TSLA/
   // Worker BASE = https://api.marketdata.app/v1, so no /v1/ prefix here
   var url = new URL(CF_PROXY);
@@ -1113,6 +1151,9 @@ async function fetchMD(path, params) {
   }
   var data = await r.json();
   if (data.s === 'no_data') throw new Error('No options data available.');
+
+  // Store in cache
+  mdCacheSet(cacheKey, data);
   return data;
 }
 
@@ -1279,12 +1320,24 @@ async function fetchTickerData(ticker) {
 
     if (bestExpiry) {
       try {
-        // Fetch put chain — use it for both IV rank and best strike
+        // Fetch put chain — reuse it for both IV rank and best strike (avoid double call)
         var putChain = await fetchChain(ticker, bestExpiry, 'put');
 
-        // Derive IV rank from chain
-        var ivResult = await fetchIVData(ticker, bestExpiry);
-        if (ivResult) ivRank = ivResult.ivRank;
+        // Derive IV rank directly from the chain we already fetched
+        if (putChain && putChain.iv && putChain.iv.length > 0) {
+          var ivs = [];
+          for (var ii = 0; ii < putChain.iv.length; ii++) {
+            var v = putChain.iv[ii];
+            if (v !== null && v !== undefined && !isNaN(v) && v > 0)
+              ivs.push(v <= 1 ? v * 100 : v);
+          }
+          if (ivs.length > 0) {
+            ivs.sort(function(a,b){return a-b;});
+            var atmIV = ivs[Math.floor(ivs.length/2)];
+            var ivRange = ivs[ivs.length-1] - ivs[0];
+            ivRank = ivRange > 0 ? Math.min(100, Math.max(0, (atmIV - ivs[0]) / ivRange * 100)) : 50;
+          }
+        }
 
         if (putChain && putChain.strike) {
           var bestDiff = Infinity;
@@ -1506,14 +1559,15 @@ function renderSorted() {
 // ═══════════════════════════════════════════════════════
 // DASHBOARD — REFRESH
 // ═══════════════════════════════════════════════════════
-function refreshDashboard() {
+function refreshDashboard(forceRefresh) {
+  if (forceRefresh) clearMDCache(); // manual refresh clears cache
   cardData = {};
   renderSkeletons();
-  // Stagger fetches to avoid rate limits
+  // Stagger fetches to avoid rate limits (600ms apart)
   tickers.forEach(function(ticker, idx) {
     setTimeout(function() {
       fetchTickerData(ticker);
-    }, idx * 300);
+    }, idx * 600);
   });
 }
 
@@ -2168,8 +2222,8 @@ updateCard = function(ticker) {
 
 // Also re-render when tickers list changes
 var _origRefreshDashboard = refreshDashboard;
-refreshDashboard = function() {
-  _origRefreshDashboard();
+refreshDashboard = function(forceRefresh) {
+  _origRefreshDashboard(forceRefresh);
   renderTickerStrip();
 };
 
