@@ -672,8 +672,8 @@ tbody td:first-child { text-align:left; }
   <div class="dash-toolbar">
     <span class="toolbar-label">Timeframe:</span>
     <div class="btn-group" id="tf-group">
-      <button class="tgl" data-tf="4h" onclick="setTimeframe('4h')">4H</button>
-      <button class="tgl active" data-tf="1day" onclick="setTimeframe('1day')">1D</button>
+      <button class="tgl active" data-tf="4h" onclick="setTimeframe('4h')">4H</button>
+      <button class="tgl" data-tf="1day" onclick="setTimeframe('1day')">1D</button>
       <button class="tgl" data-tf="1week" onclick="setTimeframe('1week')">1W</button>
     </div>
     <div class="toolbar-sep"></div>
@@ -778,7 +778,7 @@ const EARNINGS = {
 // STATE
 // ═══════════════════════════════════════════════════════
 var currentTheme    = localStorage.getItem('owp-theme')    || 'cyberpunk';
-var currentTF       = localStorage.getItem('owp-tf')       || '1day';
+var currentTF       = localStorage.getItem('owp-tf')       || '4h';
 var currentSort     = localStorage.getItem('owp-sort')     || 'score';
 var tickers         = JSON.parse(localStorage.getItem('owp-tickers') || 'null') || DEFAULT_TICKERS.slice();
 var cardData        = {}; // ticker -> data object
@@ -1210,18 +1210,40 @@ async function fetchTickerData(ticker) {
     var premPct  = (bestPremium && pd.price) ? (bestPremium / pd.price * 100) : null;
     var deltaOk  = bestDelta !== null && Math.abs(bestDelta) >= 0.15 && Math.abs(bestDelta) <= 0.25;
 
-    // Score for PUT criteria (primary)
-    var c1 = ivRank !== null ? ivRank > 90 : null;
-    var c2 = pd.rsi < 30;
-    var c3 = earningsRisk === null ? null : !earningsRisk;
-    var c4 = premPct !== null ? premPct > 2 : null;
-    var c5 = bestStrike !== null;
-    var c6 = dte !== null ? (dte >= 30 && dte <= 45) : null;
+    // Score PUT criteria
+    var put_c1 = ivRank !== null ? ivRank > 90 : null;
+    var put_c2 = pd.rsi < 30;
+    var put_c3 = earningsRisk === null ? null : !earningsRisk;
+    var put_c4 = premPct !== null ? premPct > 2 : null;
+    var put_c5 = deltaOk;
+    var put_c6 = dte !== null ? (dte >= 30 && dte <= 45) : null;
+    var putScore = [put_c1,put_c2,put_c3,put_c4,put_c5,put_c6].filter(function(x){return x===true;}).length;
 
-    var criteria = [c1, c2, c3, c4, c5, c6];
-    var score    = criteria.filter(function(c) { return c === true; }).length;
+    // Score CC criteria (same chain data, different RSI rule)
+    var cc_c1 = ivRank !== null ? ivRank > 90 : null;
+    var cc_c2 = pd.rsi > 65;
+    var cc_c3 = earningsRisk === null ? null : !earningsRisk;
+    var cc_c4 = premPct !== null ? premPct >= 2 : null;
+    var cc_c5 = deltaOk;
+    var cc_c6 = dte !== null ? (dte >= 30 && dte <= 45) : null;
+    var ccScore = [cc_c1,cc_c2,cc_c3,cc_c4,cc_c5,cc_c6].filter(function(x){return x===true;}).length;
+
+    // Pick best strategy
+    var strategy, score, c1, c2, c3, c4, c5, c6;
+    if (ccScore >= putScore) {
+      strategy = 'CC';
+      score = ccScore;
+      c1 = cc_c1; c2 = cc_c2; c3 = cc_c3; c4 = cc_c4; c5 = cc_c5; c6 = cc_c6;
+    } else {
+      strategy = 'PUT';
+      score = putScore;
+      c1 = put_c1; c2 = put_c2; c3 = put_c3; c4 = put_c4; c5 = put_c5; c6 = put_c6;
+    }
 
     d.phase      = 2;
+    d.strategy   = strategy;
+    d.putScore   = putScore;
+    d.ccScore    = ccScore;
     d.ivRank     = ivRank;
     d.expiry     = bestExpiry;
     d.dte        = dte;
@@ -1258,8 +1280,10 @@ function updateCard(ticker) {
 
   var score     = d.score !== null ? d.score : 0;
   var grade     = scoreToGrade(score, d.phase);
+  var strategy  = d.strategy || 'PUT'; // PUT or CC
   var badgeCls  = score >= 5 ? 'badge-ideal' : score >= 3 ? 'badge-watch' : 'badge-notready';
-  var badgeTxt  = score >= 5 ? 'IDEAL' : score >= 3 ? 'WATCH' : 'NOT READY';
+  var badgeTxt  = (score >= 5 ? 'IDEAL' : score >= 3 ? 'WATCH' : 'NOT READY') +
+                  (d.phase >= 2 ? ' · ' + strategy : '');
 
   var chgColor  = d.change >= 0 ? 'up' : 'down';
   var chgSign   = d.change >= 0 ? '+' : '';
@@ -1297,13 +1321,13 @@ function updateCard(ticker) {
 
   // Click navigates to best analyzer for this ticker
   el.style.cursor = 'pointer';
-  el.onclick = function() { navigateToAnalyzer(ticker, d.rsi); };
+  el.onclick = function() { navigateToAnalyzer(ticker, d.strategy); };
   el.className = 'card';
   el.innerHTML =
     '<div class="card-header">' +
       '<div>' +
         '<div class="card-ticker">' + ticker + '</div>' +
-        '<div class="card-name">' + (d.expiry || '') + '</div>' +
+        '<div class="card-name">' + (d.phase >= 2 ? (strategy + ' · ') : '') + (d.expiry || '') + '</div>' +
       '</div>' +
       '<div class="grade-box grade-' + grade + '">' + grade + '</div>' +
     '</div>' +
@@ -1965,13 +1989,10 @@ async function runSynth() {
 // ═══════════════════════════════════════════════════════
 // CARD CLICK — NAVIGATE TO ANALYZER
 // ═══════════════════════════════════════════════════════
-function navigateToAnalyzer(ticker, rsi) {
-  // Pick best analyzer based on RSI:
-  // RSI < 40  → Cash-Secured Put
-  // RSI > 60  → Covered Call
-  // Otherwise → Cash-Secured Put (default)
+function navigateToAnalyzer(ticker, strategy) {
+  // strategy is 'CC' or 'PUT' (already determined by card scoring)
   var tabId, inputId;
-  if (!isNaN(rsi) && rsi > 60) {
+  if (strategy === 'CC') {
     tabId   = 'cc';
     inputId = 'cc-ticker';
   } else {
