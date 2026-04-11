@@ -1,5 +1,13 @@
 // OptionsEdge Pro — Cloudflare Worker (ES Modules format)
-// Handles: Auth (signup/login), Stripe checkout, JWT validation, API proxy
+// Handles: Auth (signup/login), Stripe checkout, JWT validation, API proxy, scoring engine
+
+// ── Tier & ticker configuration ─────────────────────────────────────────────────
+const IA11_TICKERS = ['TSLA','NVDA','AMD','MRVL','PLTR','ALAB','AVGO','MU','GOOG','SATS','NPPTF'];
+const TIER_LIMITS = {
+  ia:     { tickers: IA11_TICKERS, maxCustom: 0,  maxTotal: 11 },
+  trader: { tickers: IA11_TICKERS, maxCustom: 14, maxTotal: 25 },
+  trial:  { tickers: IA11_TICKERS, maxCustom: 0,  maxTotal: 11 },
+};
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
@@ -53,10 +61,11 @@ async function hashPassword(password, salt) {
 
 async function initDB(db) {
   await db.prepare(
-    "CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, email TEXT UNIQUE NOT NULL, password_hash TEXT NOT NULL, salt TEXT NOT NULL, created_at INTEGER NOT NULL, stripe_customer_id TEXT, stripe_subscription_id TEXT, subscription_status TEXT DEFAULT 'inactive', trial_end INTEGER, plan TEXT, session_id TEXT)"
+    "CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, email TEXT UNIQUE NOT NULL, password_hash TEXT NOT NULL, salt TEXT NOT NULL, created_at INTEGER NOT NULL, stripe_customer_id TEXT, stripe_subscription_id TEXT, subscription_status TEXT DEFAULT 'inactive', trial_end INTEGER, plan TEXT, session_id TEXT, tier TEXT DEFAULT 'trial')"
   ).run();
-  // Add session_id column if missing (existing tables)
+  // Add columns if missing (existing tables)
   await db.prepare("ALTER TABLE users ADD COLUMN session_id TEXT").run().catch(() => {});
+  await db.prepare("ALTER TABLE users ADD COLUMN tier TEXT DEFAULT 'trial'").run().catch(() => {});
 }
 
 function json(data, status = 200) {
@@ -123,11 +132,11 @@ async function handleLogin(req, env) {
   await env.DB.prepare('UPDATE users SET session_id = ? WHERE id = ?').bind(sessionId, user.id).run();
 
   const token = await signJWT(
-    { sub: user.id, email: user.email, status, trialEnd: user.trial_end, plan: user.plan, sid: sessionId, exp: now + 86400 * 30 },
+    { sub: user.id, email: user.email, status, trialEnd: user.trial_end, plan: user.plan, tier: user.tier || 'trial', sid: sessionId, exp: now + 86400 * 30 },
     env.JWT_SECRET
   );
 
-  return json({ token, email: user.email, status, trialEnd: user.trial_end, plan: user.plan });
+  return json({ token, email: user.email, status, trialEnd: user.trial_end, plan: user.plan, tier: user.tier || 'trial' });
 }
 
 // POST /auth/verify
@@ -148,7 +157,7 @@ async function handleVerify(req, env) {
     await env.DB.prepare('UPDATE users SET subscription_status = ? WHERE id = ?').bind('trial_expired', user.id).run();
   }
 
-  return json({ valid: true, email: user.email, status, trialEnd: user.trial_end, plan: user.plan });
+  return json({ valid: true, email: user.email, status, trialEnd: user.trial_end, plan: user.plan, tier: user.tier || 'trial' });
 }
 
 // POST /stripe/checkout
@@ -158,8 +167,14 @@ async function handleCheckout(req, env) {
   const payload = await verifyJWT(token, env.JWT_SECRET);
   if (!payload) return json({ error: 'Unauthorized' }, 401);
 
-  const { plan, successUrl, cancelUrl } = await req.json();
-  const priceId = plan === 'annual' ? env.STRIPE_ANNUAL_PRICE : env.STRIPE_MONTHLY_PRICE;
+  const { tier, plan, successUrl, cancelUrl } = await req.json();
+  // tier: 'ia' or 'trader', plan: 'monthly' or 'annual'
+  let priceId;
+  if (tier === 'trader') {
+    priceId = plan === 'annual' ? env.STRIPE_TRADER_ANNUAL_PRICE : env.STRIPE_TRADER_MONTHLY_PRICE;
+  } else {
+    priceId = plan === 'annual' ? env.STRIPE_ANNUAL_PRICE : env.STRIPE_MONTHLY_PRICE;
+  }
 
   const user = await env.DB.prepare('SELECT * FROM users WHERE id = ?').bind(payload.sub).first();
 
@@ -173,6 +188,7 @@ async function handleCheckout(req, env) {
     cancel_url: cancelUrl,
     customer_email: user.email,
     'metadata[user_id]': user.id,
+    'metadata[tier]': tier || 'ia',
   });
 
   const stripeRes = await fetch('https://api.stripe.com/v1/checkout/sessions', {
@@ -208,14 +224,22 @@ async function handleWebhook(req, env) {
   if (event.type === 'checkout.session.completed') {
     const session = event.data.object;
     const userId = session.metadata?.user_id;
+    const tier = session.metadata?.tier || 'ia';
     if (userId) {
+      // Determine plan from amount_total (in cents)
+      // Monthly: $24.95 = 2495c, $34.95 = 3495c  |  Annual: $249 = 24900c, $349 = 34900c
+      // Trial starts: amount_total = 0 (7-day free trial on subscription)
+      const amt = session.amount_total || 0;
+      const plan = (amt === 24900 || amt === 34900) ? 'annual' : 'monthly';
+
       await env.DB.prepare(
-        'UPDATE users SET stripe_customer_id = ?, stripe_subscription_id = ?, subscription_status = ?, plan = ? WHERE id = ?'
+        'UPDATE users SET stripe_customer_id = ?, stripe_subscription_id = ?, subscription_status = ?, plan = ?, tier = ? WHERE id = ?'
       ).bind(
         session.customer,
         session.subscription,
         'active',
-        session.amount_total === 24900 ? 'monthly' : 'annual',
+        plan,
+        tier,
         userId
       ).run();
     }
@@ -576,26 +600,43 @@ async function scoreTicker(ticker) {
 }
 
 // POST /api/scores — accepts { tickers: ["TSLA","NVDA"] }
+// Enforces tier-based ticker restrictions
 async function handleScores(req, env) {
   const authCheck = await requireAuth(req, env);
   if (authCheck.error) return authCheck.error;
 
+  await initDB(env.DB);
+  const user = await env.DB.prepare('SELECT tier FROM users WHERE id = ?').bind(authCheck.payload.sub).first();
+  const userTier = (user && user.tier) || 'trial';
+  const tierConfig = TIER_LIMITS[userTier] || TIER_LIMITS.trial;
+
   const { tickers } = await req.json();
   if (!Array.isArray(tickers) || tickers.length === 0) return json({ error: 'tickers array required' }, 400);
-  if (tickers.length > 30) return json({ error: 'Max 30 tickers per request' }, 400);
 
-  // Score all tickers in parallel
+  // Enforce ticker limits based on tier
+  let allowedTickers;
+  if (userTier === 'trader') {
+    // Trader: IA11 + custom up to maxTotal (25)
+    allowedTickers = tickers.slice(0, tierConfig.maxTotal).map(t => t.toUpperCase());
+  } else {
+    // IA Edition / Trial: only IA11 tickers allowed
+    allowedTickers = tickers.map(t => t.toUpperCase()).filter(t => IA11_TICKERS.includes(t));
+  }
+
+  if (allowedTickers.length === 0) return json({ error: 'No permitted tickers for your plan', tier: userTier }, 403);
+
+  // Score all allowed tickers in parallel
   const results = await Promise.all(
-    tickers.map(async (t) => {
+    allowedTickers.map(async (t) => {
       try {
-        return await scoreTicker(t.toUpperCase());
+        return await scoreTicker(t);
       } catch (e) {
-        return { ticker: t.toUpperCase(), error: e.message };
+        return { ticker: t, error: e.message };
       }
     })
   );
 
-  return json({ scores: results });
+  return json({ scores: results, tier: userTier, allowedTickers });
 }
 
 // ── Main fetch handler (ES Modules format) ────────────────────────────────────
