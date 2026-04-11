@@ -1428,17 +1428,20 @@ function buildColCard(ticker, d, strategy) {
     if (isScored) {
       grade = score >= 6 ? 'A' : score >= 5 ? 'B' : score >= 4 ? 'C' : score >= 3 ? 'D' : 'F';
     } else {
-      // LEAPS/Synth: grade on score out of 7 (null criteria don't count against)
-      var checked = 0, passed = 0;
-      var cxArr = strategy === 'leaps'
-        ? [d.leaps_c1,d.leaps_c2,d.leaps_c3,d.leaps_c4,d.leaps_c5,d.leaps_c6,d.leaps_c7]
-        : [d.synth_c1,d.synth_c2,d.synth_c3,d.synth_c4,d.synth_c5,d.synth_c6,d.synth_c7];
-      for (var gi = 0; gi < cxArr.length; gi++) {
-        if (cxArr[gi] !== null && cxArr[gi] !== undefined) { checked++; if (cxArr[gi]) passed++; }
+      if (d.phase >= 3) {
+        // Phase 3: full real score out of 7
+        grade = score >= 6 ? 'A' : score >= 5 ? 'B' : score >= 4 ? 'C' : score >= 3 ? 'D' : 'F';
+      } else {
+        // Phase 2 proxy: grade on checked criteria ratio only
+        var checked = 0, passed = 0;
+        var cxArr = strategy === 'leaps'
+          ? [d.leaps_c1,d.leaps_c2,d.leaps_c3,d.leaps_c4,d.leaps_c5,d.leaps_c6,d.leaps_c7]
+          : [d.synth_c1,d.synth_c2,d.synth_c3,d.synth_c4,d.synth_c5,d.synth_c6,d.synth_c7];
+        for (var gi = 0; gi < cxArr.length; gi++) {
+          if (cxArr[gi] !== null && cxArr[gi] !== undefined) { checked++; if (cxArr[gi]) passed++; }
+        }
+        grade = checked > 0 ? (passed / checked >= 0.85 ? 'A' : passed / checked >= 0.70 ? 'B' : passed / checked >= 0.50 ? 'C' : passed / checked >= 0.30 ? 'D' : 'F') : '';
       }
-      // Grade based on pass ratio of checked criteria
-      var ratio = checked > 0 ? passed / checked : 0;
-      grade = ratio >= 0.85 ? 'A' : ratio >= 0.70 ? 'B' : ratio >= 0.50 ? 'C' : ratio >= 0.30 ? 'D' : 'F';
     }
   }
 
@@ -1604,6 +1607,9 @@ function renderColumns() {
   colCC.innerHTML    = ccSorted.slice(0,5).map(function(t)     { return buildColCard(t, cardData[t], 'cc');    }).join('');
   colLeaps.innerHTML = leapsSorted.slice(0,5).map(function(t)  { return buildColCard(t, cardData[t], 'leaps'); }).join('');
   colSynth.innerHTML = synthSorted.slice(0,5).map(function(t)  { return buildColCard(t, cardData[t], 'synth'); }).join('');
+
+  // Trigger full phase 3 analysis once all tickers are loaded
+  triggerPhase3();
 
   // Refresh mini rankings for ALL analyzer tabs (panels are hidden but DOM exists)
   ['put', 'cc', 'leaps', 'synth'].forEach(function(tid) {
@@ -1782,11 +1788,214 @@ async function fetchTickerData(ticker) {
 
 
 // ═══════════════════════════════════════════════════════
+// PHASE 3 — FULL LEAPS/SYNTH SCORING FOR TOP TICKERS
+// Runs after all phase 2 loads complete, updates top 3
+// ═══════════════════════════════════════════════════════
+async function runLeapsPhase3(ticker) {
+  try {
+    var d = cardData[ticker];
+    if (!d) return;
+    var pd = { price: d.price, rsi: d.rsi };
+
+    var expirations = await fetchExpirations(ticker);
+    var leapsExpiries = expirations.filter(function(e) { return dteFromStr(e) >= 540; }).slice(0,4);
+    if (leapsExpiries.length === 0)
+      leapsExpiries = expirations.filter(function(e) { return dteFromStr(e) >= 365; }).slice(0,4);
+    if (leapsExpiries.length === 0) return;
+
+    var chains = await Promise.all(leapsExpiries.map(function(exp) {
+      return fetchChain(ticker, exp, 'call').catch(function() { return null; });
+    }));
+
+    var nearExpiry = findBestExpiry(expirations, 30, 60);
+    var ivResult   = nearExpiry ? await fetchIVData(ticker, nearExpiry).catch(function(){return null;}) : null;
+    var currentIV  = ivResult ? ivResult.atmIV : null;
+
+    var repChain = chains[0];
+    var repDTE   = dteFromStr(leapsExpiries[0]);
+    var bestStrike = null, bestDelta = null, bestPremium = null, bestOI = null, bestSpread = null;
+
+    if (repChain && repChain.strike) {
+      var bd = Infinity;
+      for (var i = 0; i < repChain.strike.length; i++) {
+        var dv = repChain.delta ? repChain.delta[i] : null;
+        if (dv === null) continue;
+        var dif = Math.abs(dv - 0.75);
+        if (dif < bd) {
+          bd = dif;
+          bestStrike  = repChain.strike[i];
+          bestDelta   = dv;
+          bestPremium = repChain.mid ? repChain.mid[i] : null;
+          bestOI      = repChain.openInterest ? repChain.openInterest[i] : null;
+          var b4 = repChain.bid ? repChain.bid[i] : null;
+          var a4 = repChain.ask ? repChain.ask[i] : null;
+          bestSpread = (b4 && a4 && repChain.mid && repChain.mid[i]) ?
+            ((a4 - b4) / repChain.mid[i] * 100) : null;
+        }
+      }
+    }
+
+    var repYears = repDTE / 365;
+    var breakeven = (bestStrike && bestPremium) ? bestStrike + bestPremium : null;
+    var breakevenCAGR = (breakeven && pd.price && repYears > 0) ?
+      (Math.pow(breakeven / pd.price, 1 / repYears) - 1) * 100 : null;
+    var deltaOk = bestDelta !== null && bestDelta >= 0.70 && bestDelta <= 0.90;
+
+    d.leaps_c1 = pd.rsi < 30;
+    d.leaps_c2 = currentIV !== null ? currentIV < 55 : null;
+    d.leaps_c3 = deltaOk;
+    d.leaps_c4 = repDTE >= 540;
+    d.leaps_c5 = bestOI !== null ? bestOI >= 300 : null;
+    d.leaps_c6 = bestSpread !== null ? bestSpread <= 10 : null;
+    d.leaps_c7 = breakevenCAGR !== null ? breakevenCAGR <= 35 : null;
+    d.leapsScore = [d.leaps_c1,d.leaps_c2,d.leaps_c3,d.leaps_c4,d.leaps_c5,d.leaps_c6,d.leaps_c7]
+      .filter(function(x){return x===true;}).length;
+    d.phase = 3;
+    renderColumns();
+  } catch(e) { /* silently skip if data unavailable */ }
+}
+
+async function runSynthPhase3(ticker) {
+  try {
+    var d = cardData[ticker];
+    if (!d) return;
+    var pd = { price: d.price, rsi: d.rsi };
+
+    var expirations = await fetchExpirations(ticker);
+    var synthExp = expirations.filter(function(e) { return dteFromStr(e) >= 365; });
+    if (synthExp.length === 0) return;
+    synthExp.sort(function(a,b){ return dteFromStr(b) - dteFromStr(a); });
+    var bestExpiry = synthExp[0];
+    var dte = dteFromStr(bestExpiry);
+
+    var results = await Promise.all([
+      fetchChain(ticker, bestExpiry, 'call').catch(function(){return null;}),
+      fetchChain(ticker, bestExpiry, 'put').catch(function(){return null;})
+    ]);
+    var callChain = results[0], putChain = results[1];
+
+    // Find put near ATM first
+    var slPut = null;
+    if (putChain && putChain.strike) {
+      var bP = Infinity;
+      for (var j = 0; j < putChain.strike.length; j++) {
+        var dP = putChain.delta ? putChain.delta[j] : null;
+        var sP = putChain.strike[j];
+        if (dP === null) continue;
+        var difP = Math.abs(Math.abs(dP) - 0.50);
+        if (Math.abs(dP) >= 0.20 && Math.abs(dP) <= 0.85 && difP < bP) {
+          bP = difP;
+          slPut = { strike: sP, mid: putChain.mid ? putChain.mid[j] : null,
+            bid: putChain.bid ? putChain.bid[j] : null, ask: putChain.ask ? putChain.ask[j] : null,
+            delta: dP, oi: putChain.openInterest ? putChain.openInterest[j] : null };
+        }
+      }
+      if (!slPut) {
+        var bD2 = Infinity;
+        for (var k = 0; k < putChain.strike.length; k++) {
+          var dist = Math.abs(putChain.strike[k] - pd.price);
+          if (dist < bD2) {
+            bD2 = dist;
+            var dK = putChain.delta ? putChain.delta[k] : null;
+            slPut = { strike: putChain.strike[k], mid: putChain.mid ? putChain.mid[k] : null,
+              bid: putChain.bid ? putChain.bid[k] : null, ask: putChain.ask ? putChain.ask[k] : null,
+              delta: dK, oi: putChain.openInterest ? putChain.openInterest[k] : null };
+          }
+        }
+      }
+    }
+    if (!slPut) return;
+
+    // Find call below put strike
+    var slCall = null;
+    if (callChain && callChain.strike) {
+      var bC = Infinity;
+      for (var i = 0; i < callChain.strike.length; i++) {
+        var dC = callChain.delta ? Math.abs(callChain.delta[i]) : null;
+        var sC = callChain.strike[i];
+        if (sC >= slPut.strike || dC === null) continue;
+        var difC = Math.abs(dC - 0.65);
+        if (dC >= 0.55 && dC <= 0.75 && difC < bC) {
+          bC = difC;
+          slCall = { strike: sC, mid: callChain.mid ? callChain.mid[i] : null,
+            bid: callChain.bid ? callChain.bid[i] : null, ask: callChain.ask ? callChain.ask[i] : null,
+            delta: dC, oi: callChain.openInterest ? callChain.openInterest[i] : null };
+        }
+      }
+      if (!slCall) {
+        var bCD = Infinity;
+        for (var i2 = 0; i2 < callChain.strike.length; i2++) {
+          var sC2 = callChain.strike[i2];
+          if (sC2 >= slPut.strike) continue;
+          var d2 = Math.abs(sC2 - pd.price * 0.90);
+          if (d2 < bCD) {
+            bCD = d2;
+            slCall = { strike: sC2, mid: callChain.mid ? callChain.mid[i2] : null,
+              bid: callChain.bid ? callChain.bid[i2] : null, ask: callChain.ask ? callChain.ask[i2] : null,
+              delta: null, oi: callChain.openInterest ? callChain.openInterest[i2] : null };
+          }
+        }
+      }
+    }
+    if (!slCall) return;
+
+    var netCost    = (slCall.mid !== null && slPut.mid !== null) ? slCall.mid - slPut.mid : null;
+    var netCostPct = (netCost !== null && pd.price) ? (netCost / pd.price * 100) : null;
+    var callSpread = (slCall.bid !== null && slCall.ask !== null) ? slCall.ask - slCall.bid : null;
+    var putSpread  = (slPut.bid  !== null && slPut.ask  !== null) ? slPut.ask  - slPut.bid  : null;
+
+    d.synth_c1 = pd.rsi < 30;
+    d.synth_c2 = pd.rsi < 40;
+    d.synth_c3 = slCall.delta !== null ? (slCall.delta >= 0.55 && slCall.delta <= 0.75) : null;
+    d.synth_c4 = dte >= 365;
+    d.synth_c5 = netCostPct !== null ? netCostPct <= 2 : null;
+    d.synth_c6 = (slCall.oi !== null && slPut.oi !== null) ? (slCall.oi >= 200 && slPut.oi >= 200) : null;
+    d.synth_c7 = (callSpread !== null && putSpread !== null) ? (callSpread <= 1.0 && putSpread <= 1.0) : null;
+    d.synthScore = [d.synth_c1,d.synth_c2,d.synth_c3,d.synth_c4,d.synth_c5,d.synth_c6,d.synth_c7]
+      .filter(function(x){return x===true;}).length;
+    d.phase = 3;
+    renderColumns();
+  } catch(e) { /* silently skip */ }
+}
+
+var _phase3Triggered = false;
+// Called once all tickers reach phase 2 — runs full analysis on top 3 per LEAPS/Synth column
+function triggerPhase3() {
+  if (_phase3Triggered) return;
+  var loaded = tickers.filter(function(t){ return cardData[t] && cardData[t].phase >= 2; });
+  if (loaded.length < tickers.length) return; // not all loaded yet
+  _phase3Triggered = true;
+
+  // Sort LEAPS top 3
+  var leapsSorted = loaded.slice().sort(function(a,b) {
+    var sa = cardData[a].leapsScore !== null ? cardData[a].leapsScore : -1;
+    var sb = cardData[b].leapsScore !== null ? cardData[b].leapsScore : -1;
+    if (sb !== sa) return sb - sa;
+    return (cardData[a].rsi || 999) - (cardData[b].rsi || 999);
+  });
+  var leapsTop3 = leapsSorted.slice(0, 3);
+
+  // Sort Synth top 3
+  var synthSorted = loaded.slice().sort(function(a,b) {
+    var sa = cardData[a].synthScore !== null ? cardData[a].synthScore : -1;
+    var sb = cardData[b].synthScore !== null ? cardData[b].synthScore : -1;
+    if (sb !== sa) return sb - sa;
+    return (cardData[a].rsi || 999) - (cardData[b].rsi || 999);
+  });
+  var synthTop3 = synthSorted.slice(0, 3);
+
+  // Run in parallel — all 6 at once
+  leapsTop3.forEach(function(t) { runLeapsPhase3(t); });
+  synthTop3.forEach(function(t) { runSynthPhase3(t); });
+}
+
+// ═══════════════════════════════════════════════════════
 // DASHBOARD — REFRESH
 // ═══════════════════════════════════════════════════════
 function refreshDashboard(forceRefresh) {
   if (forceRefresh) clearMDCache(); // manual refresh clears cache
   cardData = {};
+  _phase3Triggered = false; // reset so phase 3 runs again on next full load
   renderSkeletons();
   // Fire all fetches in parallel — Phase 1 (price/RSI) is fast,
   // Phase 2 (options) runs concurrently across all tickers
