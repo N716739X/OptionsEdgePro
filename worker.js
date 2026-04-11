@@ -236,6 +236,34 @@ async function handleWebhook(req, env) {
 // MarketData.app API token (options chain data)
 const MD_TOKEN = 'VjFYQWlwZDVCZ2ZIMm9TV3BFcndIeGxZbkdBelNESGNDVzh2czBWaHF1Yz0';
 
+// ── Response cache (shared across all users) ──────────────────────────────────
+// In-memory cache: all users share cached responses for the same API call.
+// Cloudflare Workers have per-isolate memory that persists across requests
+// within the same isolate (~seconds to minutes), plus we use Cache API for
+// longer persistence.
+const CACHE_TTL_STOCK = 5 * 60;   // 5 minutes for stock quotes/RSI/SMA
+const CACHE_TTL_OPTIONS = 15 * 60; // 15 minutes for options chains/expirations
+
+function getCacheTTL(proxyUrl) {
+  if (proxyUrl.includes('api.marketdata.app')) return CACHE_TTL_OPTIONS;
+  return CACHE_TTL_STOCK;
+}
+
+// Use Cloudflare Cache API for cross-request persistence
+async function getCached(cacheKey) {
+  const cache = caches.default;
+  const resp = await cache.match(cacheKey);
+  return resp || null;
+}
+
+async function putCache(cacheKey, response, ttl) {
+  const cache = caches.default;
+  const cloned = new Response(response.body, response);
+  cloned.headers.set('Cache-Control', 'public, max-age=' + ttl);
+  cloned.headers.set('X-Cache-Expires', new Date(Date.now() + ttl * 1000).toISOString());
+  await cache.put(cacheKey, cloned);
+}
+
 async function requireAuth(req, env) {
   const auth = req.headers.get('Authorization') || '';
   const token = auth.replace('Bearer ', '');
@@ -279,12 +307,47 @@ async function handleProxy(req, env) {
     proxyUrl = target;
   }
 
+  // ── Check cache before hitting upstream API ──
+  const cacheKey = new Request('https://cache.optionsedge.internal/' + encodeURIComponent(proxyUrl));
+  const cached = await getCached(cacheKey);
+  if (cached) {
+    // Return cached response with CORS headers + cache indicator
+    const body = await cached.text();
+    return new Response(body, {
+      status: cached.status,
+      headers: {
+        ...CORS_HEADERS,
+        'Content-Type': cached.headers.get('Content-Type') || 'application/json',
+        'X-Cache': 'HIT',
+        'X-Cache-Expires': cached.headers.get('X-Cache-Expires') || '',
+      },
+    });
+  }
+
+  // ── Cache MISS — fetch from upstream ──
   const proxyRes = await fetch(proxyUrl, { headers: proxyHeaders });
   const data = await proxyRes.text();
-  return new Response(data, {
+
+  const response = new Response(data, {
     status: proxyRes.status,
-    headers: { ...CORS_HEADERS, 'Content-Type': proxyRes.headers.get('Content-Type') || 'application/json' },
+    headers: {
+      ...CORS_HEADERS,
+      'Content-Type': proxyRes.headers.get('Content-Type') || 'application/json',
+      'X-Cache': 'MISS',
+    },
   });
+
+  // Only cache successful responses
+  if (proxyRes.ok) {
+    const ttl = getCacheTTL(proxyUrl);
+    const toCache = new Response(data, {
+      status: proxyRes.status,
+      headers: { 'Content-Type': proxyRes.headers.get('Content-Type') || 'application/json' },
+    });
+    await putCache(cacheKey, toCache, ttl);
+  }
+
+  return response;
 }
 
 // ── Main fetch handler (ES Modules format) ────────────────────────────────────

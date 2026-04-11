@@ -3436,9 +3436,44 @@ function updateCard(ticker) {
 
 // Re-render strip when dashboard refreshes
 var _origRefreshDashboard = refreshDashboard;
+var _lastRefreshTime = 0;
+var _refreshCooldown = 5 * 60 * 1000; // 5 minutes
+var _refreshTimer = null;
+
 refreshDashboard = function(forceRefresh) {
+  var now = Date.now();
+  var elapsed = now - _lastRefreshTime;
+  var btn = document.querySelector('.hbtn[onclick*="refreshDashboard"]');
+
+  // If manual refresh (forceRefresh=true) and within cooldown, block it
+  if (forceRefresh && _lastRefreshTime > 0 && elapsed < _refreshCooldown) {
+    var secsLeft = Math.ceil((_refreshCooldown - elapsed) / 1000);
+    var mins = Math.floor(secsLeft / 60);
+    var secs = secsLeft % 60;
+    if (btn) btn.textContent = '\u21BA ' + mins + ':' + (secs < 10 ? '0' : '') + secs;
+    return;
+  }
+
+  _lastRefreshTime = now;
   _origRefreshDashboard(forceRefresh);
   renderTickerStrip();
+
+  // Start cooldown countdown on the button
+  if (btn && forceRefresh) {
+    clearInterval(_refreshTimer);
+    _refreshTimer = setInterval(function() {
+      var remaining = _refreshCooldown - (Date.now() - _lastRefreshTime);
+      if (remaining <= 0) {
+        btn.textContent = '\u21BA REFRESH';
+        clearInterval(_refreshTimer);
+        return;
+      }
+      var s = Math.ceil(remaining / 1000);
+      var m = Math.floor(s / 60);
+      var ss = s % 60;
+      btn.textContent = '\u21BA ' + m + ':' + (ss < 10 ? '0' : '') + ss;
+    }, 1000);
+  }
 };
 
 renderTickerStrip();
