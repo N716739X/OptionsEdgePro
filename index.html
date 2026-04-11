@@ -1424,6 +1424,15 @@ function earningsBeforeExpiry(ticker, expiryStr) {
 //          LEAPS (RSI proxy) | Bull Synth (RSI proxy)
 // ═══════════════════════════════════════════════════════
 
+function scoreToGrade(score, phase) {
+  if (!phase || phase < 2) return '';
+  if (score >= 6) return 'A';
+  if (score >= 5) return 'B';
+  if (score >= 4) return 'C';
+  if (score >= 3) return 'D';
+  return 'F';
+}
+
 var COL_IDS = { put: 'col-put', cc: 'col-cc', leaps: 'col-leaps', synth: 'col-synth' };
 
 function renderSkeletons() {
@@ -1462,14 +1471,18 @@ function buildSkeletonRow(ticker) {
 function buildColCard(ticker, d, strategy) {
   var isScored = (strategy === 'put' || strategy === 'cc');
   var score    = isScored ? (strategy === 'put' ? (d.putScore || 0) : (d.ccScore || 0)) : null;
-  var grade    = scoreToGrade(isScored ? score : 0, d.phase);
 
-  // For LEAPS/Synth use RSI as proxy grade
-  if (!isScored) {
-    var rsiVal = d.rsi;
-    if (!isNaN(rsiVal)) {
-      grade = rsiVal < 30 ? 'A' : rsiVal < 40 ? 'B' : rsiVal < 50 ? 'C' : rsiVal < 60 ? 'D' : 'F';
-    } else { grade = ''; }
+  // Grade — only meaningful once phase 2 data is loaded
+  var grade = '';
+  if (d.phase >= 2) {
+    if (isScored) {
+      grade = score >= 6 ? 'A' : score >= 5 ? 'B' : score >= 4 ? 'C' : score >= 3 ? 'D' : 'F';
+    } else {
+      var rsiVal = d.rsi;
+      if (!isNaN(rsiVal)) {
+        grade = rsiVal < 30 ? 'A' : rsiVal < 40 ? 'B' : rsiVal < 50 ? 'C' : rsiVal < 60 ? 'D' : 'F';
+      }
+    }
   }
 
   var rsi      = d.rsi;
