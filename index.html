@@ -1632,11 +1632,10 @@ function refreshDashboard(forceRefresh) {
   if (forceRefresh) clearMDCache(); // manual refresh clears cache
   cardData = {};
   renderSkeletons();
-  // Stagger fetches to avoid rate limits (600ms apart)
-  tickers.forEach(function(ticker, idx) {
-    setTimeout(function() {
-      fetchTickerData(ticker);
-    }, idx * 600);
+  // Fire all fetches in parallel — Phase 1 (price/RSI) is fast,
+  // Phase 2 (options) runs concurrently across all tickers
+  tickers.forEach(function(ticker) {
+    fetchTickerData(ticker);
   });
 }
 
