@@ -299,6 +299,16 @@ export default {
         return new Response(null, { headers: CORS_HEADERS });
       }
 
+      // Temp admin: check user status by email
+      if (url.pathname === '/admin/user' && request.method === 'GET') {
+        const email = url.searchParams.get('email');
+        if (!email) return json({ error: 'email param required' }, 400);
+        await initDB(env.DB);
+        const user = await env.DB.prepare('SELECT id, email, subscription_status, trial_end, plan, stripe_customer_id, stripe_subscription_id, created_at FROM users WHERE email = ?').bind(email.toLowerCase()).first();
+        if (!user) return json({ error: 'User not found' }, 404);
+        return json(user);
+      }
+
       // Auth routes
       if (url.pathname === '/auth/signup' && request.method === 'POST') return handleSignup(request, env);
       if (url.pathname === '/auth/login'  && request.method === 'POST') return handleLogin(request, env);

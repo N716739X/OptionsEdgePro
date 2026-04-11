@@ -1364,10 +1364,24 @@ function authLogout() {
 
 function updateTrialBanner(data) {
   var banner = document.getElementById('trial-banner');
+  var msg = document.getElementById('trial-days-left');
+  var btn = document.getElementById('trial-upgrade-btn');
   if (data.status === 'trialing' && data.trialEnd) {
     var daysLeft = Math.max(0, Math.ceil((data.trialEnd - Math.floor(Date.now()/1000)) / 86400));
-    document.getElementById('trial-days-left').textContent = daysLeft + ' day' + (daysLeft !== 1 ? 's' : '');
+    msg.textContent = daysLeft + ' day' + (daysLeft !== 1 ? 's' : '');
+    btn.style.display = '';
     banner.classList.remove('hidden');
+  } else if (data.status === 'active') {
+    msg.textContent = (data.plan === 'annual' ? 'Annual' : 'Monthly') + ' plan';
+    btn.style.display = 'none';
+    banner.classList.remove('hidden');
+    banner.querySelector('span').innerHTML = 'Subscription active — <strong id="trial-days-left">' + msg.textContent + '</strong>';
+  } else if (data.status === 'trial_expired' || data.status === 'past_due') {
+    msg.textContent = '';
+    btn.textContent = 'Subscribe Now';
+    btn.style.display = '';
+    banner.classList.remove('hidden');
+    banner.querySelector('span').innerHTML = 'Your trial has expired';
   } else {
     banner.classList.add('hidden');
   }
