@@ -1290,11 +1290,12 @@ async function fetchMD(path, params) {
   return data;
 }
 
-async function fetchPriceData(ticker) {
+async function fetchPriceData(ticker, tf) {
+  var useTF = tf || currentTF; // callers can pin a timeframe; analyzer tabs use currentTF
   var [quoteData, rsiData, smaData] = await Promise.all([
     fetchTD('quote',  { symbol: ticker }),
-    fetchTD('rsi',    { symbol: ticker, interval: currentTF, time_period: 10, outputsize: 1 }),
-    fetchTD('sma',    { symbol: ticker, interval: currentTF, time_period: 200, outputsize: 1 })
+    fetchTD('rsi',    { symbol: ticker, interval: useTF, time_period: 10, outputsize: 1 }),
+    fetchTD('sma',    { symbol: ticker, interval: useTF, time_period: 200, outputsize: 1 })
   ]);
   var price    = parseFloat(quoteData.close || quoteData.price);
   var change   = parseFloat(quoteData.change);
@@ -1528,7 +1529,7 @@ function buildColCard(ticker, d, strategy) {
   } else if (strategy === 'leaps') {
     // LEAPS: 7 criteria — RSI, IV, Strike, Duration, OI, Spread, CAGR
     criteriaHtml =
-      mb('RSI',   d.leaps_c1, rsiDisp) +
+      mb('RSI',   d.leaps_c1, (d.leapsRSI !== undefined && !isNaN(d.leapsRSI) ? fmt(d.leapsRSI,1) : rsiDisp) + 'w') +
       mb('IV',    d.leaps_c2, ivDisp) +
       mb('STRK',  d.leaps_c3, d.leaps_c3 === null ? '—' : (d.leaps_c3 ? '✓' : '✗')) +
       mb('DUR',   d.leaps_c4, d.leaps_c4 === true ? '✓' : d.leaps_c4 === false ? '✗' : '—') +
@@ -1649,8 +1650,8 @@ function renderSorted() { renderColumns(); }
 // ═══════════════════════════════════════════════════════
 async function fetchTickerData(ticker) {
   try {
-    // Phase 1: price + RSI (fast)
-    var pd = await fetchPriceData(ticker);
+    // Phase 1: price + RSI — always Daily for dashboard scoring
+    var pd = await fetchPriceData(ticker, '1day');
 
     var d = {
       ticker:    ticker,
@@ -1818,7 +1819,16 @@ async function runLeapsPhase3(ticker) {
   try {
     var d = cardData[ticker];
     if (!d) return;
-    var pd = { price: d.price, rsi: d.rsi };
+
+    // LEAPS uses Weekly RSI — fetch separately since dashboard uses Daily
+    var weeklyRSI = d.rsi; // fallback to daily if weekly fetch fails
+    try {
+      var wRsiData = await fetchTD('rsi', { symbol: ticker, interval: '1week', time_period: 10, outputsize: 1 });
+      var wVals = wRsiData.values || [];
+      if (wVals.length > 0) weeklyRSI = parseFloat(wVals[0].rsi);
+    } catch(e) { /* use daily RSI as fallback */ }
+
+    var pd = { price: d.price, rsi: weeklyRSI };
 
     // Reuse cached expirations from phase 2 — no extra API call
     var expirations = d.expirations || await fetchExpirations(ticker);
@@ -1869,8 +1879,9 @@ async function runLeapsPhase3(ticker) {
     d.leaps_c5 = bestOI !== null ? bestOI >= 300 : null;
     d.leaps_c6 = bestSpread !== null ? bestSpread <= 10 : null;
     d.leaps_c7 = breakevenCAGR !== null ? breakevenCAGR <= 35 : null;
-    d.currentIV = currentIV;  // store actual IV% for card display
-    d.leapsCAGR = breakevenCAGR; // store for card display
+    d.currentIV  = currentIV;    // store actual IV% for card display
+    d.leapsCAGR  = breakevenCAGR; // store for card display
+    d.leapsRSI   = weeklyRSI;    // store weekly RSI used for LEAPS scoring
     d.leapsScore = [d.leaps_c1,d.leaps_c2,d.leaps_c3,d.leaps_c4,d.leaps_c5,d.leaps_c6,d.leaps_c7]
       .filter(function(x){return x===true;}).length;
     d.phase = 3;
