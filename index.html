@@ -1439,11 +1439,10 @@ var COL_IDS = { put: 'col-put', cc: 'col-cc', leaps: 'col-leaps', synth: 'col-sy
 
 function renderSkeletons() {
   // Populate all 4 columns with loading skeletons
-  // Only show 4 skeleton rows — matches the top-4 limit
   Object.values(COL_IDS).forEach(function(colId) {
     var col = document.getElementById(colId);
     col.innerHTML = '';
-    tickers.slice(0, 4).forEach(function(t) {
+    tickers.slice(0, 5).forEach(function(t) {
       col.innerHTML += buildSkeletonRow(t);
     });
   });
@@ -1636,11 +1635,10 @@ function renderColumns() {
   var colLeaps = document.getElementById('col-leaps');
   var colSynth = document.getElementById('col-synth');
 
-  // Dashboard shows top 4 per column only
-  colPut.innerHTML   = putSorted.slice(0,4).map(function(t)   { return buildColCard(t, cardData[t], 'put');   }).join('');
-  colCC.innerHTML    = ccSorted.slice(0,4).map(function(t)     { return buildColCard(t, cardData[t], 'cc');    }).join('');
-  colLeaps.innerHTML = leapsSorted.slice(0,4).map(function(t)  { return buildColCard(t, cardData[t], 'leaps'); }).join('');
-  colSynth.innerHTML = synthSorted.slice(0,4).map(function(t)  { return buildColCard(t, cardData[t], 'synth'); }).join('');
+  colPut.innerHTML   = putSorted.slice(0,5).map(function(t)   { return buildColCard(t, cardData[t], 'put');   }).join('');
+  colCC.innerHTML    = ccSorted.slice(0,5).map(function(t)     { return buildColCard(t, cardData[t], 'cc');    }).join('');
+  colLeaps.innerHTML = leapsSorted.slice(0,5).map(function(t)  { return buildColCard(t, cardData[t], 'leaps'); }).join('');
+  colSynth.innerHTML = synthSorted.slice(0,5).map(function(t)  { return buildColCard(t, cardData[t], 'synth'); }).join('');
 }
 
 // Keep renderSorted as a no-op alias so existing call in fetchTickerData still works
