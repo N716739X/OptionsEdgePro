@@ -1900,7 +1900,7 @@ async function runSynthPhase3(ticker) {
     var callChain = results[0], putChain = results[1];
 
     // Find put near ATM first — OTM only (strike ≤ current price), price-proximity primary
-    // James split-strike: BUY call ~7% ITM, SELL put near ATM above call strike
+    // Split-strike Bull Synthetic: BUY call ~7% ITM, SELL put near ATM above call strike
     var callTarget3 = pd.price * 0.93;
     var slCall = null;
     if (callChain && callChain.strike) {
@@ -2307,7 +2307,7 @@ async function runCC(forceTicker) {
 
     var bestStrike = null, bestDelta = null, bestPremium = null;
     if (chain && chain.strike) {
-      // Target 8% OTM strike (James: 5-10% OTM) — use OTM% as primary, delta as validation
+      // Target 8% OTM strike (5-10% OTM range) — use OTM% as primary, delta as validation
       var targetOTM = pd.price * 1.08;
       var bd2 = Infinity;
       for (var i = 0; i < chain.strike.length; i++) {
@@ -2662,10 +2662,10 @@ async function runSynth(forceTicker) {
       fetchChain(ticker, bestExpiry, 'put')
     ]);
 
-    // James split-strike Bull Synthetic (from real TSLA trades Jan28 + Mar3):
+    // Split-strike Bull Synthetic structure:
     // BUY call: ~7% ITM (5-10% below price), delta 0.55-0.85
     // SELL put: ~2% below price (near ATM), delta 0.30-0.60, ABOVE call strike
-    // Net debit ~5-15% of price is acceptable (James: "less than 1% of my bag")
+    // Net debit ~5-15% of price is acceptable
 
     // --- STEP 1: BUY call ~7% below current price (ITM) ---
     var callTarget = pd.price * 0.93;
@@ -2752,9 +2752,9 @@ async function runSynth(forceTicker) {
 
     var c1 = pd.rsi < 30;
     var c2 = pd.rsi < 40;
-    var c3 = slCall.delta !== null ? (slCall.delta >= 0.55 && slCall.delta <= 0.85) : null;  // ITM call 5-10% below price (James)
+    var c3 = slCall.delta !== null ? (slCall.delta >= 0.55 && slCall.delta <= 0.85) : null;  // ITM call 5-10% below price
     var c4 = dte >= 365;
-    var c5 = netCostPct !== null ? netCostPct <= 15 : null;  // James accepts ~5-15% net debit
+    var c5 = netCostPct !== null ? netCostPct <= 15 : null;  // target ~5-15% net debit
     var c6 = (slCall.oi !== null && slPut.oi !== null) ? (slCall.oi >= 200 && slPut.oi >= 200) : null;
     var c7 = (callSpread !== null && putSpread !== null) ? (callSpread <= 1.0 && putSpread <= 1.0) : null;
     var score = [c1,c2,c3,c4,c5,c6,c7].filter(function(x){return x===true;}).length;
@@ -2807,7 +2807,7 @@ async function runSynth(forceTicker) {
       suggWarn.push('💡 <strong>RSI too high:</strong> RSI is ' + fmt(pd.rsi,1) + ' — wait for a pullback before entering. Entering on strength increases your breakeven distance.');
     }
     if (!c5 && netCostPct !== null) {
-      suggWarn.push('💡 <strong>Net debit elevated:</strong> Net debit is ' + fmt(netCostPct,2) + '% — above 15%. James typically pays 5–15% of stock price. Consider a shallower call strike or waiting for a lower-priced entry.');
+      suggWarn.push('💡 <strong>Net debit elevated:</strong> Net debit is ' + fmt(netCostPct,2) + '% — above 15%. Target 5–15% of stock price for an efficient structure. Consider a shallower call strike or waiting for a lower entry point.');
     }
     if (!c6) {
       suggWarn.push('💡 <strong>Liquidity concern:</strong> One or both legs have OI below 200. Use limit orders at the mid and be patient with fills.');
@@ -2816,7 +2816,7 @@ async function runSynth(forceTicker) {
       suggWarn.push('💡 <strong>Wide spreads:</strong> One or both spreads exceed $1.00. Leg in separately during high-liquidity hours (9:45–11am ET).');
     }
     if (netCostPct !== null && netCostPct <= 1) {
-      suggGood.push('✅ <strong>Minimal debit:</strong> Net debit under 1% — classic James structure. The put credit nearly fully funds the call.');
+      suggGood.push('✅ <strong>Minimal debit:</strong> Net debit under 1% — the put credit nearly fully funds the call. Excellent structure.');
     } else if (netCostPct !== null && netCostPct < 0) {
       suggGood.push('✅ <strong>Net credit entry:</strong> You collect a net credit of ' + fmt(Math.abs(netCostPct),2) + '% — the sold put fully funds the call with room to spare.');
     }
@@ -2824,7 +2824,7 @@ async function runSynth(forceTicker) {
       suggGood.push('✅ <strong>Tight breakeven:</strong> Stock only needs to move ' + fmt(beAboveCur,1) + '% to break even — very efficient entry.');
     }
     if (score === 7) {
-      suggGood.push('✅ <strong>All criteria met</strong> — ideal James-style bull synthetic. Enter as a combo order to avoid leg risk.');
+      suggGood.push('✅ <strong>All criteria met</strong> — ideal bull synthetic setup. Enter as a combo order to avoid leg risk.');
     }
     var suggestions = suggWarn.concat(suggGood);
     if (suggestions.length > 0) {
