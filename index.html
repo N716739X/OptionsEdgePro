@@ -808,72 +808,15 @@ tbody td:first-child { text-align:left; }
   text-transform: uppercase;
   color: var(--text-muted);
 }
-.mini-rankings-list {
+.mini-rankings-cards {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-}
-.mini-rank-row {
-  display: flex;
-  align-items: center;
   gap: 8px;
-  padding: 6px 10px;
-  background: var(--surface2);
-  border: 1px solid var(--border);
-  border-radius: 7px;
-  cursor: pointer;
-  transition: border-color 0.15s;
 }
-.mini-rank-row:hover { border-color: var(--accent); }
-.mini-rank-row.is-active {
-  border-color: var(--accent);
-  background: rgba(119,0,255,0.10);
-}
-.mini-rank-num {
-  font-size: 9px;
-  font-weight: 700;
-  color: var(--text-muted);
-  width: 16px;
-  flex-shrink: 0;
-}
-.mini-rank-ticker {
-  font-size: 12px;
-  font-weight: 900;
-  width: 42px;
-  flex-shrink: 0;
-}
-.mini-rank-price {
-  font-size: 10px;
-  color: var(--text-muted);
-  flex: 1;
-}
-.mini-rank-rsi {
-  font-size: 10px;
-  font-weight: 700;
-  width: 52px;
-  text-align: right;
-  flex-shrink: 0;
-}
-.mini-rank-badge {
-  font-size: 8px;
-  font-weight: 800;
-  padding: 2px 6px;
-  border-radius: 5px;
-  letter-spacing: 0.3px;
-  text-transform: uppercase;
-  flex-shrink: 0;
-}
-.mini-rank-grade {
-  font-size: 10px;
-  font-weight: 900;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  border: 1px solid currentColor;
+/* Active card highlight (currently selected ticker) */
+.mini-card-active {
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 0 1px var(--accent), 0 0 12px rgba(119,0,255,0.25) !important;
 }
 
 </style>
@@ -2666,7 +2609,6 @@ renderTickerStrip();
 // ═══════════════════════════════════════════════════════
 function buildMiniRankings(strategy, activeTicker) {
   // strategy: 'put' | 'cc' | 'leaps' | 'synth'
-  var isScored = (strategy === 'put' || strategy === 'cc');
 
   // Get tickers with loaded data
   var loaded = tickers.filter(function(t) {
@@ -2698,51 +2640,26 @@ function buildMiniRankings(strategy, activeTicker) {
     });
   }
 
-  var top6 = sorted.slice(0, 6);
+  var top3 = sorted.slice(0, 3);
 
-  var rows = top6.map(function(t, idx) {
+  // Build rich cards, marking active ticker with extra border
+  var cards = top3.map(function(t) {
     var d = cardData[t];
-    var rsi = d.rsi;
-    var rsiColor = !isNaN(rsi) ? (rsi < 30 ? 'down' : rsi > 65 ? 'up' : '') : '';
-    var rsiDisp  = !isNaN(rsi) ? 'RSI ' + fmt(rsi, 0) : '—';
-    var priceDisp = d.price ? fmtDollar(d.price) : '—';
     var isActive = t === activeTicker;
-
-    // Badge
-    var badgeCls, badgeTxt;
-    if (isScored) {
-      var score = strategy === 'put' ? (d.putScore || 0) : (d.ccScore || 0);
-      if (score >= 5)      { badgeCls = 'badge-ideal';    badgeTxt = score + '/6'; }
-      else if (score >= 3) { badgeCls = 'badge-watch';    badgeTxt = score + '/6'; }
-      else                 { badgeCls = 'badge-notready'; badgeTxt = score + '/6'; }
-
-      var grade = scoreToGrade(score, d.phase);
-      var gradeHtml = grade
-        ? '<span class="mini-rank-grade grade-' + grade + '">' + grade + '</span>'
-        : '';
-    } else {
-      if (!isNaN(rsi) && rsi < 30)      { badgeCls = 'badge-ideal';    badgeTxt = 'OVERSOLD'; }
-      else if (!isNaN(rsi) && rsi < 40) { badgeCls = 'badge-watch';    badgeTxt = 'WATCH'; }
-      else                              { badgeCls = 'badge-notready'; badgeTxt = 'WAIT'; }
-      var gradeHtml = '';
+    var cardHtml = buildColCard(t, d, strategy);
+    // Wrap in a relative container so we can add active ring without touching buildColCard
+    if (isActive) {
+      cardHtml = cardHtml.replace('class="col-card"', 'class="col-card mini-card-active"');
     }
-
-    return '<div class="mini-rank-row' + (isActive ? ' is-active' : '') + '" onclick="navigateToAnalyzer(\'' + t + '\',\'' + strategy + '\')">' +
-      '<span class="mini-rank-num">' + (idx + 1) + '</span>' +
-      '<span class="mini-rank-ticker">' + t + '</span>' +
-      '<span class="mini-rank-price">' + priceDisp + '</span>' +
-      '<span class="mini-rank-rsi ' + rsiColor + '">' + rsiDisp + '</span>' +
-      '<span class="mini-rank-badge ' + badgeCls + '">' + badgeTxt + '</span>' +
-      gradeHtml +
-    '</div>';
+    return cardHtml;
   }).join('');
 
   var stratLabel = { put: 'Cash-Secured Put', cc: 'Covered Call', leaps: 'LEAPS', synth: 'Bull Synthetic' }[strategy];
 
   return '<div class="mini-rankings-header">' +
-    '<span class="mini-rankings-title">Top 6 · ' + stratLabel + '</span>' +
+    '<span class="mini-rankings-title">Top 3 · ' + stratLabel + '</span>' +
   '</div>' +
-  '<div class="mini-rankings-list">' + rows + '</div>';
+  '<div class="mini-rankings-cards">' + cards + '</div>';
 }
 
 function renderMiniRankings(strategy, activeTicker) {
