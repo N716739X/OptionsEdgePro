@@ -2041,16 +2041,17 @@ refreshDashboard();
 // ═══════════════════════════════════════════════════════
 // ANALYZER SHARED HELPERS
 // ═══════════════════════════════════════════════════════
-function priceBarHtml(ticker, pd) {
+function priceBarHtml(ticker, pd, tfLabel) {
   var chgColor = pd.change >= 0 ? 'up' : 'down';
   var chgSign  = pd.change >= 0 ? '+' : '';
   var aboveSMA = pd.price > pd.sma200;
+  var rsiLabel = tfLabel ? 'RSI(10) · ' + tfLabel : 'RSI(10)';
   return '<div class="price-bar">' +
     '<span class="pb-ticker">' + ticker + '</span>' +
     '<span class="pb-price ' + chgColor + '">' + fmtDollar(pd.price) +
       '<span style="font-size:13px;margin-left:8px">' + chgSign + fmt(pd.change) + ' (' + chgSign + fmt(pd.changePct,2) + '%)</span>' +
     '</span>' +
-    '<div class="stat-group"><span class="stat-label">RSI(10)</span>' +
+    '<div class="stat-group"><span class="stat-label">' + rsiLabel + '</span>' +
       '<span class="stat-value ' + (pd.rsi < 30 ? 'down' : pd.rsi > 65 ? 'up' : '') + '">' + fmt(pd.rsi,1) + '</span></div>' +
     '<div class="stat-group"><span class="stat-label">200 SMA</span>' +
       '<span class="stat-value">' + fmtDollar(pd.sma200) + '</span></div>' +
@@ -2196,7 +2197,7 @@ async function runPut(forceTicker) {
 
     setStatus('put-status', 'Done', 'ok');
 
-    var html = priceBarHtml(ticker, pd);
+    var html = priceBarHtml(ticker, pd, 'Daily');
     html += '<div class="info-box">' +
       '<div class="info-item"><div class="info-label">Assignment Capital</div><div class="info-val">' + (assignCap ? '$' + assignCap.toLocaleString() : '—') + '</div></div>' +
       '<div class="info-item"><div class="info-label">Expiry</div><div class="info-val">' + bestExpiry + '</div></div>' +
@@ -2228,7 +2229,7 @@ async function runPut(forceTicker) {
 
     html += '<div class="scorecard"><h3>Cash-Secured Put — Score</h3><div class="criteria-list">';
     html += critRow(1,'IV Elevated > 50%', c1, ivRank !== null ? fmt(ivRank,1)+'%' : 'N/A');
-    html += critRow(2,'RSI(10) < 30 (Oversold)', c2, fmt(pd.rsi,1));
+    html += critRow(2,'RSI(10) < 30 · Daily (Oversold)', c2, fmt(pd.rsi,1));
     html += critRow(3,'No Earnings Before Expiry', c3, earningsRisk ? 'Earnings: '+EARNINGS[ticker] : 'Clear');
     html += critRow(4,'Premium > 2% of Price', c4, premPct !== null ? fmt(premPct,2)+'%' : 'N/A');
     html += critRow(5,'Strike Delta 0.15–0.25', c5, bestDelta !== null ? fmt(bestDelta,2) : 'N/A');
@@ -2326,7 +2327,7 @@ async function runCC(forceTicker) {
 
     setStatus('cc-status', 'Done', 'ok');
 
-    var html = priceBarHtml(ticker, pd);
+    var html = priceBarHtml(ticker, pd, 'Daily');
     html += '<div class="info-box">' +
       '<div class="info-item"><div class="info-label">Upside if Assigned</div><div class="info-val">' + (upsidePct !== null ? '+'+fmt(upsidePct,2)+'%' : '—') + '</div></div>' +
       '<div class="info-item"><div class="info-label">Total Return</div><div class="info-val">' + (totalRet !== null ? '+'+fmt(totalRet,2)+'%' : '—') + '</div></div>' +
@@ -2338,7 +2339,7 @@ async function runCC(forceTicker) {
     '</div>';
     html += '<div class="scorecard"><h3>Covered Call — Score</h3><div class="criteria-list">';
     html += critRow(1,'IV Elevated > 50%', c1, ivRank !== null ? fmt(ivRank,1)+'%' : 'N/A');
-    html += critRow(2,'RSI(10) > 65 (Overbought)', c2, fmt(pd.rsi,1));
+    html += critRow(2,'RSI(10) > 65 · Daily (Overbought)', c2, fmt(pd.rsi,1));
     html += critRow(3,'No Earnings Before Expiry', c3, earningsRisk ? 'Earnings: '+EARNINGS[ticker] : 'Clear');
     html += critRow(4,'Premium ≥ 2% of Price', c4, premPct !== null ? fmt(premPct,2)+'%' : 'N/A');
     html += critRow(5,'Strike 5–10% OTM (Δ 0.15–0.25)', c5, (upsidePct !== null ? fmt(upsidePct,1)+'% OTM' : (bestDelta !== null ? 'Δ'+fmt(bestDelta,2) : 'N/A')));
@@ -2456,7 +2457,7 @@ async function runLeaps(forceTicker) {
 
     setStatus('leaps-status', 'Done', 'ok');
 
-    var html = priceBarHtml(ticker, pd);
+    var html = priceBarHtml(ticker, pd, 'Weekly');
     html += '<div class="info-box">' +
       '<div class="info-item"><div class="info-label">Current IV</div><div class="info-val">' + (currentIV !== null ? fmt(currentIV,1)+'%' : '—') + '</div></div>' +
       '<div class="info-item"><div class="info-label">IV Rank</div><div class="info-val">' + (ivRank !== null ? fmt(ivRank,1)+'%' : '—') + '</div></div>' +
@@ -2466,7 +2467,7 @@ async function runLeaps(forceTicker) {
       '<div class="info-item"><div class="info-label">BE CAGR/yr</div><div class="info-val">' + (breakevenCAGR !== null ? fmt(breakevenCAGR,1)+'%' : '—') + '</div></div>' +
     '</div>';
     html += '<div class="scorecard"><h3>LEAPS Deep ITM Call — Score</h3><div class="criteria-list">';
-    html += critRow(1,'RSI(10) < 30 (Entry Timing)', c1, fmt(pd.rsi,1));
+    html += critRow(1,'RSI(10) < 30 · Weekly (Entry Timing)', c1, fmt(pd.rsi,1));
     html += critRow(2,'IV < 55% (Buy Low IV)', c2, currentIV !== null ? fmt(currentIV,1)+'%' : 'N/A');
     html += critRow(3,'Strike Deep ITM Δ 0.70–0.90', c3, bestDelta !== null ? fmt(bestDelta,2) : 'N/A');
     html += critRow(4,'Duration 18+ months (540+ DTE)', c4, repDTE+' days');
@@ -2754,7 +2755,7 @@ async function runSynth(forceTicker) {
 
     setStatus('synth-status', 'Done', 'ok');
 
-    var html = priceBarHtml(ticker, pd);
+    var html = priceBarHtml(ticker, pd, 'Daily');
     html += '<div class="info-box">' +
       '<div class="info-item"><div class="info-label">Expiry</div><div class="info-val">' + bestExpiry + '</div></div>' +
       '<div class="info-item"><div class="info-label">DTE</div><div class="info-val">' + dte + '</div></div>' +
@@ -2783,8 +2784,8 @@ async function runSynth(forceTicker) {
     '</div></div>';
 
     html += '<div class="scorecard"><h3>Bull Synthetic — Score</h3><div class="criteria-list">';
-    html += critRow(1,'RSI(10) < 30 (Oversold Entry)', c1, fmt(pd.rsi,1));
-    html += critRow(2,'RSI(10) < 40 (Not Extended)', c2, fmt(pd.rsi,1));
+    html += critRow(1,'RSI(10) < 30 · Daily (Oversold Entry)', c1, fmt(pd.rsi,1));
+    html += critRow(2,'RSI(10) < 40 · Daily (Not Extended)', c2, fmt(pd.rsi,1));
     html += critRow(3,'Call ITM 5-10% Below Price (Δ0.55–0.85)', c3, fmt(slCall.delta,2));
     html += critRow(4,'Duration ≥ 365 Days', c4, dte+' days');
     html += critRow(5,'Net Debit ≤ 15% of Price', c5, netCostPct !== null ? fmt(netCostPct,2)+'%' : 'N/A');
