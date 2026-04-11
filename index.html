@@ -1414,7 +1414,13 @@ function buildSkeletonRow(ticker) {
 // Build a full rich card for a dashboard column
 function buildColCard(ticker, d, strategy) {
   var isScored = (strategy === 'put' || strategy === 'cc');
-  var score    = isScored ? (strategy === 'put' ? (d.putScore || 0) : (d.ccScore || 0)) : null;
+  var score;
+  if (strategy === 'put')        score = d.putScore || 0;
+  else if (strategy === 'cc')    score = d.ccScore || 0;
+  else if (strategy === 'leaps') score = d.leapsScore || 0;
+  else                           score = d.synthScore || 0;
+
+  var totalCriteria = isScored ? 6 : 7;
 
   // Grade — only meaningful once phase 2 data is loaded
   var grade = '';
@@ -1422,10 +1428,17 @@ function buildColCard(ticker, d, strategy) {
     if (isScored) {
       grade = score >= 6 ? 'A' : score >= 5 ? 'B' : score >= 4 ? 'C' : score >= 3 ? 'D' : 'F';
     } else {
-      var rsiVal = d.rsi;
-      if (!isNaN(rsiVal)) {
-        grade = rsiVal < 30 ? 'A' : rsiVal < 40 ? 'B' : rsiVal < 50 ? 'C' : rsiVal < 60 ? 'D' : 'F';
+      // LEAPS/Synth: grade on score out of 7 (null criteria don't count against)
+      var checked = 0, passed = 0;
+      var cxArr = strategy === 'leaps'
+        ? [d.leaps_c1,d.leaps_c2,d.leaps_c3,d.leaps_c4,d.leaps_c5,d.leaps_c6,d.leaps_c7]
+        : [d.synth_c1,d.synth_c2,d.synth_c3,d.synth_c4,d.synth_c5,d.synth_c6,d.synth_c7];
+      for (var gi = 0; gi < cxArr.length; gi++) {
+        if (cxArr[gi] !== null && cxArr[gi] !== undefined) { checked++; if (cxArr[gi]) passed++; }
       }
+      // Grade based on pass ratio of checked criteria
+      var ratio = checked > 0 ? passed / checked : 0;
+      grade = ratio >= 0.85 ? 'A' : ratio >= 0.70 ? 'B' : ratio >= 0.50 ? 'C' : ratio >= 0.30 ? 'D' : 'F';
     }
   }
 
@@ -1440,9 +1453,10 @@ function buildColCard(ticker, d, strategy) {
     else if (score >= 3) { badgeCls = 'badge-watch';    badgeTxt = 'WATCH · ' + score + '/6'; }
     else                 { badgeCls = 'badge-notready'; badgeTxt = 'NO TRADE · ' + score + '/6'; }
   } else {
-    if (!isNaN(rsi) && rsi < 30)      { badgeCls = 'badge-ideal';    badgeTxt = 'OVERSOLD'; }
-    else if (!isNaN(rsi) && rsi < 40) { badgeCls = 'badge-watch';    badgeTxt = 'WATCH'; }
-    else                              { badgeCls = 'badge-notready'; badgeTxt = 'WAIT'; }
+    // LEAPS/Synth: show score out of 7
+    if (score >= 5)      { badgeCls = 'badge-ideal';    badgeTxt = 'IDEAL · ' + score + '/7'; }
+    else if (score >= 3) { badgeCls = 'badge-watch';    badgeTxt = 'WATCH · ' + score + '/7'; }
+    else                 { badgeCls = 'badge-notready'; badgeTxt = 'WAIT · ' + score + '/7'; }
   }
 
   // Price / change
@@ -1488,18 +1502,24 @@ function buildColCard(ticker, d, strategy) {
       mb('PREM',  cx.c4, premDisp) +
       mb('DELTA', cx.c5, strkDisp) +
       mb('DTE',   cx.c6, dteDisp);
-  } else {
-    // LEAPS/Synth — proxy indicators: RSI and 52W position only (rest are grey — needs full analysis)
-    var posDisp = fmt(rangePos, 0) + '%';
-    var posCls  = rangePos < 30 ? true : rangePos > 70 ? false : null;
-    var rsiPass = !isNaN(rsi) ? (rsi < 30 ? true : rsi > 65 ? false : null) : null;
+  } else if (strategy === 'leaps') {
+    // LEAPS: 7 criteria — RSI, IV, Strike, Duration, OI, Spread, CAGR
     criteriaHtml =
-      mb('RSI',  rsiPass, rsiDisp) +
-      mb('IV',   null, ivDisp) +
-      mb('52W%', posCls, posDisp) +
-      mb('EARN', null, '—') +
-      mb('PREM', null, '—') +
-      mb('DTE',  null, '—');
+      mb('RSI',   d.leaps_c1, rsiDisp) +
+      mb('IV',    d.leaps_c2, ivDisp) +
+      mb('STRK',  d.leaps_c3, d.leaps_c3 === null ? '—' : (d.leaps_c3 ? '✓' : '✗')) +
+      mb('DUR',   d.leaps_c4, d.leaps_c4 === true ? '✓' : d.leaps_c4 === false ? '✗' : '—') +
+      mb('OI',    d.leaps_c5, d.leaps_c5 === null ? '—' : (d.leaps_c5 ? '✓' : '✗')) +
+      mb('BID/A', d.leaps_c6, d.leaps_c6 === null ? '—' : (d.leaps_c6 ? '✓' : '✗'));
+  } else {
+    // Bull Synthetic: 7 criteria — RSI<30, RSI<40, CallΔ, Duration, Debit, OI, Spread
+    criteriaHtml =
+      mb('RSI30', d.synth_c1, rsiDisp) +
+      mb('RSI40', d.synth_c2, rsiDisp) +
+      mb('CALLΔ', d.synth_c3, d.synth_c3 === null ? '—' : (d.synth_c3 ? '✓' : '✗')) +
+      mb('DUR',   d.synth_c4, d.synth_c4 === true ? '✓' : d.synth_c4 === false ? '✗' : '—') +
+      mb('DEBIT', d.synth_c5, d.synth_c5 === null ? '—' : (d.synth_c5 ? '✓' : '✗')) +
+      mb('OI',    d.synth_c6, d.synth_c6 === null ? '—' : (d.synth_c6 ? '✓' : '✗'));
   }
 
   // Footer score / label
@@ -1558,13 +1578,19 @@ function renderColumns() {
     return (cardData[b].rsi || 0) - (cardData[a].rsi || 0);
   });
 
-  // LEAPS: sort by RSI asc (oversold = best entry)
+  // LEAPS: sort by leapsScore desc, ties broken by RSI asc
   leapsSorted.sort(function(a, b) {
+    var sa = cardData[a].leapsScore !== null ? cardData[a].leapsScore : -1;
+    var sb = cardData[b].leapsScore !== null ? cardData[b].leapsScore : -1;
+    if (sb !== sa) return sb - sa;
     return (cardData[a].rsi || 999) - (cardData[b].rsi || 999);
   });
 
-  // Bull Synth: sort by RSI asc (same logic)
+  // Bull Synth: sort by synthScore desc, ties broken by RSI asc
   synthSorted.sort(function(a, b) {
+    var sa = cardData[a].synthScore !== null ? cardData[a].synthScore : -1;
+    var sb = cardData[b].synthScore !== null ? cardData[b].synthScore : -1;
+    if (sb !== sa) return sb - sa;
     return (cardData[a].rsi || 999) - (cardData[b].rsi || 999);
   });
 
@@ -1691,14 +1717,44 @@ async function fetchTickerData(ticker) {
     var cc_c6 = dte !== null ? (dte >= 30 && dte <= 45) : null;
     var ccScore = [cc_c1,cc_c2,cc_c3,cc_c4,cc_c5,cc_c6].filter(function(x){return x===true;}).length;
 
+    // Score LEAPS criteria (proxy — from available data, no extra fetches)
+    // LEAPS 7 criteria: RSI<30, IV<55%, Strike Deep ITM, Duration 18+mo, OI≥300, Bid/Ask≤10%, CAGR≤35%
+    var hasLeapsExp = expirations.some(function(e) { return dteFromStr(e) >= 540; });
+    var leaps_c1 = pd.rsi < 30;                                     // RSI < 30
+    var leaps_c2 = ivRank !== null ? ivRank < 55 : null;             // IV < 55%
+    var leaps_c3 = null;                                             // Strike Deep ITM (need chain)
+    var leaps_c4 = hasLeapsExp;                                      // Duration 18+ months
+    var leaps_c5 = null;                                             // OI ≥ 300 (need chain)
+    var leaps_c6 = null;                                             // Bid/Ask ≤ 10% (need chain)
+    var leaps_c7 = null;                                             // CAGR ≤ 35% (need chain)
+    var leapsScore = [leaps_c1,leaps_c2,leaps_c3,leaps_c4,leaps_c5,leaps_c6,leaps_c7].filter(function(x){return x===true;}).length;
+
+    // Score Bull Synthetic criteria (proxy)
+    // Synth 7: RSI<30, RSI<40, Call ITM Δ0.55-0.75, Duration≥365d, Net Debit≤2%, Both OI≥200, Spreads≤$1
+    var hasSynthExp = expirations.some(function(e) { return dteFromStr(e) >= 365; });
+    var synth_c1 = pd.rsi < 30;                                     // RSI < 30
+    var synth_c2 = pd.rsi < 40;                                     // RSI < 40
+    var synth_c3 = null;                                             // Call ITM delta (need chain)
+    var synth_c4 = hasSynthExp;                                      // Duration ≥ 365 days
+    var synth_c5 = null;                                             // Net Debit ≤ 2% (need chain)
+    var synth_c6 = null;                                             // Both OI ≥ 200 (need chain)
+    var synth_c7 = null;                                             // Spreads ≤ $1 (need chain)
+    var synthScore = [synth_c1,synth_c2,synth_c3,synth_c4,synth_c5,synth_c6,synth_c7].filter(function(x){return x===true;}).length;
+
     d.phase      = 2;
     d.putScore   = putScore;
     d.ccScore    = ccScore;
+    d.leapsScore = leapsScore;
+    d.synthScore = synthScore;
     // Store per-strategy criteria for card rendering
     d.put_c1 = put_c1; d.put_c2 = put_c2; d.put_c3 = put_c3;
     d.put_c4 = put_c4; d.put_c5 = put_c5; d.put_c6 = put_c6;
     d.cc_c1  = cc_c1;  d.cc_c2  = cc_c2;  d.cc_c3  = cc_c3;
     d.cc_c4  = cc_c4;  d.cc_c5  = cc_c5;  d.cc_c6  = cc_c6;
+    d.leaps_c1 = leaps_c1; d.leaps_c2 = leaps_c2; d.leaps_c3 = leaps_c3;
+    d.leaps_c4 = leaps_c4; d.leaps_c5 = leaps_c5; d.leaps_c6 = leaps_c6; d.leaps_c7 = leaps_c7;
+    d.synth_c1 = synth_c1; d.synth_c2 = synth_c2; d.synth_c3 = synth_c3;
+    d.synth_c4 = synth_c4; d.synth_c5 = synth_c5; d.synth_c6 = synth_c6; d.synth_c7 = synth_c7;
     d.ivRank     = ivRank;
     d.expiry     = bestExpiry;
     d.dte        = dte;
@@ -2669,9 +2725,18 @@ function buildMiniRankings(strategy, activeTicker) {
       if (sb !== sa) return sb - sa;
       return (cardData[b].rsi || 0) - (cardData[a].rsi || 0);
     });
-  } else {
-    // leaps + synth: RSI ascending
+  } else if (strategy === 'leaps') {
     sorted.sort(function(a, b) {
+      var sa = cardData[a].leapsScore !== null ? cardData[a].leapsScore : -1;
+      var sb = cardData[b].leapsScore !== null ? cardData[b].leapsScore : -1;
+      if (sb !== sa) return sb - sa;
+      return (cardData[a].rsi || 999) - (cardData[b].rsi || 999);
+    });
+  } else {
+    sorted.sort(function(a, b) {
+      var sa = cardData[a].synthScore !== null ? cardData[a].synthScore : -1;
+      var sb = cardData[b].synthScore !== null ? cardData[b].synthScore : -1;
+      if (sb !== sa) return sb - sa;
       return (cardData[a].rsi || 999) - (cardData[b].rsi || 999);
     });
   }
