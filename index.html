@@ -858,16 +858,27 @@ tbody td:first-child { text-align:left; }
   0%,100% { box-shadow: 0 0 4px rgba(0,255,204,0.3); }
   50%     { box-shadow: 0 0 12px rgba(0,255,204,0.8), 0 0 20px rgba(0,255,204,0.3); }
 }
-/* ── Column header accent bar ── */
+/* ── Column header terminal tags ── */
 .dash-col-title-wrap {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
 }
-.col-icon {
-  font-size: 14px;
-  line-height: 1;
+.col-tag {
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  padding: 2px 6px;
+  border-radius: 3px;
+  border: 1px solid;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
+.col-tag-put  { color: var(--green);  border-color: var(--green);  background: rgba(0,255,204,0.08); }
+.col-tag-call { color: var(--accent); border-color: var(--accent); background: rgba(119,0,255,0.08); }
+.col-tag-lps  { color: var(--yellow); border-color: var(--yellow); background: rgba(255,204,0,0.08); }
+.col-tag-syn  { color: var(--red);    border-color: var(--red);    background: rgba(255,34,102,0.08); }
 </style>
 </head>
 <body>
@@ -905,7 +916,7 @@ tbody td:first-child { text-align:left; }
     <!-- CSP Column -->
     <div class="dash-col">
       <div class="dash-col-header">
-        <span class="dash-col-title-wrap"><span class="col-icon">💰</span><span class="dash-col-title">Cash-Secured Put</span></span>
+        <span class="dash-col-title-wrap"><span class="col-tag col-tag-put">PUT</span><span class="dash-col-title">Cash-Secured Put</span></span>
         <span class="dash-col-sub">Ranked by score</span>
       </div>
       <div class="dash-col-body" id="col-put"></div>
@@ -913,7 +924,7 @@ tbody td:first-child { text-align:left; }
     <!-- CC Column -->
     <div class="dash-col">
       <div class="dash-col-header">
-        <span class="dash-col-title-wrap"><span class="col-icon">📈</span><span class="dash-col-title">Covered Call</span></span>
+        <span class="dash-col-title-wrap"><span class="col-tag col-tag-call">CALL</span><span class="dash-col-title">Covered Call</span></span>
         <span class="dash-col-sub">Ranked by score</span>
       </div>
       <div class="dash-col-body" id="col-cc"></div>
@@ -921,7 +932,7 @@ tbody td:first-child { text-align:left; }
     <!-- LEAPS Column -->
     <div class="dash-col">
       <div class="dash-col-header">
-        <span class="dash-col-title-wrap"><span class="col-icon">🎯</span><span class="dash-col-title">LEAPS</span></span>
+        <span class="dash-col-title-wrap"><span class="col-tag col-tag-lps">LPS</span><span class="dash-col-title">LEAPS</span></span>
         <span class="dash-col-sub">Ranked by RSI ↑</span>
       </div>
       <div class="dash-col-body" id="col-leaps"></div>
@@ -929,7 +940,7 @@ tbody td:first-child { text-align:left; }
     <!-- Bull Synthetic Column -->
     <div class="dash-col">
       <div class="dash-col-header">
-        <span class="dash-col-title-wrap"><span class="col-icon">⚡</span><span class="dash-col-title">Bull Synthetic</span></span>
+        <span class="dash-col-title-wrap"><span class="col-tag col-tag-syn">SYN</span><span class="dash-col-title">Bull Synthetic</span></span>
         <span class="dash-col-sub">Ranked by RSI ↑</span>
       </div>
       <div class="dash-col-body" id="col-synth"></div>
