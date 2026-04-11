@@ -233,31 +233,53 @@ async function handleWebhook(req, env) {
 
 // ── Existing proxy logic (preserve all current functionality) ─────────────────
 
-async function handleProxy(req, env) {
-  const url = new URL(req.url);
-  const target = url.searchParams.get('url');
-  if (!target) return new Response('Missing url param', { status: 400 });
+// MarketData.app API token (options chain data)
+const MD_TOKEN = 'VjFYQWlwZDVCZ2ZIMm9TV3BFcndIeGxZbkdBelNESGNDVzh2czBWaHF1Yz0';
 
-  // Validate JWT for data endpoints
+async function requireAuth(req, env) {
   const auth = req.headers.get('Authorization') || '';
   const token = auth.replace('Bearer ', '');
   const payload = await verifyJWT(token, env.JWT_SECRET);
 
-  if (!payload) return json({ error: 'Unauthorized — please log in' }, 401);
+  if (!payload) return { error: json({ error: 'Unauthorized — please log in' }, 401) };
 
-  // Check subscription is valid
   const now = Math.floor(Date.now() / 1000);
-  const allowedStatuses = ['active', 'trialing'];
   if (payload.status === 'trialing' && payload.trialEnd < now) {
-    return json({ error: 'Trial expired — please subscribe to continue' }, 402);
+    return { error: json({ error: 'Trial expired — please subscribe to continue' }, 402) };
   }
-  if (!allowedStatuses.includes(payload.status)) {
-    return json({ error: 'Subscription required' }, 402);
+  if (!['active', 'trialing'].includes(payload.status)) {
+    return { error: json({ error: 'Subscription required' }, 402) };
+  }
+  return { payload };
+}
+
+async function handleProxy(req, env) {
+  const url = new URL(req.url);
+  const target = url.searchParams.get('url');
+  const mdPath = url.searchParams.get('path');
+  if (!target && !mdPath) return new Response('Missing url or path param', { status: 400 });
+
+  // Validate JWT
+  const authCheck = await requireAuth(req, env);
+  if (authCheck.error) return authCheck.error;
+
+  let proxyUrl;
+  let proxyHeaders = { 'User-Agent': 'OptionsEdgePro/1.0' };
+
+  if (mdPath) {
+    // MarketData.app proxy: ?path=options/chain/TSLA/&side=call&...
+    const params = new URLSearchParams();
+    params.set('token', MD_TOKEN);
+    for (const [k, v] of url.searchParams.entries()) {
+      if (k !== 'path') params.set(k, v);
+    }
+    proxyUrl = 'https://api.marketdata.app/v1/' + mdPath + '?' + params.toString();
+  } else {
+    // Generic URL proxy: ?url=https://api.twelvedata.com/...
+    proxyUrl = target;
   }
 
-  const proxyRes = await fetch(target, {
-    headers: { 'User-Agent': 'OptionsEdgePro/1.0' },
-  });
+  const proxyRes = await fetch(proxyUrl, { headers: proxyHeaders });
   const data = await proxyRes.text();
   return new Response(data, {
     status: proxyRes.status,

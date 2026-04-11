@@ -1347,8 +1347,17 @@ async function doUpgrade() {
 function authSuccess(data) {
   _authToken = data.token;
   _authUser  = data;
+  try { localStorage.setItem('oe_token', data.token); } catch(e) {}
   document.getElementById('auth-overlay').classList.add('hidden');
   updateTrialBanner(data);
+}
+
+function authLogout() {
+  _authToken = null;
+  _authUser  = null;
+  try { localStorage.removeItem('oe_token'); } catch(e) {}
+  document.getElementById('auth-overlay').classList.remove('hidden');
+  document.getElementById('trial-banner').classList.add('hidden');
 }
 
 function updateTrialBanner(data) {
@@ -1363,6 +1372,9 @@ function updateTrialBanner(data) {
 }
 
 async function initAuth() {
+  // Restore token from localStorage
+  try { _authToken = _authToken || localStorage.getItem('oe_token'); } catch(e) {}
+
   // Check if returning from Stripe checkout
   var params = new URLSearchParams(window.location.search);
   if (params.get('session_id') && _authToken) {
@@ -1374,11 +1386,29 @@ async function initAuth() {
     var data = await res.json();
     if (data.valid) {
       authSuccess({ token: _authToken, ...data });
-      // Clean URL
       window.history.replaceState({}, '', window.location.pathname);
       return;
     }
   }
+
+  // Try to verify saved token
+  if (_authToken) {
+    try {
+      var res = await fetch(CF_PROXY + 'auth/verify', {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + _authToken }
+      });
+      var data = await res.json();
+      if (data.valid) {
+        authSuccess({ token: _authToken, ...data });
+        return;
+      }
+    } catch(e) {}
+    // Token invalid — clear it
+    _authToken = null;
+    try { localStorage.removeItem('oe_token'); } catch(e) {}
+  }
+
   // Show overlay for unauthenticated users
   document.getElementById('auth-overlay').classList.remove('hidden');
 }
@@ -1702,7 +1732,8 @@ async function fetchMD(path, params) {
   if (params) {
     Object.keys(params).forEach(function(k) { url.searchParams.set(k, params[k]); });
   }
-  var r = await fetch(url.toString());
+  var headers = _authToken ? { 'Authorization': 'Bearer ' + _authToken } : {};
+  var r = await fetch(url.toString(), { headers: headers });
   if (!r.ok) {
     var errText = await r.text();
     throw new Error('MarketData HTTP ' + r.status + ': ' + errText);
