@@ -2260,7 +2260,7 @@ async function runSynth(forceTicker) {
     var aboveSMA   = pd.price > pd.sma200;
 
     var c1 = pd.rsi < 30;
-    var c2 = aboveSMA;
+    var c2 = pd.rsi < 40;  // Directional entry — RSI not extended (replaces 200 SMA)
     var c3 = atmCall.delta >= 0.45 && atmCall.delta <= 0.55;
     var c4 = dte >= 365;
     var c5 = netCostPct !== null ? netCostPct <= 3 : null;
@@ -2300,7 +2300,7 @@ async function runSynth(forceTicker) {
 
     html += '<div class="scorecard"><h3>Synthetic Long — Score</h3><div class="criteria-list">';
     html += critRow(1,'RSI(10) < 30 (Oversold Entry)', c1, fmt(pd.rsi,1));
-    html += critRow(2,'Price Above 200 SMA', c2, aboveSMA ? 'Above ('+fmtDollar(pd.sma200)+')' : 'Below ('+fmtDollar(pd.sma200)+')');
+    html += critRow(2,'RSI(10) < 40 (Not Extended)', c2, fmt(pd.rsi,1));
     html += critRow(3,'ATM Call Delta 0.45–0.55', c3, fmt(atmCall.delta,2));
     html += critRow(4,'Duration ≥ 365 Days', c4, dte+' days');
     html += critRow(5,'Net Cost ≤ 3% of Price', c5, netCostPct !== null ? fmt(netCostPct,2)+'%' : 'N/A');
@@ -2308,17 +2308,45 @@ async function runSynth(forceTicker) {
     html += critRow(7,'Both Spreads ≤ $1.00', c7, (callSpread !== null ? fmtDollar(callSpread) : '—')+' / '+(putSpread !== null ? fmtDollar(putSpread) : '—'));
     html += '</div>' + scoreSummaryHtml(score,7) + '</div>';
 
-    // 3 scenarios
-    var sStrikes = [atmCall.strike, atmCall.strike + 5, atmCall.strike + 15];
-    var sLabels  = ['ATM','Slight ITM','Deep ITM'];
+    // ── Contextual suggestions ──
+    var suggestions = [];
+    if (!c1 && pd.rsi < 40) {
+      suggestions.push('💡 <strong>RSI approaching entry:</strong> RSI is ' + fmt(pd.rsi,1) + ' — not deeply oversold yet. Watch for a continued dip below 30 before entering the synthetic long.');
+    } else if (!c1) {
+      suggestions.push('💡 <strong>RSI too high:</strong> RSI is ' + fmt(pd.rsi,1) + ' — wait for a pullback. A synthetic long entered at elevated RSI leaves little room before a mean-reversion dip hurts both legs.');
+    }
+    if (!c5 && netCostPct !== null) {
+      suggestions.push('💡 <strong>Net cost elevated:</strong> Net debit is ' + fmt(netCostPct,2) + '% of price — the call premium significantly exceeds the put credit. The position starts with a larger hole to dig out of.');
+    }
+    if (netCostPct !== null && netCostPct < 0) {
+      suggestions.push('✅ <strong>Net credit entry:</strong> You collect a net credit of ' + fmt(Math.abs(netCostPct),2) + '% — ideal synthetic long setup. The sold put funds the call with room to spare.');
+    }
+    if (!c6) {
+      suggestions.push('💡 <strong>Liquidity concern:</strong> One or both legs have OI below 200. Thin liquidity means wider fills and harder exits — use limit orders at the mid.');
+    }
+    if (!c7) {
+      suggestions.push('💡 <strong>Wide spreads:</strong> One or both leg spreads exceed $1.00. Try legging in separately during high-liquidity hours (9:45–11am ET) to get better fills.');
+    }
+    if (score === 7) {
+      suggestions.push('✅ <strong>All criteria met</strong> — ideal synthetic long setup. Enter both legs simultaneously as a combo order to avoid leg risk.');
+    }
+    if (suggestions.length > 0) {
+      html += '<div class="suggestions-box">' + suggestions.map(function(s){ return '<div class="suggestion-item">' + s + '</div>'; }).join('') + '</div>';
+    }
+
+    // Position scenarios — % moves relative to current price
+    var scenarioPcts = [-10, 0, 10, 20];
+    var scenarioLabels = ['-10% (Drawdown)', 'Flat (0%)', '+10% Rally', '+20% Strong Rally'];
     html += '<div class="chain-section"><h3>Position Scenarios</h3><div class="scenarios">';
-    sStrikes.forEach(function(s, si) {
-      var gain   = s - atmCall.strike;
-      var pnl    = gain - (netCost || 0);
-      var pnlPct = pd.price ? (pnl / pd.price * 100) : null;
-      html += '<div class="scenario-card"><h4>' + sLabels[si] + ' — $' + s.toFixed(0) + '</h4>' +
+    scenarioPcts.forEach(function(pct, si) {
+      var futurePrice = pd.price * (1 + pct / 100);
+      var intrinsic   = Math.max(0, futurePrice - atmCall.strike);
+      var pnl         = intrinsic - (netCost || 0);
+      var pnlPct      = pd.price ? (pnl / pd.price * 100) : null;
+      html += '<div class="scenario-card"><h4>' + scenarioLabels[si] + '</h4>' +
+        '<div class="sc-row"><span class="sc-key">Price Target</span><span class="sc-val">' + fmtDollar(futurePrice) + '</span></div>' +
         '<div class="sc-row"><span class="sc-key">Net Cost</span><span class="sc-val">' + (netCost !== null ? fmtDollar(netCost) : '—') + '</span></div>' +
-        '<div class="sc-row"><span class="sc-key">Intrinsic Gain</span><span class="sc-val ' + (gain >= 0 ? 'up' : 'down') + '">$' + gain.toFixed(2) + '</span></div>' +
+        '<div class="sc-row"><span class="sc-key">Intrinsic Value</span><span class="sc-val ' + (intrinsic > 0 ? 'up' : '') + '">' + fmtDollar(intrinsic) + '</span></div>' +
         '<div class="sc-row"><span class="sc-key">Net P&L</span><span class="sc-val ' + (pnl >= 0 ? 'up' : 'down') + '">' + fmtDollar(pnl) + '</span></div>' +
         '<div class="sc-row"><span class="sc-key">P&L %</span><span class="sc-val ' + (pnlPct !== null && pnlPct >= 0 ? 'up' : 'down') + '">' + (pnlPct !== null ? fmt(pnlPct,2)+'%' : '—') + '</span></div>' +
       '</div>';
