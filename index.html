@@ -1899,13 +1899,14 @@ async function runSynthPhase3(ticker) {
     ]);
     var callChain = results[0], putChain = results[1];
 
-    // Find put near ATM first
+    // Find put near ATM first — OTM only (strike ≤ current price)
     var slPut = null;
     if (putChain && putChain.strike) {
       var bP = Infinity;
       for (var j = 0; j < putChain.strike.length; j++) {
         var dP = putChain.delta ? putChain.delta[j] : null;
         var sP = putChain.strike[j];
+        if (sP > pd.price) continue;  // OTM puts only
         if (dP === null) continue;
         var difP = Math.abs(Math.abs(dP) - 0.50);
         if (Math.abs(dP) >= 0.20 && Math.abs(dP) <= 0.85 && difP < bP) {
@@ -1918,11 +1919,13 @@ async function runSynthPhase3(ticker) {
       if (!slPut) {
         var bD2 = Infinity;
         for (var k = 0; k < putChain.strike.length; k++) {
-          var dist = Math.abs(putChain.strike[k] - pd.price);
+          var sK2 = putChain.strike[k];
+          if (sK2 > pd.price) continue;  // OTM only
+          var dist = Math.abs(sK2 - pd.price);
           if (dist < bD2) {
             bD2 = dist;
             var dK = putChain.delta ? putChain.delta[k] : null;
-            slPut = { strike: putChain.strike[k], mid: putChain.mid ? putChain.mid[k] : null,
+            slPut = { strike: sK2, mid: putChain.mid ? putChain.mid[k] : null,
               bid: putChain.bid ? putChain.bid[k] : null, ask: putChain.ask ? putChain.ask[k] : null,
               delta: dK, oi: putChain.openInterest ? putChain.openInterest[k] : null };
           }
@@ -2663,11 +2666,12 @@ async function runSynth(forceTicker) {
     // --- STEP 1: Find put strike near ATM ---
     var slPut = null;
     if (putChain && putChain.strike) {
-      // Pass 1: delta near 0.50
+      // Pass 1: delta near 0.50, strike must be OTM (≤ current price)
       var bP = Infinity;
       for (var j = 0; j < putChain.strike.length; j++) {
         var dP = putChain.delta ? putChain.delta[j] : null;
         var sP = putChain.strike[j];
+        if (sP > pd.price) continue;  // OTM puts must be at or below current price
         if (dP === null) continue;
         var difP = Math.abs(Math.abs(dP) - 0.50);
         if (Math.abs(dP) >= 0.20 && Math.abs(dP) <= 0.85 && difP < bP) {
@@ -2677,11 +2681,12 @@ async function runSynth(forceTicker) {
             delta: dP, oi: putChain.openInterest ? putChain.openInterest[j] : null };
         }
       }
-      // Pass 2 fallback: strike closest to current price
+      // Pass 2 fallback: strike closest to current price (OTM side only)
       if (!slPut) {
         var bDist = Infinity;
         for (var k = 0; k < putChain.strike.length; k++) {
           var sK = putChain.strike[k];
+          if (sK > pd.price) continue;  // OTM only
           var dist = Math.abs(sK - pd.price);
           if (dist < bDist) {
             bDist = dist;
