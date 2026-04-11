@@ -211,15 +211,115 @@ header {
 /* ═══════════════════════════════════════════════════════
    DASHBOARD GRID
 ═══════════════════════════════════════════════════════ */
-.dash-grid {
+.dash-columns {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 14px;
-  padding: 16px 20px;
+  gap: 12px;
+  padding: 14px 20px;
+  align-items: start;
 }
-@media (max-width: 1100px) { .dash-grid { grid-template-columns: repeat(3, 1fr); } }
-@media (max-width: 800px)  { .dash-grid { grid-template-columns: repeat(2, 1fr); } }
-@media (max-width: 500px)  { .dash-grid { grid-template-columns: 1fr; } }
+@media (max-width: 1100px) { .dash-columns { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 600px)  { .dash-columns { grid-template-columns: 1fr; } }
+
+.dash-col {
+  background: var(--surface);
+  border: 1px solid var(--border2);
+  border-radius: 12px;
+  overflow: hidden;
+}
+.dash-col-header {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.dash-col-title {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.dash-col-sub {
+  font-size: 9px;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+.dash-col-body {
+  padding: 6px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-height: 120px;
+}
+
+/* Compact row card inside columns */
+.col-card {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 7px 10px;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+  position: relative;
+}
+.col-card:hover { border-color: var(--accent); background: rgba(119,0,255,0.08); }
+.col-card.col-loading { opacity: 0.45; animation: shimmer 1.5s ease-in-out infinite; }
+
+.col-rank {
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--text-muted);
+  width: 14px;
+  text-align: center;
+  flex-shrink: 0;
+}
+.col-ticker {
+  font-size: 13px;
+  font-weight: 900;
+  color: var(--text);
+  width: 44px;
+  flex-shrink: 0;
+}
+.col-price {
+  font-size: 10px;
+  color: var(--text-muted);
+  flex: 1;
+  min-width: 0;
+}
+.col-rsi {
+  font-size: 10px;
+  font-weight: 700;
+  width: 32px;
+  text-align: right;
+  flex-shrink: 0;
+}
+.col-badge {
+  font-size: 8px;
+  font-weight: 800;
+  padding: 2px 6px;
+  border-radius: 6px;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+.col-grade {
+  font-size: 11px;
+  font-weight: 900;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border: 1px solid currentColor;
+}
 
 /* ═══════════════════════════════════════════════════════
    TICKER CARD
@@ -773,19 +873,42 @@ tbody td:first-child { text-align:left; }
       <button class="tgl" data-tf="1day" onclick="setTimeframe('1day')">1D</button>
       <button class="tgl" data-tf="1week" onclick="setTimeframe('1week')">1W</button>
     </div>
-    <div class="toolbar-sep"></div>
-    <span class="toolbar-label">Sort:</span>
-    <div class="btn-group" id="sort-group">
-      <button class="tgl active" data-sort="score" onclick="setSort('score')">Score</button>
-      <button class="tgl" data-sort="rsi-asc" onclick="setSort('rsi-asc')">RSI↑</button>
-      <button class="tgl" data-sort="rsi-desc" onclick="setSort('rsi-desc')">RSI↓</button>
-      <button class="tgl" data-sort="chg-desc" onclick="setSort('chg-desc')">%Chg↓</button>
-      <button class="tgl" data-sort="chg-asc" onclick="setSort('chg-asc')">%Chg↑</button>
-      <button class="tgl" data-sort="default" onclick="setSort('default')">Default</button>
-    </div>
     <div id="refresh-info">Auto-refresh: market hours only</div>
   </div>
-  <div class="dash-grid" id="dash-grid"></div>
+  <div class="dash-columns">
+    <!-- CSP Column -->
+    <div class="dash-col">
+      <div class="dash-col-header">
+        <span class="dash-col-title">Cash-Secured Put</span>
+        <span class="dash-col-sub">Ranked by score</span>
+      </div>
+      <div class="dash-col-body" id="col-put"></div>
+    </div>
+    <!-- CC Column -->
+    <div class="dash-col">
+      <div class="dash-col-header">
+        <span class="dash-col-title">Covered Call</span>
+        <span class="dash-col-sub">Ranked by score</span>
+      </div>
+      <div class="dash-col-body" id="col-cc"></div>
+    </div>
+    <!-- LEAPS Column -->
+    <div class="dash-col">
+      <div class="dash-col-header">
+        <span class="dash-col-title">LEAPS</span>
+        <span class="dash-col-sub">Ranked by RSI ↑</span>
+      </div>
+      <div class="dash-col-body" id="col-leaps"></div>
+    </div>
+    <!-- Bull Synthetic Column -->
+    <div class="dash-col">
+      <div class="dash-col-header">
+        <span class="dash-col-title">Bull Synthetic</span>
+        <span class="dash-col-sub">Ranked by RSI ↑</span>
+      </div>
+      <div class="dash-col-body" id="col-synth"></div>
+    </div>
+  </div>
 </div>
 
 <!-- ═══ PUT PANEL ═══ -->
@@ -1248,334 +1371,129 @@ function earningsBeforeExpiry(ticker, expiryStr) {
 // ═══════════════════════════════════════════════════════
 // DASHBOARD — RENDER SKELETON CARDS
 // ═══════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════
+// DASHBOARD — 4-COLUMN LAYOUT
+// Columns: CSP (live scored) | CC (live scored) |
+//          LEAPS (RSI proxy) | Bull Synth (RSI proxy)
+// ═══════════════════════════════════════════════════════
+
+var COL_IDS = { put: 'col-put', cc: 'col-cc', leaps: 'col-leaps', synth: 'col-synth' };
+
 function renderSkeletons() {
-  var grid = document.getElementById('dash-grid');
-  grid.innerHTML = '';
+  // Populate all 4 columns with loading skeletons
+  Object.values(COL_IDS).forEach(function(colId) {
+    var col = document.getElementById(colId);
+    col.innerHTML = '';
+    tickers.forEach(function(t) {
+      col.innerHTML += buildSkeletonRow(t);
+    });
+  });
+  // Reset cardData
   tickers.forEach(function(t) {
     cardData[t] = { ticker: t, loading: true };
-    grid.innerHTML += buildSkeletonCard(t);
   });
 }
 
-function buildSkeletonCard(ticker) {
-  return '<div class="card card-loading" id="card-' + ticker + '">' +
-    '<div class="card-header">' +
-      '<div><div class="card-ticker">' + ticker + '</div>' +
-      '<div class="card-name">Loading…</div></div>' +
-      '<div class="grade-box grade-">—</div>' +
-    '</div>' +
-    '<div style="height:60px;background:var(--surface2);border-radius:6px;margin-bottom:8px"></div>' +
-    '<div class="criteria-row">' +
-      ['IV','RSI','EARN','PREM','DELTA','DTE'].map(function(l) {
-        return '<div class="mini-box mini-na"><span class="mini-label">' + l + '</span>' +
-               '<span class="mini-val">—</span></div>';
-      }).join('') +
-    '</div>' +
-    '<div class="card-footer"><span class="score-text">Loading</span><span class="loading-dot"></span></div>' +
+function buildSkeletonRow(ticker) {
+  return '<div class="col-card col-loading" id="colrow-' + ticker + '-loading">' +
+    '<span class="col-rank">—</span>' +
+    '<span class="col-ticker">' + ticker + '</span>' +
+    '<span class="col-price">Loading…</span>' +
+    '<span class="col-rsi" style="color:var(--text-muted)">—</span>' +
+    '<span class="col-badge badge-notready" style="opacity:0.4">…</span>' +
   '</div>';
 }
 
-// ═══════════════════════════════════════════════════════
-// DASHBOARD — FETCH ONE TICKER
-// ═══════════════════════════════════════════════════════
-async function fetchTickerData(ticker) {
-  try {
-    // Phase 1: price + RSI (fast)
-    var pd = await fetchPriceData(ticker);
+// Build a compact row card for a column
+function buildColCard(ticker, d, strategy) {
+  // strategy: 'put' | 'cc' | 'leaps' | 'synth'
+  var isScored  = (strategy === 'put' || strategy === 'cc');
+  var score     = isScored ? (strategy === 'put' ? d.putScore : d.ccScore) : null;
+  var grade     = isScored ? scoreToGrade(score, d.phase) : null;
+  var rsi       = d.rsi;
+  var rsiColor  = !isNaN(rsi) ? (rsi < 30 ? 'down' : rsi > 65 ? 'up' : '') : '';
 
-    // Update card with Phase 1 data immediately
-    var d = {
-      ticker:    ticker,
-      loading:   false,
-      phase:     1,
-      price:     pd.price,
-      change:    pd.change,
-      changePct: pd.changePct,
-      week52H:   pd.week52H,
-      week52L:   pd.week52L,
-      rsi:       pd.rsi,
-      sma200:    pd.sma200,
-      ivRank:    null,
-      expiry:    null,
-      dte:       null,
-      bestStrike:null,
-      bestPremium:null,
-      premPct:   null,
-      // criteria
-      c1: null, c2: null, c3: null, c4: null, c5: null, c6: null,
-      score: null
-    };
-    cardData[ticker] = d;
-    updateCard(ticker);
-
-    // Phase 2: options data (slower)
-    // Step 1: get expirations
-    var expirations = await fetchExpirations(ticker).catch(function() { return []; });
-    var bestExpiry = findBestExpiry(expirations, 30, 50);
-    if (!bestExpiry) bestExpiry = findBestExpiry(expirations, 25, 60);
-
-    var dte = bestExpiry ? dteFromStr(bestExpiry) : null;
-    var earningsRisk = bestExpiry ? earningsBeforeExpiry(ticker, bestExpiry) : null;
-
-    var bestPremium = null;
-    var bestStrike  = null;
-    var bestDelta   = null;
-    var ivRank      = null;
-
-    if (bestExpiry) {
-      try {
-        // Fetch put chain — reuse it for both IV rank and best strike (avoid double call)
-        var putChain = await fetchChain(ticker, bestExpiry, 'put');
-
-        // Derive IV rank directly from the chain we already fetched
-        if (putChain && putChain.iv && putChain.iv.length > 0) {
-          var ivs = [];
-          for (var ii = 0; ii < putChain.iv.length; ii++) {
-            var v = putChain.iv[ii];
-            if (v !== null && v !== undefined && !isNaN(v) && v > 0)
-              ivs.push(v <= 1 ? v * 100 : v);
-          }
-          if (ivs.length > 0) {
-            ivs.sort(function(a,b){return a-b;});
-            var atmIV = ivs[Math.floor(ivs.length/2)];
-            var ivRange = ivs[ivs.length-1] - ivs[0];
-            ivRank = ivRange > 0 ? Math.min(100, Math.max(0, (atmIV - ivs[0]) / ivRange * 100)) : 50;
-          }
-        }
-
-        if (putChain && putChain.strike) {
-          var bestDiff = Infinity;
-          for (var i = 0; i < putChain.strike.length; i++) {
-            var delta = putChain.delta ? putChain.delta[i] : null;
-            if (delta === null) continue;
-            var diff = Math.abs(Math.abs(delta) - 0.20);
-            if (diff < bestDiff) {
-              bestDiff    = diff;
-              bestStrike  = putChain.strike[i];
-              bestDelta   = delta;
-              bestPremium = putChain.mid ? putChain.mid[i] : null;
-            }
-          }
-        }
-      } catch(e) { /* options data unavailable */ }
-    }
-
-    var premPct  = (bestPremium && pd.price) ? (bestPremium / pd.price * 100) : null;
-    var deltaOk  = bestDelta !== null && Math.abs(bestDelta) >= 0.15 && Math.abs(bestDelta) <= 0.25;
-
-    // Score PUT criteria
-    var put_c1 = ivRank !== null ? ivRank > 90 : null;
-    var put_c2 = pd.rsi < 30;
-    var put_c3 = earningsRisk === null ? null : !earningsRisk;
-    var put_c4 = premPct !== null ? premPct > 2 : null;
-    var put_c5 = deltaOk;
-    var put_c6 = dte !== null ? (dte >= 30 && dte <= 45) : null;
-    var putScore = [put_c1,put_c2,put_c3,put_c4,put_c5,put_c6].filter(function(x){return x===true;}).length;
-
-    // Score CC criteria (same chain data, different RSI rule)
-    var cc_c1 = ivRank !== null ? ivRank >= 50 : null;
-    var cc_c2 = pd.rsi > 65;
-    var cc_c3 = earningsRisk === null ? null : !earningsRisk;
-    var cc_c4 = premPct !== null ? premPct >= 2 : null;
-    var cc_c5 = deltaOk;
-    var cc_c6 = dte !== null ? (dte >= 30 && dte <= 45) : null;
-    var ccScore = [cc_c1,cc_c2,cc_c3,cc_c4,cc_c5,cc_c6].filter(function(x){return x===true;}).length;
-
-    // Pick best strategy — PUT wins on tie (more conservative default)
-    var strategy, score, c1, c2, c3, c4, c5, c6;
-    if (ccScore > putScore) {
-      strategy = 'CC';
-      score = ccScore;
-      c1 = cc_c1; c2 = cc_c2; c3 = cc_c3; c4 = cc_c4; c5 = cc_c5; c6 = cc_c6;
-    } else {
-      strategy = 'PUT';
-      score = putScore;
-      c1 = put_c1; c2 = put_c2; c3 = put_c3; c4 = put_c4; c5 = put_c5; c6 = put_c6;
-    }
-
-    d.phase      = 2;
-    d.strategy   = strategy;
-    d.putScore   = putScore;
-    d.ccScore    = ccScore;
-    d.ivRank     = ivRank;
-    d.expiry     = bestExpiry;
-    d.dte        = dte;
-    d.bestStrike = bestStrike;
-    d.bestPremium= bestPremium;
-    d.premPct    = premPct;
-    d.c1 = c1; d.c2 = c2; d.c3 = c3; d.c4 = c4; d.c5 = c5; d.c6 = c6;
-    d.score      = score;
-    d.earningsRisk = earningsRisk;
-
-    cardData[ticker] = d;
-    updateCard(ticker);
-
-    // Phase 3: re-sort
-    renderSorted();
-
-  } catch(e) {
-    var el = document.getElementById('card-' + ticker);
-    if (el) {
-      el.classList.remove('card-loading');
-      el.querySelector('.card-footer').innerHTML =
-        '<span style="color:var(--red);font-size:10px">Error: ' + e.message.substring(0,40) + '</span>';
-    }
-  }
-}
-
-// ═══════════════════════════════════════════════════════
-// DASHBOARD — UPDATE ONE CARD DOM
-// ═══════════════════════════════════════════════════════
-function updateCard(ticker) {
-  var d  = cardData[ticker];
-  var el = document.getElementById('card-' + ticker);
-  if (!el) return;
-
-  var score     = d.score !== null ? d.score : 0;
-  var grade     = scoreToGrade(score, d.phase);
-  var strategy  = d.strategy || 'PUT'; // PUT or CC
-  // Option C — tiered labels with context-aware reason when not tradeable
-  var earningsBlocking = d.earningsRisk === true && score < 5;
-  var lowVolBlocking   = d.ivRank !== null && d.ivRank < 50 && score < 3;
+  // Badge
   var badgeCls, badgeTxt;
-  if (score >= 5) {
-    badgeCls = 'badge-ideal';
-    badgeTxt = 'IDEAL · ' + strategy;
-  } else if (score >= 3) {
-    badgeCls = 'badge-watch';
-    badgeTxt = 'WATCH · ' + strategy;
-  } else if (earningsBlocking) {
-    badgeCls = 'badge-notready';
-    badgeTxt = '⚠ EARNINGS · WAIT';
-  } else if (lowVolBlocking) {
-    badgeCls = 'badge-notready';
-    badgeTxt = 'LOW VOL · WAIT';
+  if (isScored) {
+    if (score >= 5)      { badgeCls = 'badge-ideal';    badgeTxt = score + '/6 IDEAL'; }
+    else if (score >= 3) { badgeCls = 'badge-watch';    badgeTxt = score + '/6 WATCH'; }
+    else                 { badgeCls = 'badge-notready'; badgeTxt = score + '/6'; }
   } else {
-    badgeCls = 'badge-notready';
-    badgeTxt = 'NO TRADE';
+    // Proxy: rank by RSI. Show RSI-based readiness label
+    if (!isNaN(rsi) && rsi < 30)       { badgeCls = 'badge-ideal';    badgeTxt = 'OVERSOLD'; }
+    else if (!isNaN(rsi) && rsi < 40)  { badgeCls = 'badge-watch';    badgeTxt = 'WATCH'; }
+    else                               { badgeCls = 'badge-notready'; badgeTxt = 'WAIT'; }
   }
 
-  var chgColor  = d.change >= 0 ? 'up' : 'down';
-  var chgSign   = d.change >= 0 ? '+' : '';
-
-  // 52W range position
-  var rangePos  = 50;
-  if (d.week52H && d.week52L && d.price) {
-    var span = d.week52H - d.week52L;
-    rangePos = span > 0 ? Math.min(100, Math.max(0, (d.price - d.week52L) / span * 100)) : 50;
+  // Grade circle (scored columns only)
+  var gradeHtml = '';
+  if (grade) {
+    gradeHtml = '<span class="col-grade grade-' + grade + '">' + grade + '</span>';
   }
 
-  // Price color by 52W position
-  var priceColor = rangePos > 70 ? 'up' : rangePos < 30 ? 'down' : '';
+  var priceDisp = d.price ? fmtDollar(d.price) : '—';
+  var chgDisp   = (d.changePct !== undefined && d.changePct !== null)
+    ? (d.changePct >= 0 ? '+' : '') + fmt(d.changePct, 1) + '%' : '';
+  var chgColor  = (d.changePct >= 0) ? 'up' : 'down';
+  var rsiDisp   = !isNaN(rsi) ? fmt(rsi, 0) : '—';
 
-  // Mini boxes
-  function miniBox(label, pass, val) {
-    var cls = pass === true ? 'mini-pass' : pass === false ? 'mini-fail' : 'mini-na';
-    var sym = pass === true ? '✓' : pass === false ? '✗' : '?';
-    return '<div class="mini-box ' + cls + '">' +
-      '<span class="mini-label">' + label + '</span>' +
-      '<span class="mini-val">' + (val !== undefined ? val : sym) + '</span>' +
-    '</div>';
-  }
-
-  var ivDisp   = d.ivRank !== null ? Math.round(d.ivRank) + '%' : (d.phase < 2 ? '…' : '—');
-  var rsiDisp  = !isNaN(d.rsi) ? fmt(d.rsi, 0) : '—';
-  var earnDisp = d.c3 === true ? 'OK' : d.c3 === false ? 'RISK' : (d.phase < 2 ? '…' : '—');
-  var premDisp = d.premPct !== null ? fmt(d.premPct, 1) + '%' : (d.phase < 2 ? '…' : '—');
-  var dteDisp  = d.dte !== null ? d.dte + 'd' : (d.phase < 2 ? '…' : '—');
-  var strkDisp = d.phase < 2 ? '…' : (d.c5 === true ? '✓' : d.c5 === false ? '✗' : '—');
-
-  var scoreText = d.phase >= 2
-    ? '<span class="' + badgeCls + ' card-badge" style="font-size:9px;padding:1px 6px">' + badgeTxt + '</span> ' + score + '/6'
-    : score + '/6 <span class="loading-dot"></span>';
-
-  // Click navigates to best analyzer for this ticker
-  el.style.cursor = 'pointer';
-  el.onclick = function() { navigateToAnalyzer(ticker, d.strategy); };
-  el.className = 'card';
-  el.innerHTML =
-    '<div class="card-header">' +
-      '<div>' +
-        '<div class="card-ticker">' + ticker + '</div>' +
-        '<div class="card-name">' + (d.phase >= 2 ? (strategy + ' · ') : '') + (d.expiry || '') + '</div>' +
-      '</div>' +
-      '<div class="grade-box grade-' + grade + '">' + grade + '</div>' +
-    '</div>' +
-    '<div class="card-price-row">' +
-      '<span class="card-price ' + priceColor + '">' + fmtDollar(d.price) + '</span>' +
-      '<span class="card-chg ' + chgColor + '">' + chgSign + fmt(d.changePct, 2) + '%</span>' +
-    '</div>' +
-    '<div class="range-row">' +
-      '<div class="range-labels">' +
-        '<span>' + (d.week52L ? fmtDollar(d.week52L) : '—') + '</span>' +
-        '<span style="color:var(--text-muted);font-size:8px">52W</span>' +
-        '<span>' + (d.week52H ? fmtDollar(d.week52H) : '—') + '</span>' +
-      '</div>' +
-      '<div class="range-track">' +
-        '<div class="range-fill" style="width:' + rangePos + '%"></div>' +
-        '<div class="range-dot" style="left:' + rangePos + '%"></div>' +
-      '</div>' +
-    '</div>' +
-    '<div class="criteria-row">' +
-      miniBox('IV',     d.c1, ivDisp) +
-      miniBox('RSI',    null, rsiDisp) +
-      miniBox('EARN',   d.c3, earnDisp) +
-      miniBox('PREM',   d.c4, premDisp) +
-      miniBox('DELTA', d.c5, strkDisp) +
-      miniBox('DTE',    d.c6, dteDisp) +
-    '</div>' +
-    '<div class="card-footer">' +
-      '<span class="score-text">' + scoreText + '</span>' +
-      '<span style="font-size:9px;color:var(--text-muted)">RSI ' + rsiDisp + '</span>' +
-    '</div>';
+  return '<div class="col-card" id="colrow-' + ticker + '-' + strategy + '" onclick="navigateToAnalyzer('' + ticker + '','' + strategy + '')">' +
+    '<span class="col-ticker">' + ticker + '</span>' +
+    '<span class="col-price"><span class="' + chgColor + '">' + priceDisp + '</span> <span class="' + chgColor + '" style="font-size:9px">' + chgDisp + '</span></span>' +
+    '<span class="col-rsi ' + rsiColor + '">RSI ' + rsiDisp + '</span>' +
+    '<span class="col-badge ' + badgeCls + '">' + badgeTxt + '</span>' +
+    (gradeHtml ? gradeHtml : '') +
+  '</div>';
 }
 
-function scoreToGrade(score, phase) {
-  if (phase < 2) return '';
-  if (score >= 6) return 'A';
-  if (score >= 5) return 'B';
-  if (score >= 4) return 'C';
-  if (score >= 3) return 'D';
-  return 'F';
-}
+function renderColumns() {
+  // Build sorted lists for each column
+  var putSorted   = tickers.slice().filter(function(t){ return cardData[t] && !cardData[t].loading; });
+  var ccSorted    = putSorted.slice();
+  var leapsSorted = putSorted.slice();
+  var synthSorted = putSorted.slice();
 
-// ═══════════════════════════════════════════════════════
-// DASHBOARD — SORT & RENDER
-// ═══════════════════════════════════════════════════════
-function renderSorted() {
-  var grid     = document.getElementById('dash-grid');
-  var sorted   = tickers.slice();
-
-  if (currentSort === 'score') {
-    sorted.sort(function(a, b) {
-      return (cardData[b] && cardData[b].score !== null ? cardData[b].score : -1) -
-             (cardData[a] && cardData[a].score !== null ? cardData[a].score : -1);
-    });
-  } else if (currentSort === 'rsi-asc') {
-    sorted.sort(function(a, b) {
-      return (cardData[a] ? cardData[a].rsi : 999) - (cardData[b] ? cardData[b].rsi : 999);
-    });
-  } else if (currentSort === 'rsi-desc') {
-    sorted.sort(function(a, b) {
-      return (cardData[b] ? cardData[b].rsi : -1) - (cardData[a] ? cardData[a].rsi : -1);
-    });
-  } else if (currentSort === 'chg-desc') {
-    sorted.sort(function(a, b) {
-      return (cardData[b] ? cardData[b].changePct : -999) - (cardData[a] ? cardData[a].changePct : -999);
-    });
-  } else if (currentSort === 'chg-asc') {
-    sorted.sort(function(a, b) {
-      return (cardData[a] ? cardData[a].changePct : 999) - (cardData[b] ? cardData[b].changePct : 999);
-    });
-  }
-  // 'default' = leave as tickers order
-
-  // Reorder DOM nodes
-  sorted.forEach(function(t) {
-    var el = document.getElementById('card-' + t);
-    if (el) grid.appendChild(el);
+  // CSP: sort by putScore desc, ties broken by RSI asc
+  putSorted.sort(function(a, b) {
+    var sa = cardData[a].putScore !== null ? cardData[a].putScore : -1;
+    var sb = cardData[b].putScore !== null ? cardData[b].putScore : -1;
+    if (sb !== sa) return sb - sa;
+    return (cardData[a].rsi || 999) - (cardData[b].rsi || 999);
   });
+
+  // CC: sort by ccScore desc, ties broken by RSI desc
+  ccSorted.sort(function(a, b) {
+    var sa = cardData[a].ccScore !== null ? cardData[a].ccScore : -1;
+    var sb = cardData[b].ccScore !== null ? cardData[b].ccScore : -1;
+    if (sb !== sa) return sb - sa;
+    return (cardData[b].rsi || 0) - (cardData[a].rsi || 0);
+  });
+
+  // LEAPS: sort by RSI asc (oversold = best entry)
+  leapsSorted.sort(function(a, b) {
+    return (cardData[a].rsi || 999) - (cardData[b].rsi || 999);
+  });
+
+  // Bull Synth: sort by RSI asc (same logic)
+  synthSorted.sort(function(a, b) {
+    return (cardData[a].rsi || 999) - (cardData[b].rsi || 999);
+  });
+
+  // Render each column
+  var colPut   = document.getElementById('col-put');
+  var colCC    = document.getElementById('col-cc');
+  var colLeaps = document.getElementById('col-leaps');
+  var colSynth = document.getElementById('col-synth');
+
+  colPut.innerHTML   = putSorted.map(function(t)   { return buildColCard(t, cardData[t], 'put');   }).join('');
+  colCC.innerHTML    = ccSorted.map(function(t)     { return buildColCard(t, cardData[t], 'cc');    }).join('');
+  colLeaps.innerHTML = leapsSorted.map(function(t)  { return buildColCard(t, cardData[t], 'leaps'); }).join('');
+  colSynth.innerHTML = synthSorted.map(function(t)  { return buildColCard(t, cardData[t], 'synth'); }).join('');
 }
+
+// Keep renderSorted as a no-op alias so existing call in fetchTickerData still works
+function renderSorted() { renderColumns(); }
 
 // ═══════════════════════════════════════════════════════
 // DASHBOARD — REFRESH
@@ -1597,9 +1515,7 @@ function refreshDashboard(forceRefresh) {
 document.querySelectorAll('#tf-group .tgl').forEach(function(b) {
   b.classList.toggle('active', b.dataset.tf === currentTF);
 });
-document.querySelectorAll('#sort-group .tgl').forEach(function(b) {
-  b.classList.toggle('active', b.dataset.sort === currentSort);
-});
+// sort-group removed (4-column layout has no sort toolbar)
 refreshDashboard();
 
 // ═══════════════════════════════════════════════════════
@@ -2443,14 +2359,14 @@ function stripSelect(ticker) {
   else if (tabId === 'synth') runSynth(ticker);
 }
 
-// Re-render strip whenever tickers or card data updates
-var _origUpdateCard = updateCard;
-updateCard = function(ticker) {
-  _origUpdateCard(ticker);
+// Re-render columns + strip whenever card data updates
+function updateCard(ticker) {
+  // In 4-column layout, just re-render all columns (fast enough with 14 tickers)
+  renderColumns();
   renderTickerStrip();
-};
+}
 
-// Also re-render when tickers list changes
+// Re-render strip when dashboard refreshes
 var _origRefreshDashboard = refreshDashboard;
 refreshDashboard = function(forceRefresh) {
   _origRefreshDashboard(forceRefresh);
@@ -2463,11 +2379,19 @@ renderTickerStrip();
 // CARD CLICK — NAVIGATE TO ANALYZER
 // ═══════════════════════════════════════════════════════
 function navigateToAnalyzer(ticker, strategy) {
-  // strategy is 'CC' or 'PUT' (already determined by card scoring)
+  // strategy: 'put' | 'cc' | 'leaps' | 'synth' (lowercase from col cards)
+  //           or legacy 'PUT' | 'CC' from other callers
+  var s = strategy.toLowerCase();
   var tabId, inputId;
-  if (strategy === 'CC') {
+  if (s === 'cc') {
     tabId   = 'cc';
     inputId = 'cc-ticker';
+  } else if (s === 'leaps') {
+    tabId   = 'leaps';
+    inputId = 'leaps-ticker';
+  } else if (s === 'synth') {
+    tabId   = 'synth';
+    inputId = 'synth-ticker';
   } else {
     tabId   = 'put';
     inputId = 'put-ticker';
@@ -2482,9 +2406,11 @@ function navigateToAnalyzer(ticker, strategy) {
   // Pre-fill ticker
   document.getElementById(inputId).value = ticker;
 
-  // Auto-run analysis — pass ticker directly to avoid hidden input timing issues
-  if (tabId === 'put') runPut(ticker);
-  else if (tabId === 'cc') runCC(ticker);
+  // Auto-run analysis
+  if (tabId === 'put')   runPut(ticker);
+  else if (tabId === 'cc')    runCC(ticker);
+  else if (tabId === 'leaps') runLeaps(ticker);
+  else if (tabId === 'synth') runSynth(ticker);
 
   // Scroll to top
   window.scrollTo({ top: 0, behavior: 'smooth' });
