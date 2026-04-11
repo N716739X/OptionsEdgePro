@@ -53,8 +53,10 @@ async function hashPassword(password, salt) {
 
 async function initDB(db) {
   await db.prepare(
-    "CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, email TEXT UNIQUE NOT NULL, password_hash TEXT NOT NULL, salt TEXT NOT NULL, created_at INTEGER NOT NULL, stripe_customer_id TEXT, stripe_subscription_id TEXT, subscription_status TEXT DEFAULT 'inactive', trial_end INTEGER, plan TEXT)"
+    "CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, email TEXT UNIQUE NOT NULL, password_hash TEXT NOT NULL, salt TEXT NOT NULL, created_at INTEGER NOT NULL, stripe_customer_id TEXT, stripe_subscription_id TEXT, subscription_status TEXT DEFAULT 'inactive', trial_end INTEGER, plan TEXT, session_id TEXT)"
   ).run();
+  // Add session_id column if missing (existing tables)
+  await db.prepare("ALTER TABLE users ADD COLUMN session_id TEXT").run().catch(() => {});
 }
 
 function json(data, status = 200) {
@@ -79,15 +81,16 @@ async function handleSignup(req, env) {
 
   const { hash, salt } = await hashPassword(password);
   const id = crypto.randomUUID();
+  const sessionId = crypto.randomUUID();
   const now = Math.floor(Date.now() / 1000);
   const trialEnd = now + (7 * 24 * 60 * 60); // 7 days
 
   await env.DB.prepare(
-    'INSERT INTO users (id, email, password_hash, salt, created_at, subscription_status, trial_end) VALUES (?, ?, ?, ?, ?, ?, ?)'
-  ).bind(id, email.toLowerCase(), hash, salt, now, 'trialing', trialEnd).run();
+    'INSERT INTO users (id, email, password_hash, salt, created_at, subscription_status, trial_end, session_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+  ).bind(id, email.toLowerCase(), hash, salt, now, 'trialing', trialEnd, sessionId).run();
 
   const token = await signJWT(
-    { sub: id, email: email.toLowerCase(), status: 'trialing', trialEnd, exp: now + 86400 * 30 },
+    { sub: id, email: email.toLowerCase(), status: 'trialing', trialEnd, sid: sessionId, exp: now + 86400 * 30 },
     env.JWT_SECRET
   );
 
@@ -115,8 +118,12 @@ async function handleLogin(req, env) {
     await env.DB.prepare('UPDATE users SET subscription_status = ? WHERE id = ?').bind('trial_expired', user.id).run();
   }
 
+  // Generate new session — invalidates any previous session
+  const sessionId = crypto.randomUUID();
+  await env.DB.prepare('UPDATE users SET session_id = ? WHERE id = ?').bind(sessionId, user.id).run();
+
   const token = await signJWT(
-    { sub: user.id, email: user.email, status, trialEnd: user.trial_end, plan: user.plan, exp: now + 86400 * 30 },
+    { sub: user.id, email: user.email, status, trialEnd: user.trial_end, plan: user.plan, sid: sessionId, exp: now + 86400 * 30 },
     env.JWT_SECRET
   );
 
@@ -282,6 +289,16 @@ async function requireAuth(req, env) {
   if (!['active', 'trialing'].includes(payload.status)) {
     return { error: json({ error: 'Subscription required' }, 402) };
   }
+
+  // Single-session enforcement: verify session_id matches DB
+  if (payload.sid) {
+    await initDB(env.DB);
+    const user = await env.DB.prepare('SELECT session_id FROM users WHERE id = ?').bind(payload.sub).first();
+    if (user && user.session_id && user.session_id !== payload.sid) {
+      return { error: json({ error: 'Session expired — your account was logged in elsewhere. Please log in again.' }, 403) };
+    }
+  }
+
   return { payload };
 }
 
