@@ -1485,7 +1485,13 @@ function buildColCard(ticker, d, strategy) {
     cx = { c1: d.cc_c1, c2: d.cc_c2, c3: d.cc_c3, c4: d.cc_c4, c5: d.cc_c5, c6: d.cc_c6 };
   }
 
-  var ivDisp   = d.ivRank !== null && d.ivRank !== undefined ? Math.round(d.ivRank) + '%' : (d.phase < 2 ? '…' : '—');
+  // For LEAPS phase 3 cards, show actual IV%; for others show IV rank
+  var ivDisp;
+  if (strategy === 'leaps' && d.phase >= 3 && d.currentIV !== null && d.currentIV !== undefined) {
+    ivDisp = Math.round(d.currentIV) + '%';
+  } else {
+    ivDisp = d.ivRank !== null && d.ivRank !== undefined ? Math.round(d.ivRank) + '%' : (d.phase < 2 ? '…' : '—');
+  }
   var earnDisp = cx.c3 === true ? 'OK' : cx.c3 === false ? 'RISK' : (d.phase < 2 ? '…' : '—');
   var premDisp = d.premPct !== null && d.premPct !== undefined ? fmt(d.premPct, 1) + '%' : (d.phase < 2 ? '…' : '—');
   var dteDisp  = d.dte !== null && d.dte !== undefined ? d.dte + 'd' : (d.phase < 2 ? '…' : '—');
@@ -1513,7 +1519,8 @@ function buildColCard(ticker, d, strategy) {
       mb('STRK',  d.leaps_c3, d.leaps_c3 === null ? '—' : (d.leaps_c3 ? '✓' : '✗')) +
       mb('DUR',   d.leaps_c4, d.leaps_c4 === true ? '✓' : d.leaps_c4 === false ? '✗' : '—') +
       mb('OI',    d.leaps_c5, d.leaps_c5 === null ? '—' : (d.leaps_c5 ? '✓' : '✗')) +
-      mb('BID/A', d.leaps_c6, d.leaps_c6 === null ? '—' : (d.leaps_c6 ? '✓' : '✗'));
+      mb('BID/A', d.leaps_c6, d.leaps_c6 === null ? '—' : (d.leaps_c6 ? '✓' : '✗')) +
+      mb('CAGR',  d.leaps_c7, d.leaps_c7 === null ? '—' : (d.leaps_c7 ? (d.leapsCAGR !== null && d.leapsCAGR !== undefined ? Math.round(d.leapsCAGR)+'%' : '✓') : (d.leapsCAGR !== null && d.leapsCAGR !== undefined ? Math.round(d.leapsCAGR)+'%' : '✗')));
   } else {
     // Bull Synthetic: 7 criteria — RSI<30, RSI<40, CallΔ, Duration, Debit, OI, Spread
     criteriaHtml =
@@ -1522,7 +1529,8 @@ function buildColCard(ticker, d, strategy) {
       mb('CALLΔ', d.synth_c3, d.synth_c3 === null ? '—' : (d.synth_c3 ? '✓' : '✗')) +
       mb('DUR',   d.synth_c4, d.synth_c4 === true ? '✓' : d.synth_c4 === false ? '✗' : '—') +
       mb('DEBIT', d.synth_c5, d.synth_c5 === null ? '—' : (d.synth_c5 ? '✓' : '✗')) +
-      mb('OI',    d.synth_c6, d.synth_c6 === null ? '—' : (d.synth_c6 ? '✓' : '✗'));
+      mb('OI',    d.synth_c6, d.synth_c6 === null ? '—' : (d.synth_c6 ? '✓' : '✗')) +
+      mb('SPRD',  d.synth_c7, d.synth_c7 === null ? '—' : (d.synth_c7 ? '✓' : '✗'));
   }
 
   // Footer score / label
@@ -1848,10 +1856,13 @@ async function runLeapsPhase3(ticker) {
     d.leaps_c5 = bestOI !== null ? bestOI >= 300 : null;
     d.leaps_c6 = bestSpread !== null ? bestSpread <= 10 : null;
     d.leaps_c7 = breakevenCAGR !== null ? breakevenCAGR <= 35 : null;
+    d.currentIV = currentIV;  // store actual IV% for card display
+    d.leapsCAGR = breakevenCAGR; // store for card display
     d.leapsScore = [d.leaps_c1,d.leaps_c2,d.leaps_c3,d.leaps_c4,d.leaps_c5,d.leaps_c6,d.leaps_c7]
       .filter(function(x){return x===true;}).length;
     d.phase = 3;
     renderColumns();
+    renderMiniRankings('leaps');
   } catch(e) { /* silently skip if data unavailable */ }
 }
 
@@ -1955,6 +1966,7 @@ async function runSynthPhase3(ticker) {
       .filter(function(x){return x===true;}).length;
     d.phase = 3;
     renderColumns();
+    renderMiniRankings('synth');
   } catch(e) { /* silently skip */ }
 }
 
