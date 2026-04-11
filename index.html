@@ -3,7 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>OptionsWatch Pro</title>
+<title>OptionsEdge Pro</title>
+  <link rel="icon" type="image/png" href="logo.png">
 <style>
 /* ═══════════════════════════════════════════════════════
    THEME VARIABLES
@@ -92,14 +93,26 @@ header {
   box-shadow: var(--glow);
 }
 .logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  white-space: nowrap;
+  text-decoration: none;
+}
+.logo img {
+  height: 32px;
+  width: 32px;
+  object-fit: contain;
+  filter: drop-shadow(0 0 6px rgba(0,255,204,0.5));
+}
+.logo-text {
   font-size: 17px;
   font-weight: 800;
-  color: var(--accent);
+  color: #ffffff;
   letter-spacing: 1px;
-  text-shadow: 0 0 10px currentColor;
-  white-space: nowrap;
+  text-shadow: 0 0 10px rgba(0,255,204,0.4);
 }
-.logo span { color: var(--purple); }
+.logo-text span { color: var(--green); }
 .header-right {
   margin-left: auto;
   display: flex;
@@ -865,7 +878,10 @@ tbody td:first-child { text-align:left; }
 
 <!-- ═══ HEADER ═══ -->
 <header>
-  <div class="logo">Options<span>Watch</span> Pro</div>
+  <div class="logo">
+    <img src="logo.png" alt="OptionsEdge Pro">
+    <span class="logo-text">OptionsEdge<span> Pro</span></span>
+  </div>
   <div class="header-right">
     <div class="clock-box" id="clock">--:--:-- CST</div>
     <div class="market-status closed" id="mkt-status">CLOSED</div>
