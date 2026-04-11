@@ -2398,11 +2398,11 @@ async function runSynth(forceTicker) {
       for (var j = 0; j < putChain.strike.length; j++) {
         var dP = putChain.delta ? putChain.delta[j] : null;
         var sP = putChain.strike[j];
-        // Must be: above call strike, within 10% of current price, delta near 0.50
+        // Must be: above call strike, within 20% of current price, delta near 0.50
         if (dP === null || sP <= slCall.strike) continue;
         if (sP < putPriceMin || sP > putPriceMax) continue;
         var difP = Math.abs(Math.abs(dP) - 0.50);
-        if (Math.abs(dP) >= 0.30 && Math.abs(dP) <= 0.70 && difP < bP) {
+        if (Math.abs(dP) >= 0.20 && Math.abs(dP) <= 0.85 && difP < bP) {
           bP = difP;
           slPut = { strike: sP, bid: putChain.bid ? putChain.bid[j] : null,
             ask: putChain.ask ? putChain.ask[j] : null, mid: putChain.mid ? putChain.mid[j] : null,
@@ -2410,7 +2410,7 @@ async function runSynth(forceTicker) {
         }
       }
     }
-    if (!slPut) throw new Error('No near-ATM put found above call strike (within 10% of price).');
+    if (!slPut) throw new Error('No near-ATM put found above call strike (within 20% of price).');
 
     var netCost    = (slCall.mid !== null && slPut.mid !== null) ? slCall.mid - slPut.mid : null;
     var netCostPct = (netCost !== null && pd.price) ? (netCost / pd.price * 100) : null;
