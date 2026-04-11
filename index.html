@@ -358,8 +358,10 @@ header {
 .range-fill {
   position: absolute;
   left: 0; top: 0; bottom: 0;
-  background: linear-gradient(90deg, var(--red), var(--yellow), var(--green));
+  height: 100%;
+  background: linear-gradient(90deg, var(--red) 0%, var(--yellow) 50%, var(--green) 100%);
   border-radius: 2px;
+  opacity: 0.85;
 }
 .range-dot {
   position: absolute;
@@ -2611,8 +2613,8 @@ function stripSelect(ticker) {
   if (activeTab && activeTab.dataset.tab === 'dashboard') {
     // Use card's strategy to pick best tab
     var d = cardData[ticker];
-    var strategy = d && d.strategy ? d.strategy : 'PUT';
-    navigateToAnalyzer(ticker, strategy);
+    // Default to CSP when clicking from dashboard strip
+    navigateToAnalyzer(ticker, 'put');
     return;
   }
 
