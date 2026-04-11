@@ -1489,21 +1489,17 @@ function buildColCard(ticker, d, strategy) {
       mb('DELTA', cx.c5, strkDisp) +
       mb('DTE',   cx.c6, dteDisp);
   } else {
-    // LEAPS/Synth — proxy indicators: RSI, IV, 52W position, earnings, premium, DTE
+    // LEAPS/Synth — proxy indicators: RSI and 52W position only (rest are grey — needs full analysis)
     var posDisp = fmt(rangePos, 0) + '%';
     var posCls  = rangePos < 30 ? true : rangePos > 70 ? false : null;
     var rsiPass = !isNaN(rsi) ? (rsi < 30 ? true : rsi > 65 ? false : null) : null;
-    // Use shared cc_c3/put_c3 for earnings, put_c4 for premium, put_c6 for DTE
-    var sharedEarn = d.put_c3 !== undefined ? d.put_c3 : null;
-    var sharedPrem = d.put_c4 !== undefined ? d.put_c4 : null;
-    var sharedDte  = d.put_c6 !== undefined ? d.put_c6 : null;
     criteriaHtml =
       mb('RSI',  rsiPass, rsiDisp) +
       mb('IV',   null, ivDisp) +
       mb('52W%', posCls, posDisp) +
-      mb('EARN', sharedEarn, earnDisp) +
-      mb('PREM', sharedPrem, premDisp) +
-      mb('DTE',  sharedDte, dteDisp);
+      mb('EARN', null, '—') +
+      mb('PREM', null, '—') +
+      mb('DTE',  null, '—');
   }
 
   // Footer score / label
