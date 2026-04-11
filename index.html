@@ -2336,19 +2336,26 @@ async function runSynth(forceTicker) {
       html += '<div class="suggestions-box">' + suggestions.map(function(s){ return '<div class="suggestion-item">' + s + '</div>'; }).join('') + '</div>';
     }
 
-    // Position scenarios — % moves relative to current price
+    // Position scenarios — proper two-leg P&L
+    // Call value: Max(0, futurePrice - strike)
+    // Put obligation: -Max(0, strike - futurePrice)  (we sold the put)
+    // Net P&L = callValue - putObligation - netCost
+    //         = Max(0, F-K) - Max(0, K-F) - netCost
+    //         = (F - K) - netCost  [since one of the two max() terms is always 0]
     var scenarioPcts = [-10, 0, 10, 20];
     var scenarioLabels = ['-10% (Drawdown)', 'Flat (0%)', '+10% Rally', '+20% Strong Rally'];
     html += '<div class="chain-section"><h3>Position Scenarios</h3><div class="scenarios">';
     scenarioPcts.forEach(function(pct, si) {
-      var futurePrice = pd.price * (1 + pct / 100);
-      var intrinsic   = Math.max(0, futurePrice - atmCall.strike);
-      var pnl         = intrinsic - (netCost || 0);
-      var pnlPct      = pd.price ? (pnl / pd.price * 100) : null;
+      var futurePrice    = pd.price * (1 + pct / 100);
+      var callValue      = Math.max(0, futurePrice - atmCall.strike);
+      var putObligation  = Math.max(0, atmCall.strike - futurePrice); // loss if stock below strike
+      var pnl            = callValue - putObligation - (netCost || 0);
+      var pnlPct         = pd.price ? (pnl / pd.price * 100) : null;
       html += '<div class="scenario-card"><h4>' + scenarioLabels[si] + '</h4>' +
         '<div class="sc-row"><span class="sc-key">Price Target</span><span class="sc-val">' + fmtDollar(futurePrice) + '</span></div>' +
-        '<div class="sc-row"><span class="sc-key">Net Cost</span><span class="sc-val">' + (netCost !== null ? fmtDollar(netCost) : '—') + '</span></div>' +
-        '<div class="sc-row"><span class="sc-key">Intrinsic Value</span><span class="sc-val ' + (intrinsic > 0 ? 'up' : '') + '">' + fmtDollar(intrinsic) + '</span></div>' +
+        '<div class="sc-row"><span class="sc-key">Call Value</span><span class="sc-val ' + (callValue > 0 ? 'up' : '') + '">' + fmtDollar(callValue) + '</span></div>' +
+        '<div class="sc-row"><span class="sc-key">Put Obligation</span><span class="sc-val ' + (putObligation > 0 ? 'down' : '') + '">' + (putObligation > 0 ? '-' : '') + fmtDollar(putObligation) + '</span></div>' +
+        '<div class="sc-row"><span class="sc-key">Net Credit</span><span class="sc-val up">' + (netCost !== null ? fmtDollar(-netCost) : '—') + '</span></div>' +
         '<div class="sc-row"><span class="sc-key">Net P&L</span><span class="sc-val ' + (pnl >= 0 ? 'up' : 'down') + '">' + fmtDollar(pnl) + '</span></div>' +
         '<div class="sc-row"><span class="sc-key">P&L %</span><span class="sc-val ' + (pnlPct !== null && pnlPct >= 0 ? 'up' : 'down') + '">' + (pnlPct !== null ? fmt(pnlPct,2)+'%' : '—') + '</span></div>' +
       '</div>';
