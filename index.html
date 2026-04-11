@@ -1155,6 +1155,31 @@ document.getElementById('ticker-modal').addEventListener('click', function(e) {
 // ═══════════════════════════════════════════════════════
 // UTILITIES
 // ═══════════════════════════════════════════════════════
+
+// SVG sparkline — renders an array of values as a tiny inline chart
+// Returns an SVG string or empty string if data is insufficient
+function sparklineSVG(values, w, h, color) {
+  if (!values || values.length < 3) return '';
+  w = w || 60; h = h || 20;
+  color = color || 'var(--accent)';
+  var min = Math.min.apply(null, values);
+  var max = Math.max.apply(null, values);
+  var range = max - min || 1;
+  var pts = values.map(function(v, i) {
+    var x = (i / (values.length - 1)) * w;
+    var y = h - ((v - min) / range) * (h - 2) - 1; // 1px padding top/bottom
+    return x.toFixed(1) + ',' + y.toFixed(1);
+  }).join(' ');
+  // Trend direction: compare last 5 avg to first 5 avg
+  var first5 = values.slice(0, 5).reduce(function(a,b){return a+b;},0) / 5;
+  var last5  = values.slice(-5).reduce(function(a,b){return a+b;},0) / 5;
+  var trend  = last5 > first5 * 1.05 ? 'up' : last5 < first5 * 0.95 ? 'down' : 'flat';
+  var trendColor = trend === 'up' ? 'var(--green)' : trend === 'down' ? 'var(--red)' : 'var(--text-muted)';
+  return '<svg width="' + w + '" height="' + h + '" viewBox="0 0 ' + w + ' ' + h + '" style="vertical-align:middle;">' +
+    '<polyline points="' + pts + '" fill="none" stroke="' + trendColor + '" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>' +
+  '</svg>';
+}
+
 function fmt(n, dec) {
   if (n === null || n === undefined || isNaN(n)) return '—';
   return Number(n).toFixed(dec !== undefined ? dec : 2);
@@ -1338,6 +1363,13 @@ async function fetchIVData(ticker, expiration) {
 async function fetchIVRank(ticker, expiration) {
   var result = await fetchIVData(ticker, expiration);
   return result ? result.ivRank : null;
+}
+
+async function fetchATRSeries(ticker) {
+  // 30 daily ATR values for sparkline — measures price volatility trend
+  var data = await fetchTD('atr', { symbol: ticker, interval: '1day', time_period: 14, outputsize: 30 });
+  var vals = data.values || [];
+  return vals.map(function(v) { return parseFloat(v.atr); }).reverse(); // oldest first
 }
 
 async function fetchExpirations(ticker) {
@@ -1564,6 +1596,9 @@ function buildColCard(ticker, d, strategy) {
       '</div>' +
     '</div>' +
     '<div class="criteria-row' + (isScored ? '' : ' criteria-7') + '">' + criteriaHtml + '</div>' +
+    (d.atrSeries && d.atrSeries.length >= 3
+      ? '<div style="display:flex;align-items:center;gap:6px;padding:2px 10px;font-size:9px;color:var(--text-muted);">VOL 30D ' + sparklineSVG(d.atrSeries, 60, 16) + '</div>'
+      : '') +
     '<div class="card-footer">' + scoreHtml + '<span style="font-size:9px;color:var(--text-muted)">RSI ' + rsiDisp + '</span></div>' +
   '</div>';
 }
@@ -1665,8 +1700,13 @@ async function fetchTickerData(ticker) {
     cardData[ticker] = d;
     updateCard(ticker);
 
-    // Phase 2: options data
-    var expirations = await fetchExpirations(ticker).catch(function() { return []; });
+    // Phase 2: options data + ATR sparkline (parallel)
+    var _p2 = await Promise.all([
+      fetchExpirations(ticker).catch(function() { return []; }),
+      fetchATRSeries(ticker).catch(function() { return []; })
+    ]);
+    var expirations = _p2[0];
+    d.atrSeries    = _p2[1]; // 30-day ATR for sparkline
     var bestExpiry = findBestExpiry(expirations, 30, 50);
     if (!bestExpiry) bestExpiry = findBestExpiry(expirations, 25, 60);
 
