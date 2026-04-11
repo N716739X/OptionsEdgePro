@@ -446,10 +446,11 @@ function earningsBeforeExpiry(ticker, expiryStr) {
 }
 
 function scoreToGrade(score, total) {
-  if (score >= 6) return 'A';
-  if (score >= 5) return 'B';
-  if (score >= 4) return 'C';
-  if (score >= 3) return 'D';
+  const pct = total > 0 ? (score / total) * 100 : 0;
+  if (pct >= 90) return 'A';
+  if (pct >= 75) return 'B';
+  if (pct >= 55) return 'C';
+  if (pct >= 35) return 'D';
   return 'F';
 }
 
@@ -592,10 +593,10 @@ async function scoreTicker(ticker) {
     price, change, changePct, week52H, week52L, rsi, sma200,
     ivRank, expiry: bestExpiry, dte, bestStrike, bestPremium, premPct, earningsRisk,
     atrSeries,
-    put:   { score: putScore, grade: scoreToGrade(putScore), badge: putBadge, c1: put_c1, c2: put_c2, c3: put_c3, c4: put_c4, c5: put_c5, c6: put_c6 },
-    cc:    { score: ccScore, grade: scoreToGrade(ccScore), badge: ccBadge, c1: cc_c1, c2: cc_c2, c3: cc_c3, c4: cc_c4, c5: cc_c5, c6: cc_c6 },
-    leaps: { score: leapsScore, grade: scoreToGrade(leapsScore), badge: leapsBadge, c1: leaps_c1, c2: leaps_c2, c3: leaps_c3, c4: leaps_c4, c5: leaps_c5, c6: leaps_c6, c7: leaps_c7 },
-    synth: { score: synthScore, grade: scoreToGrade(synthScore), badge: synthBadge, c1: synth_c1, c2: synth_c2, c3: synth_c3, c4: synth_c4, c5: synth_c5, c6: synth_c6, c7: synth_c7 },
+    put:   { score: putScore, total: 6, grade: scoreToGrade(putScore, 6), badge: putBadge, c1: put_c1, c2: put_c2, c3: put_c3, c4: put_c4, c5: put_c5, c6: put_c6 },
+    cc:    { score: ccScore, total: 6, grade: scoreToGrade(ccScore, 6), badge: ccBadge, c1: cc_c1, c2: cc_c2, c3: cc_c3, c4: cc_c4, c5: cc_c5, c6: cc_c6 },
+    leaps: { score: leapsScore, total: 7, grade: scoreToGrade(leapsScore, 7), badge: leapsBadge, c1: leaps_c1, c2: leaps_c2, c3: leaps_c3, c4: leaps_c4, c5: leaps_c5, c6: leaps_c6, c7: leaps_c7 },
+    synth: { score: synthScore, total: 7, grade: scoreToGrade(synthScore, 7), badge: synthBadge, c1: synth_c1, c2: synth_c2, c3: synth_c3, c4: synth_c4, c5: synth_c5, c6: synth_c6, c7: synth_c7 },
   };
 }
 
