@@ -836,6 +836,98 @@ tbody td:first-child { text-align:left; }
 /* Spinner */
 .spinner { display:inline-block;width:12px;height:12px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin 0.7s linear infinite;vertical-align:middle;margin-right:5px; }
 @keyframes spin { to { transform:rotate(360deg); } }
+
+/* ═══════════════════════════════════════════════════════
+   MINI RANKINGS (under each analyzer)
+═══════════════════════════════════════════════════════ */
+.mini-rankings {
+  max-width: 1100px;
+  margin: 0 auto 24px;
+  padding: 0 20px;
+}
+.mini-rankings-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+}
+.mini-rankings-title {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.mini-rankings-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.mini-rank-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+.mini-rank-row:hover { border-color: var(--accent); }
+.mini-rank-row.is-active {
+  border-color: var(--accent);
+  background: rgba(119,0,255,0.10);
+}
+.mini-rank-num {
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--text-muted);
+  width: 16px;
+  flex-shrink: 0;
+}
+.mini-rank-ticker {
+  font-size: 12px;
+  font-weight: 900;
+  width: 42px;
+  flex-shrink: 0;
+}
+.mini-rank-price {
+  font-size: 10px;
+  color: var(--text-muted);
+  flex: 1;
+}
+.mini-rank-rsi {
+  font-size: 10px;
+  font-weight: 700;
+  width: 52px;
+  text-align: right;
+  flex-shrink: 0;
+}
+.mini-rank-badge {
+  font-size: 8px;
+  font-weight: 800;
+  padding: 2px 6px;
+  border-radius: 5px;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+  flex-shrink: 0;
+}
+.mini-rank-grade {
+  font-size: 10px;
+  font-weight: 900;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border: 1px solid currentColor;
+}
+
 </style>
 </head>
 <body>
@@ -913,6 +1005,7 @@ tbody td:first-child { text-align:left; }
 
 <!-- ═══ PUT PANEL ═══ -->
 <div id="panel-put" class="panel">
+  <div id="mini-rankings-put" class="mini-rankings"></div>
   <div class="analyzer-container">
     <div class="analyzer-status-row">
       <span class="analyzer-label">Cash-Secured Put</span>
@@ -925,6 +1018,7 @@ tbody td:first-child { text-align:left; }
 
 <!-- ═══ CC PANEL ═══ -->
 <div id="panel-cc" class="panel">
+  <div id="mini-rankings-cc" class="mini-rankings"></div>
   <div class="analyzer-container">
     <div class="analyzer-status-row">
       <span class="analyzer-label">Covered Call</span>
@@ -937,6 +1031,7 @@ tbody td:first-child { text-align:left; }
 
 <!-- ═══ LEAPS PANEL ═══ -->
 <div id="panel-leaps" class="panel">
+  <div id="mini-rankings-leaps" class="mini-rankings"></div>
   <div class="analyzer-container">
     <div class="analyzer-status-row">
       <span class="analyzer-label">LEAPS</span>
@@ -949,6 +1044,7 @@ tbody td:first-child { text-align:left; }
 
 <!-- ═══ SYNTH PANEL ═══ -->
 <div id="panel-synth" class="panel">
+  <div id="mini-rankings-synth" class="mini-rankings"></div>
   <div class="analyzer-container">
     <div class="analyzer-status-row">
       <span class="analyzer-label">Bull Synthetic</span>
@@ -1033,6 +1129,11 @@ document.querySelectorAll('.tab').forEach(function(tab) {
     document.getElementById('panel-' + tab.dataset.tab).classList.add('active');
     renderTickerStrip(); // update strip labels based on active tab
     localStorage.setItem('owp-tab', tab.dataset.tab); // remember last tab
+    // Render mini rankings when switching to an analyzer tab
+    var tid = tab.dataset.tab;
+    if (tid === 'put' || tid === 'cc' || tid === 'leaps' || tid === 'synth') {
+      renderMiniRankings(tid, null);
+    }
   });
 });
 
@@ -1486,10 +1587,11 @@ function renderColumns() {
   var colLeaps = document.getElementById('col-leaps');
   var colSynth = document.getElementById('col-synth');
 
-  colPut.innerHTML   = putSorted.map(function(t)   { return buildColCard(t, cardData[t], 'put');   }).join('');
-  colCC.innerHTML    = ccSorted.map(function(t)     { return buildColCard(t, cardData[t], 'cc');    }).join('');
-  colLeaps.innerHTML = leapsSorted.map(function(t)  { return buildColCard(t, cardData[t], 'leaps'); }).join('');
-  colSynth.innerHTML = synthSorted.map(function(t)  { return buildColCard(t, cardData[t], 'synth'); }).join('');
+  // Dashboard shows top 3 per column only
+  colPut.innerHTML   = putSorted.slice(0,3).map(function(t)   { return buildColCard(t, cardData[t], 'put');   }).join('');
+  colCC.innerHTML    = ccSorted.slice(0,3).map(function(t)     { return buildColCard(t, cardData[t], 'cc');    }).join('');
+  colLeaps.innerHTML = leapsSorted.slice(0,3).map(function(t)  { return buildColCard(t, cardData[t], 'leaps'); }).join('');
+  colSynth.innerHTML = synthSorted.slice(0,3).map(function(t)  { return buildColCard(t, cardData[t], 'synth'); }).join('');
 }
 
 // Keep renderSorted as a no-op alias so existing call in fetchTickerData still works
@@ -2507,6 +2609,98 @@ renderTickerStrip();
 // ═══════════════════════════════════════════════════════
 // CARD CLICK — NAVIGATE TO ANALYZER
 // ═══════════════════════════════════════════════════════
+
+// ═══════════════════════════════════════════════════════
+// MINI RANKINGS — Top 6 under each analyzer
+// ═══════════════════════════════════════════════════════
+function buildMiniRankings(strategy, activeTicker) {
+  // strategy: 'put' | 'cc' | 'leaps' | 'synth'
+  var isScored = (strategy === 'put' || strategy === 'cc');
+
+  // Get tickers with loaded data
+  var loaded = tickers.filter(function(t) {
+    return cardData[t] && !cardData[t].loading && cardData[t].phase >= 1;
+  });
+
+  if (loaded.length === 0) return ''; // data not ready yet
+
+  // Sort same logic as dashboard columns
+  var sorted = loaded.slice();
+  if (strategy === 'put') {
+    sorted.sort(function(a, b) {
+      var sa = cardData[a].putScore !== null ? cardData[a].putScore : -1;
+      var sb = cardData[b].putScore !== null ? cardData[b].putScore : -1;
+      if (sb !== sa) return sb - sa;
+      return (cardData[a].rsi || 999) - (cardData[b].rsi || 999);
+    });
+  } else if (strategy === 'cc') {
+    sorted.sort(function(a, b) {
+      var sa = cardData[a].ccScore !== null ? cardData[a].ccScore : -1;
+      var sb = cardData[b].ccScore !== null ? cardData[b].ccScore : -1;
+      if (sb !== sa) return sb - sa;
+      return (cardData[b].rsi || 0) - (cardData[a].rsi || 0);
+    });
+  } else {
+    // leaps + synth: RSI ascending
+    sorted.sort(function(a, b) {
+      return (cardData[a].rsi || 999) - (cardData[b].rsi || 999);
+    });
+  }
+
+  var top6 = sorted.slice(0, 6);
+
+  var rows = top6.map(function(t, idx) {
+    var d = cardData[t];
+    var rsi = d.rsi;
+    var rsiColor = !isNaN(rsi) ? (rsi < 30 ? 'down' : rsi > 65 ? 'up' : '') : '';
+    var rsiDisp  = !isNaN(rsi) ? 'RSI ' + fmt(rsi, 0) : '—';
+    var priceDisp = d.price ? fmtDollar(d.price) : '—';
+    var isActive = t === activeTicker;
+
+    // Badge
+    var badgeCls, badgeTxt;
+    if (isScored) {
+      var score = strategy === 'put' ? (d.putScore || 0) : (d.ccScore || 0);
+      if (score >= 5)      { badgeCls = 'badge-ideal';    badgeTxt = score + '/6'; }
+      else if (score >= 3) { badgeCls = 'badge-watch';    badgeTxt = score + '/6'; }
+      else                 { badgeCls = 'badge-notready'; badgeTxt = score + '/6'; }
+
+      var grade = scoreToGrade(score, d.phase);
+      var gradeHtml = grade
+        ? '<span class="mini-rank-grade grade-' + grade + '">' + grade + '</span>'
+        : '';
+    } else {
+      if (!isNaN(rsi) && rsi < 30)      { badgeCls = 'badge-ideal';    badgeTxt = 'OVERSOLD'; }
+      else if (!isNaN(rsi) && rsi < 40) { badgeCls = 'badge-watch';    badgeTxt = 'WATCH'; }
+      else                              { badgeCls = 'badge-notready'; badgeTxt = 'WAIT'; }
+      var gradeHtml = '';
+    }
+
+    return '<div class="mini-rank-row' + (isActive ? ' is-active' : '') + '" onclick="navigateToAnalyzer('' + t + '','' + strategy + '')">' +
+      '<span class="mini-rank-num">' + (idx + 1) + '</span>' +
+      '<span class="mini-rank-ticker">' + t + '</span>' +
+      '<span class="mini-rank-price">' + priceDisp + '</span>' +
+      '<span class="mini-rank-rsi ' + rsiColor + '">' + rsiDisp + '</span>' +
+      '<span class="mini-rank-badge ' + badgeCls + '">' + badgeTxt + '</span>' +
+      gradeHtml +
+    '</div>';
+  }).join('');
+
+  var stratLabel = { put: 'Cash-Secured Put', cc: 'Covered Call', leaps: 'LEAPS', synth: 'Bull Synthetic' }[strategy];
+
+  return '<div class="mini-rankings-header">' +
+    '<span class="mini-rankings-title">Top 6 · ' + stratLabel + '</span>' +
+  '</div>' +
+  '<div class="mini-rankings-list">' + rows + '</div>';
+}
+
+function renderMiniRankings(strategy, activeTicker) {
+  var el = document.getElementById('mini-rankings-' + strategy);
+  if (!el) return;
+  var html = buildMiniRankings(strategy, activeTicker);
+  el.innerHTML = html;
+}
+
 function navigateToAnalyzer(ticker, strategy) {
   // strategy: 'put' | 'cc' | 'leaps' | 'synth' (lowercase from col cards)
   //           or legacy 'PUT' | 'CC' from other callers
@@ -2540,6 +2734,9 @@ function navigateToAnalyzer(ticker, strategy) {
   else if (tabId === 'cc')    runCC(ticker);
   else if (tabId === 'leaps') runLeaps(ticker);
   else if (tabId === 'synth') runSynth(ticker);
+
+  // Update mini rankings with this ticker highlighted
+  renderMiniRankings(tabId, ticker);
 
   // Scroll to top
   window.scrollTo({ top: 0, behavior: 'smooth' });
