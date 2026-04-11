@@ -2894,7 +2894,6 @@ function renderTickerStrip() {
     var isActive   = t === activeStripTicker;
     html += '<div class="ticker-chip' + (isActive ? ' active' : '') + '" onclick="stripSelect(\'' + t + '\')">'
       + t
-      + (grade ? '<span class="chip-grade" style="' + gradeColor + '">' + grade + '</span>' : '')
       + '</div>';
   });
   strip.innerHTML = html;
