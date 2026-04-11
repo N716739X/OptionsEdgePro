@@ -758,7 +758,7 @@ tbody td:first-child { text-align:left; }
   <div class="tab" data-tab="put">Cash-Secured Put</div>
   <div class="tab" data-tab="cc">Covered Call</div>
   <div class="tab" data-tab="leaps">LEAPS</div>
-  <div class="tab" data-tab="synth">Synthetic Long</div>
+  <div class="tab" data-tab="synth">Bull Synthetic</div>
 </div>
 
 <!-- ═══ TICKER STRIP ═══ -->
@@ -828,7 +828,7 @@ tbody td:first-child { text-align:left; }
 <div id="panel-synth" class="panel">
   <div class="analyzer-container">
     <div class="analyzer-status-row">
-      <span class="analyzer-label">Synthetic Long</span>
+      <span class="analyzer-label">Bull Synthetic</span>
       <span class="status-msg" id="synth-status"></span>
       <input type="hidden" id="synth-ticker" />
     </div>
@@ -2193,7 +2193,7 @@ async function runLeaps(forceTicker) {
 }
 
 // ═══════════════════════════════════════════════════════
-// SYNTHETIC LONG ANALYZER
+// BULL SYNTHETIC ANALYZER
 // ═══════════════════════════════════════════════════════
 async function runSynth(forceTicker) {
   var ticker = forceTicker || document.getElementById('synth-ticker').value.trim().toUpperCase();
@@ -2311,7 +2311,7 @@ async function runSynth(forceTicker) {
       '<div class="sc-row"><span class="sc-key">Spread</span><span class="sc-val ' + (putSpread && putSpread > 1 ? 'down' : 'up') + '">' + (putSpread !== null ? fmtDollar(putSpread) : '—') + '</span></div>' +
     '</div></div>';
 
-    html += '<div class="scorecard"><h3>Synthetic Long — Score</h3><div class="criteria-list">';
+    html += '<div class="scorecard"><h3>Bull Synthetic — Score</h3><div class="criteria-list">';
     html += critRow(1,'RSI(10) < 30 (Oversold Entry)', c1, fmt(pd.rsi,1));
     html += critRow(2,'RSI(10) < 40 (Not Extended)', c2, fmt(pd.rsi,1));
     html += critRow(3,'Call ITM Δ0.55–0.75 (Lower Strike)', c3, fmt(slCall.delta,2));
@@ -2346,7 +2346,7 @@ async function runSynth(forceTicker) {
       suggGood.push('✅ <strong>Tight breakeven:</strong> Stock only needs to move ' + fmt(beAboveCur,1) + '% to break even — very efficient entry.');
     }
     if (score === 7) {
-      suggGood.push('✅ <strong>All criteria met</strong> — ideal James-style synthetic long. Enter as a combo order to avoid leg risk.');
+      suggGood.push('✅ <strong>All criteria met</strong> — ideal James-style bull synthetic. Enter as a combo order to avoid leg risk.');
     }
     var suggestions = suggWarn.concat(suggGood);
     if (suggestions.length > 0) {
