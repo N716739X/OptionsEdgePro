@@ -2038,6 +2038,28 @@ async function runLeaps(forceTicker) {
     html += critRow(7,'Breakeven CAGR ≤ 35%/yr', c7, breakevenCAGR !== null ? fmt(breakevenCAGR,1)+'%' : 'N/A');
     html += '</div>' + scoreSummaryHtml(score,7) + '</div>';
 
+    // ── Pre-calculate best expiry index (used by both CAGR table and chain section) ──
+    var bestExpIdx = 0, bestExpCAGR = Infinity;
+    leapsExpiries.forEach(function(exp, eIdx) {
+      var ch  = chains[eIdx];
+      var dte = dteFromStr(exp);
+      if (!ch || !ch.strike) return;
+      var yr  = dte / 365;
+      var bD  = Infinity, bC = null;
+      for (var i = 0; i < ch.strike.length; i++) {
+        var d = ch.delta ? ch.delta[i] : null;
+        if (d === null || d < 0.60 || d > 0.95) continue;
+        var dif = Math.abs(d - 0.75);
+        if (dif < bD) {
+          bD = dif;
+          var m = ch.mid ? ch.mid[i] : null;
+          var be = ch.strike[i] + (m || 0);
+          bC = (be && pd.price && yr > 0) ? (Math.pow(be / pd.price, 1 / yr) - 1) * 100 : null;
+        }
+      }
+      if (bC !== null && bC < bestExpCAGR) { bestExpCAGR = bC; bestExpIdx = eIdx; }
+    });
+
     // ── Contextual suggestions ──
     var suggestions = [];
     if (!c1 && pd.rsi < 40) {
@@ -2064,27 +2086,50 @@ async function runLeaps(forceTicker) {
       html += '<div class="suggestions-box">' + suggestions.map(function(s){ return '<div class="suggestion-item">' + s + '</div>'; }).join('') + '</div>';
     }
 
-    // Pick the single best expiry — the one whose nearest-Δ0.75 strike has the lowest CAGR
-    var bestExpIdx = 0, bestExpCAGR = Infinity;
+    // ── CAGR across expiries mini-table ──
+    var cagrRows = [];
     leapsExpiries.forEach(function(exp, eIdx) {
       var ch  = chains[eIdx];
       var dte = dteFromStr(exp);
       if (!ch || !ch.strike) return;
       var yr  = dte / 365;
-      var bD  = Infinity, bC = null;
+      var bD  = Infinity, bStrike = null, bCAGR = null, bDelta = null, bMid = null;
       for (var i = 0; i < ch.strike.length; i++) {
         var d = ch.delta ? ch.delta[i] : null;
         if (d === null || d < 0.60 || d > 0.95) continue;
         var dif = Math.abs(d - 0.75);
         if (dif < bD) {
           bD = dif;
-          var m = ch.mid ? ch.mid[i] : null;
-          var be = ch.strike[i] + (m || 0);
-          bC = (be && pd.price && yr > 0) ? (Math.pow(be / pd.price, 1 / yr) - 1) * 100 : null;
+          bStrike = ch.strike[i];
+          bDelta  = d;
+          bMid    = ch.mid ? ch.mid[i] : null;
+          var be  = bStrike + (bMid || 0);
+          bCAGR   = (be && pd.price && yr > 0) ? (Math.pow(be / pd.price, 1 / yr) - 1) * 100 : null;
         }
       }
-      if (bC !== null && bC < bestExpCAGR) { bestExpCAGR = bC; bestExpIdx = eIdx; }
+      if (bStrike !== null) cagrRows.push({ exp: exp, dte: dte, strike: bStrike, delta: bDelta, mid: bMid, cagr: bCAGR });
     });
+
+    if (cagrRows.length > 0) {
+      html += '<div class="scorecard" style="margin-top:10px">' +
+        '<h3>CAGR by Expiry <span style="color:var(--text-muted);font-weight:400;font-size:11px">— Δ0.75 strike, longer = cheaper</span></h3>' +
+        '<div class="leaps-table-wrap"><table><thead><tr>' +
+        '<th>Expiry</th><th>DTE</th><th>Strike</th><th>Mid</th><th>Delta</th><th>CAGR%</th>' +
+        '</tr></thead><tbody>';
+      cagrRows.forEach(function(r) {
+        var isBest = (r.exp === leapsExpiries[bestExpIdx]);
+        html += '<tr' + (isBest ? ' class="recommended"' : '') + '>' +
+          '<td>' + (isBest ? '<span class="star">★</span>' : '') + r.exp + '</td>' +
+          '<td>' + r.dte + '</td>' +
+          '<td>' + fmtDollar(r.strike) + '</td>' +
+          '<td>' + (r.mid !== null ? fmtDollar(r.mid) : '—') + '</td>' +
+          '<td>' + fmt(r.delta,2) + '</td>' +
+          '<td ' + (r.cagr !== null ? (r.cagr > 35 ? 'style="color:var(--red)"' : 'style="color:var(--green)"') : '') + '>' +
+          (r.cagr !== null ? fmt(r.cagr,1)+'%' : '—') + '</td>' +
+        '</tr>';
+      });
+      html += '</tbody></table></div></div>';
+    }
 
     var selExp = leapsExpiries[bestExpIdx];
     var selCh  = chains[bestExpIdx];
