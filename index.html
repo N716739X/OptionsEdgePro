@@ -1030,6 +1030,15 @@ tbody td:first-child { text-align:left; }
   50%     { box-shadow: 0 0 12px rgba(0,255,204,0.8), 0 0 20px rgba(0,255,204,0.3); }
 }
 
+/* ── Anti-copy protections ── */
+body {
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+}
+input, textarea, select { -webkit-user-select: text; user-select: text; }
+
 </style>
 </head>
 <body>
@@ -1236,6 +1245,25 @@ tbody td:first-child { text-align:left; }
 
 <script>
 'use strict';
+// ── Anti-copy / Anti-DevTools protections ──
+(function() {
+  // Disable right-click context menu
+  document.addEventListener('contextmenu', function(e) { e.preventDefault(); });
+  // Disable common keyboard shortcuts for view-source / devtools
+  document.addEventListener('keydown', function(e) {
+    // F12
+    if (e.key === 'F12') { e.preventDefault(); return false; }
+    // Ctrl+Shift+I (DevTools), Ctrl+Shift+J (Console), Ctrl+Shift+C (Inspect)
+    if ((e.ctrlKey || e.metaKey) && e.shiftKey && ['I','J','C'].indexOf(e.key.toUpperCase()) !== -1) { e.preventDefault(); return false; }
+    // Ctrl+U (View Source)
+    if ((e.ctrlKey || e.metaKey) && e.key.toUpperCase() === 'U') { e.preventDefault(); return false; }
+    // Ctrl+S (Save Page)
+    if ((e.ctrlKey || e.metaKey) && e.key.toUpperCase() === 'S') { e.preventDefault(); return false; }
+  });
+  // Disable drag (prevents drag-to-desktop save)
+  document.addEventListener('dragstart', function(e) { e.preventDefault(); });
+})();
+
 // ═══════════════════════════════════════════════════════
 // CONFIG
 // ═══════════════════════════════════════════════════════
@@ -2523,18 +2551,75 @@ function triggerPhase3() {
 }
 
 // ═══════════════════════════════════════════════════════
-// DASHBOARD — REFRESH
+// DASHBOARD — APPLY SERVER SCORES & REFRESH
 // ═══════════════════════════════════════════════════════
+
+// Map server-side scoring response into cardData format for rendering
+function applyServerScores(s) {
+  var d = {
+    ticker:      s.ticker,
+    loading:     false,
+    phase:       2,
+    price:       s.price,
+    change:      s.change,
+    changePct:   s.changePct,
+    week52H:     s.week52H,
+    week52L:     s.week52L,
+    rsi:         s.rsi,
+    sma200:      s.sma200,
+    ivRank:      s.ivRank,
+    expiry:      s.expiry,
+    dte:         s.dte,
+    bestStrike:  s.bestStrike,
+    bestPremium: s.bestPremium,
+    premPct:     s.premPct,
+    earningsRisk:s.earningsRisk,
+    atrSeries:   s.atrSeries,
+    putScore:    s.put.score,
+    ccScore:     s.cc.score,
+    leapsScore:  s.leaps.score,
+    synthScore:  s.synth.score,
+    // Per-strategy criteria pass/fail
+    put_c1: s.put.c1, put_c2: s.put.c2, put_c3: s.put.c3,
+    put_c4: s.put.c4, put_c5: s.put.c5, put_c6: s.put.c6,
+    cc_c1:  s.cc.c1,  cc_c2:  s.cc.c2,  cc_c3:  s.cc.c3,
+    cc_c4:  s.cc.c4,  cc_c5:  s.cc.c5,  cc_c6:  s.cc.c6,
+    leaps_c1: s.leaps.c1, leaps_c2: s.leaps.c2, leaps_c3: s.leaps.c3,
+    leaps_c4: s.leaps.c4, leaps_c5: s.leaps.c5, leaps_c6: s.leaps.c6, leaps_c7: s.leaps.c7,
+    synth_c1: s.synth.c1, synth_c2: s.synth.c2, synth_c3: s.synth.c3,
+    synth_c4: s.synth.c4, synth_c5: s.synth.c5, synth_c6: s.synth.c6, synth_c7: s.synth.c7,
+    // Legacy fields for card rendering
+    score: s.put.score,
+    c1: s.put.c1, c2: s.put.c2, c3: s.put.c3, c4: s.put.c4, c5: s.put.c5, c6: s.put.c6
+  };
+  cardData[s.ticker] = d;
+  updateCard(s.ticker);
+}
+
 function refreshDashboard(forceRefresh) {
   if (forceRefresh) clearMDCache(); // manual refresh clears cache
   cardData = {};
-  _phase3Triggered = false; // reset so phase 3 runs again on next full load
+  _phase3Triggered = false;
   renderSkeletons();
-  // Fire all fetches in parallel — Phase 1 (price/RSI) is fast,
-  // Phase 2 (options) runs concurrently across all tickers
-  tickers.forEach(function(ticker) {
-    fetchTickerData(ticker);
-  });
+  // Single server-side scoring request — all logic runs on the Worker
+  var headers = { 'Content-Type': 'application/json' };
+  if (_authToken) headers['Authorization'] = 'Bearer ' + _authToken;
+  fetch(CF_PROXY + 'api/scores', {
+    method: 'POST',
+    headers: headers,
+    body: JSON.stringify({ tickers: tickers })
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    if (data.error) { console.error('Scores API:', data.error); return; }
+    (data.scores || []).forEach(function(s) {
+      if (s.error) { console.warn(s.ticker + ':', s.error); return; }
+      applyServerScores(s);
+    });
+    // Trigger phase 3 for top LEAPS/Synth tickers
+    triggerPhase3IfReady();
+  })
+  .catch(function(err) { console.error('Scores fetch failed:', err); });
 }
 
 // Initial load — deferred until auth completes

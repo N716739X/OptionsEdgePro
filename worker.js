@@ -342,6 +342,240 @@ async function handleProxy(req, env) {
   });
 }
 
+// ── Scoring engine (server-side — IP protection) ─────────────────────────────
+
+const TD_KEY = '170a58b2c2094e3987e4289f4fe39a08';
+
+// Hardcoded earnings dates — update periodically
+const EARNINGS = {
+  TSLA: '2026-04-22', NVDA: '2026-05-28', PLTR: '2026-05-05',
+  AAPL: '2026-04-30', MSFT: '2026-04-29', AMZN: '2026-04-30',
+  GOOG: '2026-04-29', META: '2026-04-23', AMD: '2026-04-29',
+  COIN: '2026-05-08', MSTR: '2026-04-29', SQ: '2026-05-01',
+  SNOW: '2026-05-28', SHOP: '2026-05-01', NET: '2026-05-01',
+  CRWD: '2026-06-03', DDOG: '2026-05-06', SOFI: '2026-04-28',
+};
+
+async function fetchJSON(url, headers = {}) {
+  const res = await fetch(url, { headers: { 'User-Agent': 'OptionsEdgePro/1.0', ...headers } });
+  if (!res.ok && res.status !== 203) throw new Error('HTTP ' + res.status);
+  return res.json();
+}
+
+function dteFromStr(dateStr) {
+  if (!dateStr) return null;
+  const parts = dateStr.split('-');
+  if (parts.length !== 3) return null;
+  const exp = new Date(Date.UTC(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2])));
+  const now = new Date();
+  const todayUTC = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  return Math.round((exp - todayUTC) / 86400000);
+}
+
+function isThirdFriday(dateStr) {
+  const d = new Date(dateStr + 'T00:00:00Z');
+  if (d.getUTCDay() !== 5) return false;
+  const day = d.getUTCDate();
+  return day >= 15 && day <= 21;
+}
+
+function findBestExpiry(expirations, minDTE, maxDTE) {
+  const candidates = expirations.filter(e => {
+    const d = dteFromStr(e);
+    return d !== null && d >= minDTE && d <= maxDTE;
+  });
+  const monthly = candidates.filter(isThirdFriday);
+  if (monthly.length > 0) return monthly[0];
+  if (candidates.length > 0) return candidates[0];
+  return null;
+}
+
+function earningsBeforeExpiry(ticker, expiryStr) {
+  const eDate = EARNINGS[ticker];
+  if (!eDate) return false;
+  const earningsDate = new Date(eDate);
+  const expiryDate = new Date(expiryStr);
+  const today = new Date();
+  return earningsDate > today && earningsDate < expiryDate;
+}
+
+function scoreToGrade(score, total) {
+  if (score >= 6) return 'A';
+  if (score >= 5) return 'B';
+  if (score >= 4) return 'C';
+  if (score >= 3) return 'D';
+  return 'F';
+}
+
+function badgeInfo(score, total, isScored) {
+  const max = isScored ? 6 : 7;
+  if (score >= 5) return { cls: 'badge-ideal', txt: 'IDEAL \u00b7 ' + score + '/' + max };
+  if (score >= 3) return { cls: 'badge-watch', txt: (isScored ? 'WATCH' : 'WATCH') + ' \u00b7 ' + score + '/' + max };
+  return { cls: 'badge-notready', txt: (isScored ? 'NO TRADE' : 'WAIT') + ' \u00b7 ' + score + '/' + max };
+}
+
+async function scoreTicker(ticker) {
+  // Use internal cache for upstream API calls
+  async function cachedFetch(url) {
+    const cacheKey = url;
+    const cached = getCached(cacheKey);
+    if (cached) return JSON.parse(cached.data);
+    const data = await fetchJSON(url);
+    const dataStr = JSON.stringify(data);
+    const ttl = url.includes('api.marketdata.app') ? CACHE_TTL_OPTIONS : CACHE_TTL_STOCK;
+    putCache(cacheKey, dataStr, 'application/json', 200, ttl);
+    return data;
+  }
+
+  // Phase 1: price + RSI + SMA (parallel)
+  const [quoteData, rsiData, smaData] = await Promise.all([
+    cachedFetch('https://api.twelvedata.com/quote?symbol=' + ticker + '&apikey=' + TD_KEY),
+    cachedFetch('https://api.twelvedata.com/rsi?symbol=' + ticker + '&interval=1day&time_period=10&outputsize=1&apikey=' + TD_KEY),
+    cachedFetch('https://api.twelvedata.com/sma?symbol=' + ticker + '&interval=1day&time_period=200&outputsize=1&apikey=' + TD_KEY),
+  ]);
+
+  const price = parseFloat(quoteData.close || quoteData.price);
+  const change = parseFloat(quoteData.change);
+  const changePct = parseFloat(quoteData.percent_change);
+  const week52H = parseFloat(quoteData.fifty_two_week?.high || quoteData.high);
+  const week52L = parseFloat(quoteData.fifty_two_week?.low || quoteData.low);
+  const rsiVals = rsiData.values || [];
+  const rsi = parseFloat(rsiVals.length > 0 ? rsiVals[0].rsi : (rsiData.rsi || NaN));
+  const smaVals = smaData.values || [];
+  const sma200 = parseFloat(smaVals.length > 0 ? smaVals[0].sma : (smaData.sma || NaN));
+
+  // Phase 2: expirations + ATR (parallel)
+  const [expData, atrData] = await Promise.all([
+    cachedFetch('https://api.marketdata.app/v1/options/expirations/' + ticker + '/?token=' + MD_TOKEN).catch(() => ({ expirations: [] })),
+    cachedFetch('https://api.twelvedata.com/atr?symbol=' + ticker + '&interval=1day&time_period=14&outputsize=30&apikey=' + TD_KEY).catch(() => ({ values: [] })),
+  ]);
+
+  const expirations = expData.expirations || [];
+  const atrSeries = (atrData.values || []).map(v => parseFloat(v.atr)).reverse();
+
+  let bestExpiry = findBestExpiry(expirations, 30, 50);
+  if (!bestExpiry) bestExpiry = findBestExpiry(expirations, 25, 60);
+
+  const dte = bestExpiry ? dteFromStr(bestExpiry) : null;
+  const earningsRisk = bestExpiry ? earningsBeforeExpiry(ticker, bestExpiry) : null;
+  let bestPremium = null, bestStrike = null, bestDelta = null, ivRank = null;
+
+  if (bestExpiry) {
+    try {
+      const putChain = await cachedFetch(
+        'https://api.marketdata.app/v1/options/chain/' + ticker + '/?expiration=' + bestExpiry + '&side=put&token=' + MD_TOKEN
+      );
+
+      // IV rank from chain
+      if (putChain?.iv?.length > 0) {
+        const ivs = putChain.iv.filter(v => v !== null && v !== undefined && !isNaN(v) && v > 0)
+          .map(v => v <= 1 ? v * 100 : v).sort((a, b) => a - b);
+        if (ivs.length > 0) {
+          const atmIV = ivs[Math.floor(ivs.length / 2)];
+          const ivRange = ivs[ivs.length - 1] - ivs[0];
+          ivRank = ivRange > 0 ? Math.min(100, Math.max(0, (atmIV - ivs[0]) / ivRange * 100)) : 50;
+        }
+      }
+
+      // Best strike near delta 0.20
+      if (putChain?.strike) {
+        let bestDiff = Infinity;
+        for (let i = 0; i < putChain.strike.length; i++) {
+          const delta = putChain.delta ? putChain.delta[i] : null;
+          if (delta === null) continue;
+          const diff = Math.abs(Math.abs(delta) - 0.20);
+          if (diff < bestDiff) {
+            bestDiff = diff;
+            bestStrike = putChain.strike[i];
+            bestDelta = delta;
+            bestPremium = putChain.mid ? putChain.mid[i] : null;
+          }
+        }
+      }
+    } catch (e) { /* options unavailable */ }
+  }
+
+  const premPct = (bestPremium && price) ? (bestPremium / price * 100) : null;
+  const deltaOk = bestDelta !== null && Math.abs(bestDelta) >= 0.15 && Math.abs(bestDelta) <= 0.25;
+
+  // ── Score all 4 strategies ──
+  const put_c1 = ivRank !== null ? ivRank > 90 : null;
+  const put_c2 = rsi < 30;
+  const put_c3 = earningsRisk === null ? null : !earningsRisk;
+  const put_c4 = premPct !== null ? premPct > 2 : null;
+  const put_c5 = deltaOk;
+  const put_c6 = dte !== null ? (dte >= 30 && dte <= 45) : null;
+  const putScore = [put_c1, put_c2, put_c3, put_c4, put_c5, put_c6].filter(x => x === true).length;
+
+  const cc_c1 = ivRank !== null ? ivRank >= 50 : null;
+  const cc_c2 = rsi > 65;
+  const cc_c3 = earningsRisk === null ? null : !earningsRisk;
+  const cc_c4 = premPct !== null ? premPct >= 2 : null;
+  const cc_c5 = deltaOk;
+  const cc_c6 = dte !== null ? (dte >= 30 && dte <= 45) : null;
+  const ccScore = [cc_c1, cc_c2, cc_c3, cc_c4, cc_c5, cc_c6].filter(x => x === true).length;
+
+  const hasLeapsExp = expirations.some(e => dteFromStr(e) >= 540);
+  const leaps_c1 = rsi < 30;
+  const leaps_c2 = ivRank !== null ? ivRank < 55 : null;
+  const leaps_c3 = null;
+  const leaps_c4 = hasLeapsExp;
+  const leaps_c5 = null;
+  const leaps_c6 = null;
+  const leaps_c7 = null;
+  const leapsScore = [leaps_c1, leaps_c2, leaps_c3, leaps_c4, leaps_c5, leaps_c6, leaps_c7].filter(x => x === true).length;
+
+  const hasSynthExp = expirations.some(e => dteFromStr(e) >= 365);
+  const synth_c1 = rsi < 30;
+  const synth_c2 = rsi < 40;
+  const synth_c3 = null;
+  const synth_c4 = hasSynthExp;
+  const synth_c5 = null;
+  const synth_c6 = null;
+  const synth_c7 = null;
+  const synthScore = [synth_c1, synth_c2, synth_c3, synth_c4, synth_c5, synth_c6, synth_c7].filter(x => x === true).length;
+
+  // Build response — grades + badge info + display data (no raw scoring logic exposed)
+  const putBadge = badgeInfo(putScore, 6, true);
+  const ccBadge = badgeInfo(ccScore, 6, true);
+  const leapsBadge = badgeInfo(leapsScore, 7, false);
+  const synthBadge = badgeInfo(synthScore, 7, false);
+
+  return {
+    ticker,
+    price, change, changePct, week52H, week52L, rsi, sma200,
+    ivRank, expiry: bestExpiry, dte, bestStrike, bestPremium, premPct, earningsRisk,
+    atrSeries,
+    put:   { score: putScore, grade: scoreToGrade(putScore), badge: putBadge, c1: put_c1, c2: put_c2, c3: put_c3, c4: put_c4, c5: put_c5, c6: put_c6 },
+    cc:    { score: ccScore, grade: scoreToGrade(ccScore), badge: ccBadge, c1: cc_c1, c2: cc_c2, c3: cc_c3, c4: cc_c4, c5: cc_c5, c6: cc_c6 },
+    leaps: { score: leapsScore, grade: scoreToGrade(leapsScore), badge: leapsBadge, c1: leaps_c1, c2: leaps_c2, c3: leaps_c3, c4: leaps_c4, c5: leaps_c5, c6: leaps_c6, c7: leaps_c7 },
+    synth: { score: synthScore, grade: scoreToGrade(synthScore), badge: synthBadge, c1: synth_c1, c2: synth_c2, c3: synth_c3, c4: synth_c4, c5: synth_c5, c6: synth_c6, c7: synth_c7 },
+  };
+}
+
+// POST /api/scores — accepts { tickers: ["TSLA","NVDA"] }
+async function handleScores(req, env) {
+  const authCheck = await requireAuth(req, env);
+  if (authCheck.error) return authCheck.error;
+
+  const { tickers } = await req.json();
+  if (!Array.isArray(tickers) || tickers.length === 0) return json({ error: 'tickers array required' }, 400);
+  if (tickers.length > 30) return json({ error: 'Max 30 tickers per request' }, 400);
+
+  // Score all tickers in parallel
+  const results = await Promise.all(
+    tickers.map(async (t) => {
+      try {
+        return await scoreTicker(t.toUpperCase());
+      } catch (e) {
+        return { ticker: t.toUpperCase(), error: e.message };
+      }
+    })
+  );
+
+  return json({ scores: results });
+}
+
 // ── Main fetch handler (ES Modules format) ────────────────────────────────────
 
 export default {
@@ -354,16 +588,6 @@ export default {
         return new Response(null, { headers: CORS_HEADERS });
       }
 
-      // Temp admin: check user status by email
-      if (url.pathname === '/admin/user' && request.method === 'GET') {
-        const email = url.searchParams.get('email');
-        if (!email) return json({ error: 'email param required' }, 400);
-        await initDB(env.DB);
-        const user = await env.DB.prepare('SELECT id, email, subscription_status, trial_end, plan, stripe_customer_id, stripe_subscription_id, created_at FROM users WHERE email = ?').bind(email.toLowerCase()).first();
-        if (!user) return json({ error: 'User not found' }, 404);
-        return json(user);
-      }
-
       // Auth routes
       if (url.pathname === '/auth/signup' && request.method === 'POST') return handleSignup(request, env);
       if (url.pathname === '/auth/login'  && request.method === 'POST') return handleLogin(request, env);
@@ -372,6 +596,9 @@ export default {
       // Stripe routes
       if (url.pathname === '/stripe/checkout' && request.method === 'POST') return handleCheckout(request, env);
       if (url.pathname === '/stripe/webhook'  && request.method === 'POST') return handleWebhook(request, env);
+
+      // Server-side scoring (IP-protected scoring engine)
+      if (url.pathname === '/api/scores' && request.method === 'POST') return handleScores(request, env);
 
       // Data proxy (existing functionality, now JWT-gated)
       if (url.pathname === '/' || url.pathname === '') return handleProxy(request, env);
