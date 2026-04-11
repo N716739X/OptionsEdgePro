@@ -1769,11 +1769,12 @@ async function fetchTickerData(ticker) {
     var synth_c7 = null;                                             // Spreads ≤ $1 (need chain)
     var synthScore = [synth_c1,synth_c2,synth_c3,synth_c4,synth_c5,synth_c6,synth_c7].filter(function(x){return x===true;}).length;
 
-    d.phase      = 2;
-    d.putScore   = putScore;
-    d.ccScore    = ccScore;
-    d.leapsScore = leapsScore;
-    d.synthScore = synthScore;
+    d.phase        = 2;
+    d.putScore     = putScore;
+    d.ccScore      = ccScore;
+    d.leapsScore   = leapsScore;
+    d.synthScore   = synthScore;
+    d.expirations  = expirations; // cache — reused by phase 3 to avoid re-fetch
     // Store per-strategy criteria for card rendering
     d.put_c1 = put_c1; d.put_c2 = put_c2; d.put_c3 = put_c3;
     d.put_c4 = put_c4; d.put_c5 = put_c5; d.put_c6 = put_c6;
@@ -1819,22 +1820,20 @@ async function runLeapsPhase3(ticker) {
     if (!d) return;
     var pd = { price: d.price, rsi: d.rsi };
 
-    var expirations = await fetchExpirations(ticker);
-    var leapsExpiries = expirations.filter(function(e) { return dteFromStr(e) >= 540; }).slice(0,4);
+    // Reuse cached expirations from phase 2 — no extra API call
+    var expirations = d.expirations || await fetchExpirations(ticker);
+    var leapsExpiries = expirations.filter(function(e) { return dteFromStr(e) >= 540; });
     if (leapsExpiries.length === 0)
-      leapsExpiries = expirations.filter(function(e) { return dteFromStr(e) >= 365; }).slice(0,4);
+      leapsExpiries = expirations.filter(function(e) { return dteFromStr(e) >= 365; });
     if (leapsExpiries.length === 0) return;
 
-    var chains = await Promise.all(leapsExpiries.map(function(exp) {
-      return fetchChain(ticker, exp, 'call').catch(function() { return null; });
-    }));
+    // Fetch only the single best LEAPS expiry — not up to 4
+    var bestLeapsExp = leapsExpiries[0];
+    var repChain = await fetchChain(ticker, bestLeapsExp, 'call').catch(function() { return null; });
+    var repDTE   = dteFromStr(bestLeapsExp);
 
-    var nearExpiry = findBestExpiry(expirations, 30, 60);
-    var ivResult   = nearExpiry ? await fetchIVData(ticker, nearExpiry).catch(function(){return null;}) : null;
-    var currentIV  = ivResult ? ivResult.atmIV : null;
-
-    var repChain = chains[0];
-    var repDTE   = dteFromStr(leapsExpiries[0]);
+    // Reuse IV rank already fetched in phase 2 — no extra fetchIVData call
+    var currentIV = d.ivRank !== null && d.ivRank !== undefined ? d.ivRank : null;
     var bestStrike = null, bestDelta = null, bestPremium = null, bestOI = null, bestSpread = null;
 
     if (repChain && repChain.strike) {
@@ -1886,7 +1885,8 @@ async function runSynthPhase3(ticker) {
     if (!d) return;
     var pd = { price: d.price, rsi: d.rsi };
 
-    var expirations = await fetchExpirations(ticker);
+    // Reuse cached expirations from phase 2 — no extra API call
+    var expirations = d.expirations || await fetchExpirations(ticker);
     var synthExp = expirations.filter(function(e) { return dteFromStr(e) >= 365; });
     if (synthExp.length === 0) return;
     synthExp.sort(function(a,b){ return dteFromStr(b) - dteFromStr(a); });
