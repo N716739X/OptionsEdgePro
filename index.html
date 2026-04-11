@@ -664,6 +664,8 @@ tbody td:first-child { text-align:left; }
 /* Notice */
 .notice { background:rgba(255,204,0,0.10);border:1px solid var(--yellow);border-radius:8px;padding:10px 14px;font-size:12px;color:var(--yellow);margin-bottom:14px; }
 .btc-note { font-size:11px;color:var(--text-muted);background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:7px 12px;margin-top:8px; }
+.suggestions-box { margin-top:10px;display:flex;flex-direction:column;gap:6px; }
+.suggestion-item { font-size:12px;padding:9px 14px;border-radius:6px;background:rgba(0,200,255,0.06);border:1px solid rgba(0,200,255,0.2);color:var(--text); line-height:1.5; }
 
 /* Ticker Strip */
 .ticker-strip {
@@ -1796,6 +1798,30 @@ async function runPut(forceTicker) {
     html += critRow(5,'Strike Delta 0.15–0.25', c5, bestDelta !== null ? fmt(bestDelta,2) : 'N/A');
     html += critRow(6,'Duration 30–45 DTE', c6, dte+' days');
     html += '</div>' + scoreSummaryHtml(score,6) + '</div>';
+
+    // ── Contextual suggestions ──
+    var suggestions = [];
+    if (earningsRisk && c2 && c4) {
+      // Earnings is the only blocker — suggest shorter expiry
+      var eDate = EARNINGS[ticker];
+      suggestions.push('💡 <strong>Earnings workaround:</strong> ' + ticker + ' has earnings on ' + eDate + ' inside your expiry window. Consider a shorter DTE expiring <strong>before ' + eDate + '</strong> to avoid earnings risk while still capturing the oversold setup.');
+    }
+    if (!c2 && pd.rsi > 30 && pd.rsi < 45) {
+      suggestions.push('💡 <strong>RSI almost there:</strong> RSI is ' + fmt(pd.rsi,1) + ' — watch for a continued dip below 30 before entering. Set a price alert.');
+    }
+    if (!c1 && ivRank !== null && ivRank >= 35) {
+      suggestions.push('💡 <strong>IV warming up:</strong> IV is ' + fmt(ivRank,1) + '% — approaching the 50% threshold. Wait for a volatility spike (news, market selloff) before selling the put for maximum premium.');
+    }
+    if (!c4 && premPct !== null && premPct >= 1.5) {
+      suggestions.push('💡 <strong>Premium close:</strong> Premium is ' + fmt(premPct,2) + '% — just below the 2% floor. Try a slightly lower strike to collect more premium.');
+    }
+    if (score === 6) {
+      suggestions.push('✅ <strong>All criteria met</strong> — this is an ideal setup. Consider entering today with the recommended strike above.');
+    }
+    if (suggestions.length > 0) {
+      html += '<div class="suggestions-box">' + suggestions.map(function(s){ return '<div class="suggestion-item">' + s + '</div>'; }).join('') + '</div>';
+    }
+
     html += '<div class="chain-section"><h3>Put Chain — '+bestExpiry+' ('+dte+' DTE)</h3>';
     html += buildChainTable(chain, -0.20, pd.price, true) + '</div>';
 
@@ -1882,6 +1908,32 @@ async function runCC(forceTicker) {
     html += critRow(5,'Strike 5–10% OTM (Δ 0.15–0.25)', c5, (upsidePct !== null ? fmt(upsidePct,1)+'% OTM' : (bestDelta !== null ? 'Δ'+fmt(bestDelta,2) : 'N/A')));
     html += critRow(6,'Duration 30–45 DTE', c6, dte+' days');
     html += '</div>' + scoreSummaryHtml(score,6) + '</div>';
+
+    // ── Contextual suggestions ──
+    var suggestions = [];
+    if (earningsRisk && c2 && c4) {
+      var eDate = EARNINGS[ticker];
+      suggestions.push('💡 <strong>Earnings workaround:</strong> ' + ticker + ' has earnings on ' + eDate + ' inside your expiry window. Consider a shorter DTE expiring <strong>before ' + eDate + '</strong> to avoid the IV crush and gap risk.');
+    }
+    if (!c2 && pd.rsi < 65 && pd.rsi > 55) {
+      suggestions.push('💡 <strong>RSI almost there:</strong> RSI is ' + fmt(pd.rsi,1) + ' — approaching overbought. Watch for a continued rally above 65 before selling the call.');
+    }
+    if (!c1 && ivRank !== null && ivRank >= 35) {
+      suggestions.push('💡 <strong>IV warming up:</strong> IV is ' + fmt(ivRank,1) + '% — wait for a volatility spike to get richer premium before capping your upside.');
+    }
+    if (!c4 && premPct !== null && premPct >= 1.5) {
+      suggestions.push('💡 <strong>Premium close:</strong> Premium is ' + fmt(premPct,2) + '% — just below 2%. Try a slightly lower (closer) strike to collect more premium.');
+    }
+    if (!c5 && upsidePct !== null) {
+      suggestions.push('💡 <strong>Strike too far OTM:</strong> ' + fmt(upsidePct,1) + '% OTM is outside the 5–10% target. The app selected the closest available strike — consider checking if a strike closer to 8% OTM is available.');
+    }
+    if (score === 6) {
+      suggestions.push('✅ <strong>All criteria met</strong> — this is an ideal setup. Consider entering today with the recommended strike above.');
+    }
+    if (suggestions.length > 0) {
+      html += '<div class="suggestions-box">' + suggestions.map(function(s){ return '<div class="suggestion-item">' + s + '</div>'; }).join('') + '</div>';
+    }
+
     html += '<div class="btc-note">📌 BTC at 80% profit or 21 DTE, whichever comes first.</div>';
     html += '<div class="chain-section" style="margin-top:14px"><h3>Call Chain — '+bestExpiry+' ('+dte+' DTE)</h3>';
     html += buildChainTable(chain, bestStrike, pd.price, false, true) + '</div>'; // true = match by strike not delta
