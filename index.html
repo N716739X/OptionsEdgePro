@@ -2038,28 +2038,48 @@ async function runLeaps(forceTicker) {
     html += critRow(7,'Breakeven CAGR ≤ 35%/yr', c7, breakevenCAGR !== null ? fmt(breakevenCAGR,1)+'%' : 'N/A');
     html += '</div>' + scoreSummaryHtml(score,7) + '</div>';
 
-    html += '<div class="chain-section"><h3>LEAPS Expirations</h3>';
+    // Pick the single best expiry — the one whose nearest-Δ0.75 strike has the lowest CAGR
+    var bestExpIdx = 0, bestExpCAGR = Infinity;
     leapsExpiries.forEach(function(exp, eIdx) {
       var ch  = chains[eIdx];
       var dte = dteFromStr(exp);
-      html += '<h4 style="color:var(--accent);font-size:11px;margin:12px 0 6px">' + exp + ' (' + dte + ' DTE)</h4>';
-      if (!ch || !ch.strike) {
-        html += '<p style="color:var(--text-muted);font-size:11px;margin-bottom:8px">No data.</p>';
-        return;
-      }
-      var rows = [];
+      if (!ch || !ch.strike) return;
+      var yr  = dte / 365;
+      var bD  = Infinity, bC = null;
       for (var i = 0; i < ch.strike.length; i++) {
-        var d5 = ch.delta ? ch.delta[i] : null;
+        var d = ch.delta ? ch.delta[i] : null;
+        if (d === null || d < 0.60 || d > 0.95) continue;
+        var dif = Math.abs(d - 0.75);
+        if (dif < bD) {
+          bD = dif;
+          var m = ch.mid ? ch.mid[i] : null;
+          var be = ch.strike[i] + (m || 0);
+          bC = (be && pd.price && yr > 0) ? (Math.pow(be / pd.price, 1 / yr) - 1) * 100 : null;
+        }
+      }
+      if (bC !== null && bC < bestExpCAGR) { bestExpCAGR = bC; bestExpIdx = eIdx; }
+    });
+
+    var selExp = leapsExpiries[bestExpIdx];
+    var selCh  = chains[bestExpIdx];
+    var selDte = dteFromStr(selExp);
+    html += '<div class="chain-section"><h3>Best LEAPS Expiry <span style="color:var(--accent);font-weight:400;font-size:11px">' + selExp + ' (' + selDte + ' DTE) — lowest breakeven CAGR</span></h3>';
+    if (!selCh || !selCh.strike) {
+      html += '<p style="color:var(--text-muted);font-size:11px">No data.</p>';
+    } else {
+      var rows = [];
+      for (var i = 0; i < selCh.strike.length; i++) {
+        var d5 = selCh.delta ? selCh.delta[i] : null;
         if (d5 !== null && d5 >= 0.60 && d5 <= 0.95) {
-          var b5  = ch.bid ? ch.bid[i] : null;
-          var a5  = ch.ask ? ch.ask[i] : null;
-          var m5  = ch.mid ? ch.mid[i] : null;
+          var b5  = selCh.bid ? selCh.bid[i] : null;
+          var a5  = selCh.ask ? selCh.ask[i] : null;
+          var m5  = selCh.mid ? selCh.mid[i] : null;
           var sp  = (b5 && a5 && m5) ? ((a5 - b5) / m5 * 100) : null;
-          var oi5 = ch.openInterest ? ch.openInterest[i] : null;
-          var yr5 = dte / 365;
-          var be5 = ch.strike[i] + (m5 || 0);
+          var oi5 = selCh.openInterest ? selCh.openInterest[i] : null;
+          var yr5 = selDte / 365;
+          var be5 = selCh.strike[i] + (m5 || 0);
           var cg5 = (be5 && pd.price && yr5 > 0) ? (Math.pow(be5 / pd.price, 1 / yr5) - 1) * 100 : null;
-          rows.push({ strike: ch.strike[i], bid: b5, ask: a5, mid: m5, delta: d5, oi: oi5, spread: sp, cagr: cg5 });
+          rows.push({ strike: selCh.strike[i], bid: b5, ask: a5, mid: m5, delta: d5, oi: oi5, spread: sp, cagr: cg5 });
         }
       }
       rows.sort(function(a, b) { return a.strike - b.strike; });
@@ -2090,7 +2110,7 @@ async function runLeaps(forceTicker) {
         '</tr>';
       });
       html += '</tbody></table></div>';
-    });
+    }
     html += '</div>';
 
     document.getElementById('leaps-results').innerHTML = html;
