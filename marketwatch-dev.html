@@ -1,0 +1,3875 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OptionsEdge Pro</title>
+  <link rel="icon" type="image/png" href="logo.png">
+<style>
+/* ═══════════════════════════════════════════════════════
+   THEME VARIABLES
+═══════════════════════════════════════════════════════ */
+:root {
+  --bg:        #0a0010;
+  --bg2:       #0f0020;
+  --surface:   #12002a;
+  --surface2:  #1a0038;
+  --border:    #6600cc44;
+  --border2:   #9900ff66;
+  --text:      #e0d0ff;
+  --text-muted:#9966cc;
+  --accent:    #00ffff;
+  --neg:       #ff00aa;
+  --green:     #00ffcc;
+  --red:       #ff2266;
+  --yellow:    #ffcc00;
+  --purple:    #cc44ff;
+  --grade-a:   #00ffcc;
+  --grade-b:   #44ff88;
+  --grade-c:   #ffcc00;
+  --grade-d:   #ff8800;
+  --grade-f:   #ff2266;
+  --card-bg:   #0d0025;
+  --card-border:#7700ff55;
+  --glow:      0 0 12px #9900ff44;
+  --glow2:     0 0 20px #00ffff33;
+  --pass:      #00ffcc;
+  --fail:      #ff2266;
+  --na:        #554477;
+}
+body.classic {
+  --bg:        #0d1117;
+  --bg2:       #0d1117;
+  --surface:   #161b22;
+  --surface2:  #21262d;
+  --border:    #30363d;
+  --border2:   #444c56;
+  --text:      #e6edf3;
+  --text-muted:#8b949e;
+  --accent:    #58a6ff;
+  --neg:       #f85149;
+  --green:     #3fb950;
+  --red:       #f85149;
+  --yellow:    #d29922;
+  --purple:    #bc8cff;
+  --grade-a:   #3fb950;
+  --grade-b:   #58a6ff;
+  --grade-c:   #d29922;
+  --grade-d:   #ffa657;
+  --grade-f:   #f85149;
+  --card-bg:   #161b22;
+  --card-border:#30363d;
+  --glow:      none;
+  --glow2:     none;
+  --pass:      #3fb950;
+  --fail:      #f85149;
+  --na:        #484f58;
+}
+
+/* ═══════════════════════════════════════════════════════
+   RESET & BASE
+═══════════════════════════════════════════════════════ */
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Courier New', monospace;
+  font-size: 13px;
+  min-height: 100vh;
+  transition: background 0.3s, color 0.3s;
+}
+
+/* ═══════════════════════════════════════════════════════
+   HEADER
+═══════════════════════════════════════════════════════ */
+header {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border2);
+  padding: 10px 20px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  box-shadow: var(--glow);
+}
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  white-space: nowrap;
+  text-decoration: none;
+}
+.logo img {
+  height: 32px;
+  width: 32px;
+  object-fit: contain;
+  filter: drop-shadow(0 0 6px rgba(0,255,204,0.5));
+}
+.logo-text {
+  font-size: 17px;
+  font-weight: 800;
+  color: #ffffff;
+  letter-spacing: 1px;
+  text-shadow: 0 0 10px rgba(0,255,204,0.4);
+}
+.logo-text span { color: var(--green); }
+.header-right {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.clock-box {
+  font-size: 11px;
+  color: var(--text-muted);
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-family: monospace;
+  white-space: nowrap;
+}
+.market-status {
+  font-size: 10px;
+  padding: 3px 8px;
+  border-radius: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.market-status.open  { background: rgba(0,255,204,0.15); color: var(--green); border: 1px solid var(--green); }
+.market-status.closed { background: rgba(255,34,102,0.15); color: var(--red); border: 1px solid var(--red); }
+
+.hbtn {
+  background: var(--surface2);
+  border: 1px solid var(--border2);
+  color: var(--text);
+  border-radius: 6px;
+  padding: 5px 12px;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+.hbtn:hover { border-color: var(--accent); color: var(--accent); }
+
+/* ═══════════════════════════════════════════════════════
+   NAV TABS
+═══════════════════════════════════════════════════════ */
+.tab-bar {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border2);
+  display: flex;
+  padding: 0 20px;
+  gap: 0;
+  overflow-x: auto;
+}
+.tab {
+  padding: 11px 18px;
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+  border-bottom: 2px solid transparent;
+  transition: all 0.15s;
+  white-space: nowrap;
+  letter-spacing: 0.3px;
+}
+.tab:hover { color: var(--text); }
+.tab.active { color: var(--accent); border-bottom-color: var(--accent); text-shadow: 0 0 8px currentColor; }
+
+/* ═══════════════════════════════════════════════════════
+   PANELS
+═══════════════════════════════════════════════════════ */
+.panel { display: none; }
+.panel.active { display: block; }
+
+/* ═══════════════════════════════════════════════════════
+   DASHBOARD TOOLBAR
+═══════════════════════════════════════════════════════ */
+.dash-toolbar {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 8px 20px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.toolbar-label {
+  font-size: 10px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-right: 2px;
+}
+.btn-group { display: flex; gap: 4px; }
+.tgl {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  border-radius: 5px;
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.tgl:hover { color: var(--text); border-color: var(--border2); }
+.tgl.active { background: var(--accent); color: #000; border-color: var(--accent); }
+.toolbar-sep { width: 1px; height: 20px; background: var(--border); margin: 0 4px; }
+#refresh-info { font-size: 10px; color: var(--text-muted); margin-left: auto; }
+
+/* ═══════════════════════════════════════════════════════
+   DASHBOARD GRID
+═══════════════════════════════════════════════════════ */
+.dash-columns {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  padding: 14px 20px;
+  align-items: start;
+}
+@media (max-width: 1100px) { .dash-columns { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 600px)  { .dash-columns { grid-template-columns: 1fr; } }
+
+.dash-col {
+  background: var(--surface);
+  border: 1px solid var(--border2);
+  border-radius: 12px;
+  overflow: hidden;
+}
+.dash-col-header {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.dash-col-title {
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.dash-col-sub {
+  font-size: 9px;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+.dash-col-body {
+  padding: 6px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-height: 120px;
+}
+
+/* Compact row card inside columns */
+.col-card {
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 10px;
+  padding: 12px 14px;
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.col-card:hover { border-color: var(--accent); box-shadow: 0 0 12px rgba(119,0,255,0.2); }
+.col-card.col-loading { opacity: 0.45; animation: shimmer 1.5s ease-in-out infinite; }
+/* col-badge / col-grade merged into card-badge / grade-box */
+
+/* ═══════════════════════════════════════════════════════
+   TICKER CARD
+═══════════════════════════════════════════════════════ */
+.card {
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 10px;
+  padding: 12px;
+  position: relative;
+  box-shadow: var(--glow);
+  transition: border-color 0.2s, box-shadow 0.2s;
+  cursor: default;
+}
+.card:hover {
+  border-color: var(--accent);
+  box-shadow: var(--glow2);
+}
+.card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.card-ticker {
+  font-size: 18px;
+  font-weight: 800;
+  color: var(--accent);
+  letter-spacing: 1px;
+  text-shadow: 0 0 8px currentColor;
+  line-height: 1;
+}
+.card-name {
+  font-size: 9px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+.grade-box {
+  width: 32px; height: 32px;
+  border-radius: 6px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 16px; font-weight: 900;
+  flex-shrink: 0;
+  border: 1px solid currentColor;
+}
+.grade-A { color: var(--grade-a); background: rgba(0,255,204,0.12); }
+.grade-B { color: var(--grade-b); background: rgba(68,255,136,0.10); }
+.grade-C { color: var(--grade-c); background: rgba(255,204,0,0.10); }
+.grade-D { color: var(--grade-d); background: rgba(255,136,0,0.10); }
+.grade-F { color: var(--grade-f); background: rgba(255,34,102,0.10); }
+.grade-  { color: var(--text-muted); background: transparent; border-color: var(--border); }
+
+.card-price-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.card-price {
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1;
+}
+.card-chg {
+  font-size: 12px;
+  font-weight: 600;
+}
+.up   { color: var(--green); }
+.down { color: var(--neg); }
+.neutral { color: var(--text-muted); }
+
+/* 52W Range */
+.range-row {
+  margin-bottom: 8px;
+}
+.range-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 9px;
+  color: var(--text-muted);
+  margin-bottom: 3px;
+}
+.range-track {
+  position: relative;
+  height: 4px;
+  background: var(--surface2);
+  border-radius: 2px;
+  border: 1px solid var(--border);
+}
+.range-fill {
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  height: 100%;
+  background: linear-gradient(90deg, var(--red) 0%, var(--yellow) 50%, var(--green) 100%);
+  border-radius: 2px;
+  opacity: 0.85;
+}
+.range-dot {
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 1px solid #000;
+  box-shadow: 0 0 4px var(--accent);
+}
+
+/* Badge */
+.card-badge {
+  display: inline-block;
+  font-size: 9px;
+  font-weight: 800;
+  padding: 2px 7px;
+  border-radius: 8px;
+  letter-spacing: 0.5px;
+  margin-bottom: 8px;
+  text-transform: uppercase;
+}
+.badge-ideal   { background: rgba(0,255,204,0.15); color: var(--green); border: 1px solid var(--green); }
+.badge-watch   { background: rgba(255,204,0,0.12); color: var(--yellow); border: 1px solid var(--yellow); }
+.badge-notready{ background: rgba(255,34,102,0.12); color: var(--red); border: 1px solid var(--red); }
+
+/* Criteria mini boxes */
+.criteria-row {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 3px;
+  margin-bottom: 8px;
+}
+.criteria-row.criteria-7 {
+  grid-template-columns: repeat(7, 1fr);
+}
+.mini-box {
+  text-align: center;
+  padding: 3px 2px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: var(--surface2);
+}
+.mini-box .mini-label {
+  font-size: 8px;
+  color: var(--text-muted);
+  display: block;
+  line-height: 1;
+  margin-bottom: 2px;
+}
+.mini-box .mini-val {
+  font-size: 10px;
+  font-weight: 700;
+  display: block;
+  line-height: 1;
+}
+.mini-pass { border-color: var(--pass); background: rgba(0,255,204,0.08); }
+.mini-pass .mini-val { color: var(--pass); }
+.mini-fail { border-color: var(--fail); background: rgba(255,34,102,0.08); }
+.mini-fail .mini-val { color: var(--fail); }
+.mini-na   { border-color: var(--na); }
+.mini-na   .mini-val { color: var(--text-muted); }
+
+/* Score footer */
+.card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 10px;
+  color: var(--text-muted);
+  border-top: 1px solid var(--border);
+  padding-top: 6px;
+}
+.score-text { font-weight: 700; }
+.loading-dot {
+  display: inline-block;
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: pulse 1s ease-in-out infinite;
+  margin-left: 4px;
+  vertical-align: middle;
+}
+@keyframes pulse { 0%,100% { opacity:0.3; } 50% { opacity:1; } }
+
+/* Card skeleton */
+.card-loading {
+  opacity: 0.5;
+  animation: shimmer 1.5s ease-in-out infinite;
+}
+@keyframes shimmer { 0%,100% { opacity:0.4; } 50% { opacity:0.7; } }
+
+/* ═══════════════════════════════════════════════════════
+   TICKER MODAL
+═══════════════════════════════════════════════════════ */
+.modal-overlay {
+  display: none;
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.8);
+  z-index: 1000;
+  align-items: center;
+  justify-content: center;
+}
+.modal-overlay.open { display: flex; }
+.modal {
+  background: var(--surface);
+  border: 1px solid var(--border2);
+  border-radius: 12px;
+  padding: 20px;
+  width: 360px;
+  max-width: 95vw;
+  box-shadow: 0 0 40px #9900ff44;
+}
+.modal h3 { font-size: 14px; color: var(--accent); margin-bottom: 14px; }
+.ticker-tags {
+  display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px;
+}
+.ticker-tag {
+  background: var(--surface2);
+  border: 1px solid var(--border2);
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--accent);
+  display: flex; align-items: center; gap: 6px;
+  cursor: default;
+}
+.ticker-tag .remove-tag {
+  cursor: pointer;
+  color: var(--red);
+  font-size: 14px;
+  line-height: 1;
+}
+.ticker-tag .remove-tag:hover { color: #fff; }
+.modal-add-row { display: flex; gap: 8px; margin-bottom: 14px; }
+.modal-input {
+  flex: 1;
+  background: var(--surface2);
+  border: 1px solid var(--border2);
+  border-radius: 6px;
+  color: var(--text);
+  padding: 8px 12px;
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  outline: none;
+}
+.modal-input:focus { border-color: var(--accent); }
+.modal-footer { display: flex; gap: 8px; justify-content: flex-end; }
+.btn-primary {
+  background: var(--accent);
+  color: #000;
+  border: none;
+  border-radius: 6px;
+  padding: 7px 16px;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+.btn-primary:hover { opacity: 0.85; }
+.btn-cancel {
+  background: var(--surface2);
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 7px 14px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+/* ═══════════════════════════════════════════════════════
+   ANALYZER PANELS
+═══════════════════════════════════════════════════════ */
+.analyzer-container { max-width: 1100px; margin: 0 auto; padding: 20px; }
+.search-row {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 20px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.ticker-input {
+  background: var(--surface);
+  border: 1px solid var(--border2);
+  border-radius: 8px;
+  color: var(--accent);
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: 1px;
+  padding: 9px 16px;
+  width: 140px;
+  text-transform: uppercase;
+  outline: none;
+  transition: border-color 0.15s;
+  box-shadow: var(--glow);
+}
+.ticker-input:focus { border-color: var(--accent); }
+.btn-analyze {
+  background: var(--accent);
+  color: #000;
+  border: none;
+  border-radius: 8px;
+  padding: 9px 20px;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+  transition: opacity 0.15s;
+  letter-spacing: 0.5px;
+}
+.btn-analyze:hover { opacity: 0.85; }
+.btn-analyze:disabled { opacity: 0.35; cursor: not-allowed; }
+.status-msg { font-size: 11px; color: var(--text-muted); }
+.status-msg.loading { color: var(--yellow); }
+.status-msg.error   { color: var(--red); }
+.status-msg.ok      { color: var(--green); }
+
+/* Price Bar */
+.price-bar {
+  background: var(--surface);
+  border: 1px solid var(--border2);
+  border-radius: 10px;
+  padding: 14px 18px;
+  margin-bottom: 16px;
+  display: flex;
+  gap: 28px;
+  align-items: center;
+  flex-wrap: wrap;
+  box-shadow: var(--glow);
+}
+.price-bar .pb-ticker { font-size: 20px; font-weight: 900; color: var(--accent); text-shadow: 0 0 10px currentColor; }
+.price-bar .pb-price  { font-size: 24px; font-weight: 700; }
+.stat-group { display: flex; flex-direction: column; }
+.stat-label { font-size: 9px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
+.stat-value { font-size: 14px; font-weight: 700; }
+
+/* Scorecard */
+.scorecard {
+  background: var(--surface);
+  border: 1px solid var(--border2);
+  border-radius: 10px;
+  padding: 16px 18px;
+  margin-bottom: 16px;
+  box-shadow: var(--glow);
+}
+.scorecard h3 {
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: 12px;
+}
+.criteria-list { display: flex; flex-direction: column; gap: 6px; }
+.criterion {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  background: var(--surface2);
+  border-radius: 6px;
+  border: 1px solid var(--border);
+}
+.badge-pass { width:20px;height:20px;border-radius:50%;background:var(--pass);color:#000;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:900;flex-shrink:0; }
+.badge-fail { width:20px;height:20px;border-radius:50%;background:var(--fail);color:#fff;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:900;flex-shrink:0; }
+.badge-na   { width:20px;height:20px;border-radius:50%;background:var(--surface);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--text-muted);flex-shrink:0; }
+.rank-pip { font-size:9px;background:var(--surface);border:1px solid var(--border);border-radius:3px;padding:1px 4px;color:var(--text-muted);flex-shrink:0; }
+.crit-label { font-weight:600;flex:1;font-size:12px; }
+.crit-val   { font-size:11px;color:var(--text-muted); }
+.score-summary {
+  margin-top: 12px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.score-summary.strong  { background:rgba(0,255,204,0.12);border:1px solid var(--green); }
+.score-summary.moderate{ background:rgba(255,204,0,0.10);border:1px solid var(--yellow); }
+.score-summary.weak    { background:rgba(255,34,102,0.10);border:1px solid var(--red); }
+.score-label { font-weight:800;font-size:13px; }
+.score-num   { font-size:20px;font-weight:900;color:var(--accent); }
+
+/* Info Box */
+.info-box {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px 16px;
+  margin-bottom: 16px;
+  display: flex;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+.info-item .info-label { font-size:9px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:2px; }
+.info-item .info-val   { font-size:14px;font-weight:700;color:var(--accent); }
+
+/* Trade Summary Box */
+.trade-summary {
+  background: var(--surface2);
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  padding: 14px 16px;
+  margin-bottom: 16px;
+  box-shadow: 0 0 12px rgba(0,255,255,0.08);
+}
+.trade-summary h4 {
+  font-size: 10px; font-weight: 800; color: var(--accent);
+  text-transform: uppercase; letter-spacing: 1px;
+  margin: 0 0 10px 0;
+}
+.trade-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 10px 16px;
+}
+.ts-item .ts-label { font-size:9px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:3px; }
+.ts-item .ts-val   { font-size:16px;font-weight:800; }
+.ts-item .ts-note  { font-size:9px;color:var(--text-muted);margin-top:2px; }
+.ts-gain  { color: var(--green); }
+.ts-loss  { color: var(--red); }
+.ts-neutral { color: var(--accent); }
+
+/* Chain Table */
+.chain-section h3 { font-size:11px;font-weight:800;color:var(--text-muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px; }
+.chain-table-wrap { overflow-x:auto;border-radius:8px;border:1px solid var(--border);margin-bottom:16px; }
+table { width:100%;border-collapse:collapse; }
+thead th { background:var(--surface2);padding:7px 10px;text-align:right;font-size:10px;color:var(--text-muted);font-weight:700;letter-spacing:0.3px;white-space:nowrap; }
+thead th:first-child { text-align:left; }
+tbody tr { border-top:1px solid var(--border);transition:background 0.1s; }
+tbody tr:hover { background:rgba(0,255,255,0.04); }
+tbody tr.recommended { background:rgba(0,255,255,0.07); }
+tbody td { padding:7px 10px;text-align:right;font-size:12px;white-space:nowrap; }
+tbody td:first-child { text-align:left; }
+.star { color:var(--accent);font-size:13px;margin-right:3px;text-shadow:0 0 6px currentColor; }
+.strike-cell { font-weight:700; }
+
+/* LEAPS table */
+.leaps-table-wrap { overflow-x:auto;border-radius:8px;border:1px solid var(--border);margin-bottom:14px; }
+
+/* Scenarios */
+.scenarios { display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;margin-bottom:16px; }
+.scenario-card { background:var(--surface);border:1px solid var(--border2);border-radius:10px;padding:14px; }
+.scenario-card h4 { font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:10px; }
+.sc-row { display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--border); }
+.sc-row:last-child { border-bottom:none; }
+.sc-key { color:var(--text-muted);font-size:11px; }
+.sc-val { font-weight:700;font-size:12px; }
+
+/* Notice */
+.notice { background:rgba(255,204,0,0.10);border:1px solid var(--yellow);border-radius:8px;padding:10px 14px;font-size:12px;color:var(--yellow);margin-bottom:14px; }
+.btc-note { font-size:11px;color:var(--text-muted);background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:7px 12px;margin-top:8px; }
+.suggestions-box { margin-top:10px;display:flex;flex-direction:column;gap:6px; }
+.suggestion-item { font-size:12px;padding:9px 14px;border-radius:6px;background:rgba(0,200,255,0.06);border:1px solid rgba(0,200,255,0.2);color:var(--text); line-height:1.5; }
+
+/* Ticker Strip */
+.ticker-strip {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 7px 20px;
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.ticker-chip {
+  background: var(--surface2);
+  border: 1px solid var(--border2);
+  border-radius: 20px;
+  padding: 4px 12px;
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--accent);
+  cursor: pointer;
+  transition: all 0.15s;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.chip-grade {
+  font-size: 9px;
+  font-weight: 900;
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: rgba(255,255,255,0.08);
+  line-height: 1.4;
+}
+.ticker-chip:hover {
+  background: var(--accent);
+  color: #000;
+  border-color: var(--accent);
+  box-shadow: 0 0 8px var(--accent);
+}
+.ticker-chip.active {
+  background: var(--accent);
+  color: #000;
+  border-color: var(--accent);
+}
+.strip-label {
+  font-size: 9px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-right: 4px;
+  white-space: nowrap;
+}
+
+/* Analyzer status row */
+.analyzer-status-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0 16px;
+}
+.analyzer-label {
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--accent);
+  letter-spacing: 0.5px;
+}
+
+/* Placeholder */
+.placeholder {
+  text-align: center;
+  padding: 60px 20px;
+  color: var(--text-muted);
+}
+.placeholder .ph-icon { font-size: 36px; margin-bottom: 12px; opacity: 0.3; }
+.placeholder p { font-size: 14px; }
+
+/* Spinner */
+.spinner { display:inline-block;width:12px;height:12px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin 0.7s linear infinite;vertical-align:middle;margin-right:5px; }
+@keyframes spin { to { transform:rotate(360deg); } }
+
+/* ═══════════════════════════════════════════════════════
+   MINI RANKINGS (under each analyzer)
+═══════════════════════════════════════════════════════ */
+.mini-rankings {
+  max-width: 1100px;
+  margin: 0 auto 24px;
+  padding: 0 20px;
+}
+.mini-rankings-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+}
+.mini-rankings-title {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.mini-rankings-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+/* Active card highlight (currently selected ticker) */
+.mini-card-active {
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 0 1px var(--accent), 0 0 12px rgba(119,0,255,0.25) !important;
+}
+
+/* ── Auth overlay ── */
+#auth-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(8,8,20,0.85);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+#auth-overlay.hidden { display: none; }
+.auth-card {
+  background: var(--surface);
+  border: 1px solid var(--border2);
+  border-radius: 16px;
+  padding: 36px 40px;
+  width: 100%;
+  max-width: 420px;
+  box-shadow: 0 0 40px rgba(0,255,204,0.1), 0 20px 60px rgba(0,0,0,0.6);
+}
+.auth-logo {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.auth-logo img { height: 40px; filter: drop-shadow(0 0 8px rgba(0,255,204,0.6)); }
+.auth-logo-text { font-size: 20px; font-weight: 800; color: #fff; letter-spacing: 1px; }
+.auth-logo-text span { color: var(--green); }
+.auth-tagline {
+  text-align: center;
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-bottom: 28px;
+  letter-spacing: 0.3px;
+}
+.auth-tabs {
+  display: flex;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 24px;
+  gap: 0;
+}
+.auth-tab {
+  flex: 1;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  padding: 8px;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: all 0.2s;
+}
+.auth-tab.active { color: var(--green); border-bottom-color: var(--green); }
+.auth-field {
+  margin-bottom: 14px;
+}
+.auth-field label {
+  display: block;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+.auth-field input {
+  width: 100%;
+  background: var(--bg);
+  border: 1px solid var(--border2);
+  border-radius: 8px;
+  color: var(--text);
+  font-size: 13px;
+  padding: 10px 12px;
+  outline: none;
+  box-sizing: border-box;
+  transition: border-color 0.2s;
+}
+.auth-field input:focus { border-color: var(--green); }
+.auth-btn {
+  width: 100%;
+  background: var(--green);
+  color: #000;
+  border: none;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  padding: 12px;
+  cursor: pointer;
+  margin-top: 8px;
+  transition: opacity 0.2s;
+}
+.auth-btn:hover { opacity: 0.85; }
+.auth-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.auth-error {
+  background: rgba(255,34,102,0.12);
+  border: 1px solid var(--red);
+  border-radius: 6px;
+  color: var(--red);
+  font-size: 11px;
+  padding: 8px 12px;
+  margin-bottom: 14px;
+  display: none;
+}
+.auth-error.show { display: block; }
+.auth-plan-row {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.auth-plan {
+  flex: 1;
+  border: 1px solid var(--border2);
+  border-radius: 8px;
+  padding: 10px;
+  cursor: pointer;
+  text-align: center;
+  transition: all 0.2s;
+  background: var(--bg);
+}
+.auth-plan.selected { border-color: var(--green); background: rgba(0,255,204,0.06); }
+.auth-plan-name { font-size: 11px; font-weight: 800; color: var(--text); letter-spacing: 0.5px; }
+.auth-plan-price { font-size: 16px; font-weight: 800; color: var(--green); margin: 4px 0 2px; }
+.auth-plan-sub { font-size: 9px; color: var(--text-muted); }
+.auth-divider { text-align: center; font-size: 10px; color: var(--text-muted); margin: 12px 0; }
+/* ── Tier selection cards ── */
+.tier-row { display: flex; gap: 10px; margin-bottom: 14px; }
+.tier-card {
+  flex: 1;
+  border: 1px solid var(--border2);
+  border-radius: 8px;
+  padding: 10px 8px;
+  cursor: pointer;
+  text-align: center;
+  transition: all 0.2s;
+  background: var(--bg);
+  position: relative;
+}
+.tier-card.selected { border-color: var(--accent); background: rgba(0,255,255,0.05); }
+.tier-card-name { font-size: 10px; font-weight: 800; letter-spacing: 0.8px; color: var(--accent); margin-bottom: 2px; }
+.tier-card-feature { font-size: 8px; color: var(--text-muted); line-height: 1.4; margin-bottom: 6px; }
+.tier-card-prices { display: flex; gap: 4px; justify-content: center; }
+.tier-price-opt {
+  font-size: 9px; padding: 3px 6px; border-radius: 4px;
+  border: 1px solid var(--border); cursor: pointer; transition: all 0.15s;
+  background: transparent; color: var(--text-muted);
+}
+.tier-price-opt.active { background: var(--green); color: #000; border-color: var(--green); font-weight: 700; }
+.tier-badge {
+  position: absolute; top: -7px; right: 8px;
+  font-size: 7px; font-weight: 800; letter-spacing: 0.5px;
+  background: var(--purple); color: #fff; padding: 1px 6px; border-radius: 3px;
+}
+/* ── Ticker modal tier-aware ── */
+.ticker-ia-label { font-size: 9px; color: var(--text-muted); margin-bottom: 6px; letter-spacing: 0.5px; font-weight: 700; }
+.ticker-tag.locked { opacity: 0.6; cursor: default; }
+.ticker-tag.locked .remove-tag { display: none; }
+.ticker-custom-section { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); }
+.ticker-custom-label { font-size: 9px; color: var(--accent); margin-bottom: 6px; letter-spacing: 0.5px; font-weight: 700; }
+.ticker-limit-info { font-size: 9px; color: var(--text-muted); margin-top: 4px; }
+.ticker-upgrade-msg { font-size: 10px; color: var(--purple); text-align: center; margin-top: 10px; padding: 8px; border: 1px dashed var(--purple); border-radius: 6px; }
+/* ── Trial banner ── */
+#trial-banner {
+  background: rgba(0,255,204,0.08);
+  border-bottom: 1px solid rgba(0,255,204,0.2);
+  padding: 6px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--green);
+}
+#trial-banner.hidden { display: none; }
+#trial-banner strong { font-weight: 800; }
+#trial-upgrade-btn {
+  background: var(--green);
+  color: #000;
+  border: none;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  padding: 4px 12px;
+  cursor: pointer;
+  text-transform: uppercase;
+}
+/* ── Card glow states ── */
+.card-ideal {
+  border-color: var(--green) !important;
+  box-shadow: 0 0 10px rgba(0,255,204,0.25), 0 0 0 1px rgba(0,255,204,0.15);
+  transition: box-shadow 0.3s ease, border-color 0.3s ease;
+}
+.card-ideal:hover {
+  box-shadow: 0 0 18px rgba(0,255,204,0.45), 0 0 0 1px rgba(0,255,204,0.3);
+}
+.card-notrade {
+  border-color: rgba(255,34,102,0.35) !important;
+  opacity: 0.72;
+  transition: opacity 0.25s ease, border-color 0.25s ease;
+}
+.card-notrade:hover {
+  opacity: 1;
+  border-color: var(--red) !important;
+  box-shadow: 0 0 8px rgba(255,34,102,0.2);
+}
+/* ── IDEAL badge shimmer ── */
+.badge-ideal { animation: badge-shimmer 2.4s ease-in-out infinite; }
+@keyframes badge-shimmer {
+  0%,100% { box-shadow: 0 0 4px rgba(0,255,204,0.3); }
+  50%     { box-shadow: 0 0 12px rgba(0,255,204,0.8), 0 0 20px rgba(0,255,204,0.3); }
+}
+
+/* ── Anti-copy protections ── */
+body {
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+}
+input, textarea, select { -webkit-user-select: text; user-select: text; }
+
+</style>
+</head>
+<body>
+
+<!-- ═══ AUTH OVERLAY ═══ -->
+<div id="auth-overlay">
+  <div class="auth-card">
+    <div class="auth-logo">
+      <img src="logo.png" alt="OptionsEdge Pro">
+      <span class="auth-logo-text">OptionsEdge<span> Pro</span></span>
+    </div>
+    <div class="auth-tagline">Real-time options scoring for strategy-driven traders</div>
+
+    <div class="auth-tabs">
+      <button class="auth-tab active" onclick="authSwitchTab('login')" id="tab-login">Sign In</button>
+      <button class="auth-tab" onclick="authSwitchTab('signup')" id="tab-signup">Create Account</button>
+    </div>
+
+    <div id="auth-error" class="auth-error"></div>
+
+    <!-- Login form -->
+    <div id="form-login">
+      <div class="auth-field">
+        <label>Email</label>
+        <input type="email" id="login-email" placeholder="you@example.com" autocomplete="email">
+      </div>
+      <div class="auth-field">
+        <label>Password</label>
+        <input type="password" id="login-password" placeholder="••••••••" autocomplete="current-password">
+      </div>
+      <button class="auth-btn" id="login-btn" onclick="doLogin()">Sign In</button>
+      <div class="auth-divider">No account? <a href="#" onclick="authSwitchTab('signup');return false;" style="color:var(--green)">Start your 7-day free trial</a></div>
+    </div>
+
+    <!-- Signup form -->
+    <div id="form-signup" style="display:none">
+      <div class="tier-row">
+        <div class="tier-card selected" id="tier-ia" onclick="selectTier('ia')">
+          <div class="tier-card-name">IA EDITION</div>
+          <div class="tier-card-feature">IA11 tickers only</div>
+          <div class="tier-card-prices">
+            <span class="tier-price-opt active" id="ia-monthly" onclick="event.stopPropagation();selectTierPlan('ia','monthly')">$24.95/mo</span>
+            <span class="tier-price-opt" id="ia-annual" onclick="event.stopPropagation();selectTierPlan('ia','annual')">$249/yr</span>
+          </div>
+        </div>
+        <div class="tier-card" id="tier-trader" onclick="selectTier('trader')">
+          <div class="tier-badge">PRO</div>
+          <div class="tier-card-name">TRADER EDITION</div>
+          <div class="tier-card-feature">IA11 + custom tickers (25 total)</div>
+          <div class="tier-card-prices">
+            <span class="tier-price-opt active" id="trader-monthly" onclick="event.stopPropagation();selectTierPlan('trader','monthly')">$34.95/mo</span>
+            <span class="tier-price-opt" id="trader-annual" onclick="event.stopPropagation();selectTierPlan('trader','annual')">$349/yr</span>
+          </div>
+        </div>
+      </div>
+      <div class="auth-field">
+        <label>Email</label>
+        <input type="email" id="signup-email" placeholder="you@example.com" autocomplete="email">
+      </div>
+      <div class="auth-field">
+        <label>Password</label>
+        <input type="password" id="signup-password" placeholder="Min 8 characters" autocomplete="new-password">
+      </div>
+      <button class="auth-btn" id="signup-btn" onclick="doSignup()">Start Free Trial →</button>
+      <div class="auth-divider">7-day free trial · cancel anytime · card required after trial</div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ TRIAL BANNER ═══ -->
+<div id="trial-banner" class="hidden">
+  <span>Trial active — <strong id="trial-days-left"></strong> remaining</span>
+  <button id="trial-upgrade-btn" onclick="doUpgrade()">Upgrade Now</button>
+</div>
+
+<!-- ═══ HEADER ═══ -->
+<header>
+  <div class="logo">
+    <img src="logo.png" alt="OptionsEdge Pro">
+    <span class="logo-text">OptionsEdge<span> Pro</span></span>
+  </div>
+  <div class="header-right">
+    <div class="clock-box" id="clock">--:--:-- CST</div>
+    <div class="market-status closed" id="mkt-status">CLOSED</div>
+    <button class="hbtn" onclick="toggleTheme()">◑ THEME</button>
+    <button class="hbtn" onclick="openTickerModal()">⚙ TICKERS</button>
+    <button class="hbtn" onclick="refreshDashboard(true)">↺ REFRESH</button>
+  </div>
+</header>
+
+<!-- ═══ TAB BAR ═══ -->
+<div class="tab-bar">
+  <div class="tab" data-tab="dashboard">Dashboard</div>
+  <div class="tab" data-tab="put">Cash-Secured Put</div>
+  <div class="tab" data-tab="cc">Covered Call</div>
+  <div class="tab" data-tab="leaps">LEAPS</div>
+  <div class="tab" data-tab="synth">Bull Synthetic</div>
+</div>
+
+<!-- ═══ TICKER STRIP ═══ -->
+<div class="ticker-strip" id="ticker-strip"></div>
+
+<!-- ═══ DASHBOARD PANEL ═══ -->
+<div id="panel-dashboard" class="panel">
+  <div class="dash-toolbar">
+    <div id="refresh-info">Auto-refresh: market hours only</div>
+  </div>
+  <div class="dash-columns">
+    <!-- CSP Column -->
+    <div class="dash-col">
+      <div class="dash-col-header">
+        <span class="dash-col-title">Cash-Secured Put</span>
+        <span class="dash-col-sub">Ranked by score</span>
+      </div>
+      <div class="dash-col-body" id="col-put"></div>
+    </div>
+    <!-- CC Column -->
+    <div class="dash-col">
+      <div class="dash-col-header">
+        <span class="dash-col-title">Covered Call</span>
+        <span class="dash-col-sub">Ranked by score</span>
+      </div>
+      <div class="dash-col-body" id="col-cc"></div>
+    </div>
+    <!-- LEAPS Column -->
+    <div class="dash-col">
+      <div class="dash-col-header">
+        <span class="dash-col-title">LEAPS</span>
+        <span class="dash-col-sub">Ranked by RSI ↑</span>
+      </div>
+      <div class="dash-col-body" id="col-leaps"></div>
+    </div>
+    <!-- Bull Synthetic Column -->
+    <div class="dash-col">
+      <div class="dash-col-header">
+        <span class="dash-col-title">Bull Synthetic</span>
+        <span class="dash-col-sub">Ranked by RSI ↑</span>
+      </div>
+      <div class="dash-col-body" id="col-synth"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ PUT PANEL ═══ -->
+<div id="panel-put" class="panel">
+  <div id="mini-rankings-put" class="mini-rankings"></div>
+  <div class="analyzer-container">
+    <div class="analyzer-status-row">
+      <span class="analyzer-label">Cash-Secured Put</span>
+      <span class="status-msg" id="put-status"></span>
+      <input type="hidden" id="put-ticker" />
+    </div>
+    <div id="put-results"><div class="placeholder"><div class="ph-icon">↑</div><p>Select a ticker above to analyze</p></div></div>
+  </div>
+</div>
+
+<!-- ═══ CC PANEL ═══ -->
+<div id="panel-cc" class="panel">
+  <div id="mini-rankings-cc" class="mini-rankings"></div>
+  <div class="analyzer-container">
+    <div class="analyzer-status-row">
+      <span class="analyzer-label">Covered Call</span>
+      <span class="status-msg" id="cc-status"></span>
+      <input type="hidden" id="cc-ticker" />
+    </div>
+    <div id="cc-results"><div class="placeholder"><div class="ph-icon">↑</div><p>Select a ticker above to analyze</p></div></div>
+  </div>
+</div>
+
+<!-- ═══ LEAPS PANEL ═══ -->
+<div id="panel-leaps" class="panel">
+  <div id="mini-rankings-leaps" class="mini-rankings"></div>
+  <div class="analyzer-container">
+    <div class="analyzer-status-row">
+      <span class="analyzer-label">LEAPS</span>
+      <span class="status-msg" id="leaps-status"></span>
+      <input type="hidden" id="leaps-ticker" />
+    </div>
+    <div id="leaps-results"><div class="placeholder"><div class="ph-icon">↑</div><p>Select a ticker above to analyze</p></div></div>
+  </div>
+</div>
+
+<!-- ═══ SYNTH PANEL ═══ -->
+<div id="panel-synth" class="panel">
+  <div id="mini-rankings-synth" class="mini-rankings"></div>
+  <div class="analyzer-container">
+    <div class="analyzer-status-row">
+      <span class="analyzer-label">Bull Synthetic</span>
+      <span class="status-msg" id="synth-status"></span>
+      <input type="hidden" id="synth-ticker" />
+    </div>
+    <div id="synth-results"><div class="placeholder"><div class="ph-icon">↑</div><p>Select a ticker above to analyze</p></div></div>
+  </div>
+</div>
+
+<!-- ═══ TICKER MODAL ═══ -->
+<div class="modal-overlay" id="ticker-modal">
+  <div class="modal">
+    <h3>⚙ Manage Tickers</h3>
+    <div class="ticker-ia-label">IA11 TICKERS (INCLUDED IN ALL PLANS)</div>
+    <div class="ticker-tags" id="ticker-tags-ia"></div>
+    <div id="ticker-custom-section" class="ticker-custom-section" style="display:none">
+      <div class="ticker-custom-label">CUSTOM TICKERS (TRADER EDITION)</div>
+      <div class="ticker-tags" id="ticker-tags-custom"></div>
+      <div class="modal-add-row">
+        <input type="text" class="modal-input" id="modal-input" placeholder="ADD TICKER" maxlength="10" />
+        <button class="btn-primary" onclick="addTicker()">Add</button>
+      </div>
+      <div class="ticker-limit-info" id="ticker-limit-info"></div>
+    </div>
+    <div id="ticker-upgrade-msg" class="ticker-upgrade-msg" style="display:none">
+      Upgrade to Trader Edition to add custom tickers beyond the IA11
+    </div>
+    <div class="modal-footer">
+      <button class="btn-cancel" onclick="closeTickerModal()">Cancel</button>
+      <button class="btn-primary" onclick="saveTickersAndClose()">Save & Refresh</button>
+    </div>
+  </div>
+</div>
+
+<script>
+
+'use strict';
+// ── Anti-copy / Anti-DevTools protections ──
+(function() {
+  // Disable right-click context menu
+  document.addEventListener('contextmenu', function(e) { e.preventDefault(); });
+  // Disable common keyboard shortcuts for view-source / devtools
+  document.addEventListener('keydown', function(e) {
+    // F12
+    if (e.key === 'F12') { e.preventDefault(); return false; }
+    // Ctrl+Shift+I (DevTools), Ctrl+Shift+J (Console), Ctrl+Shift+C (Inspect)
+    if ((e.ctrlKey || e.metaKey) && e.shiftKey && ['I','J','C'].indexOf(e.key.toUpperCase()) !== -1) { e.preventDefault(); return false; }
+    // Ctrl+U (View Source)
+    if ((e.ctrlKey || e.metaKey) && e.key.toUpperCase() === 'U') { e.preventDefault(); return false; }
+    // Ctrl+S (Save Page)
+    if ((e.ctrlKey || e.metaKey) && e.key.toUpperCase() === 'S') { e.preventDefault(); return false; }
+  });
+  // Disable drag (prevents drag-to-desktop save)
+  document.addEventListener('dragstart', function(e) { e.preventDefault(); });
+})();
+
+// ═══════════════════════════════════════════════════════
+// CONFIG
+// ═══════════════════════════════════════════════════════
+// API keys are injected server-side by the Worker proxy — never exposed in frontend
+const CF_PROXY = 'https://marketwatchpro.mattdavis-7f2.workers.dev/';
+
+// ═══════════════════════════════════════════════════════
+// AUTH
+// ═══════════════════════════════════════════════════════
+var _authToken = null;
+var _authUser  = null;
+var _selectedTier = 'ia';
+var _selectedPlan = 'monthly';
+var _userTier = 'trial'; // current user's active tier from server
+var IA11 = ['TSLA','NVDA','AMD','MRVL','PLTR','ALAB','AVGO','MU','GOOG','SATS','NPPTF'];
+
+function authSwitchTab(tab) {
+  document.getElementById('form-login').style.display  = tab === 'login'  ? '' : 'none';
+  document.getElementById('form-signup').style.display = tab === 'signup' ? '' : 'none';
+  document.getElementById('tab-login').classList.toggle('active',  tab === 'login');
+  document.getElementById('tab-signup').classList.toggle('active', tab === 'signup');
+  document.getElementById('auth-error').classList.remove('show');
+}
+
+function selectPlan(plan) {
+  _selectedPlan = plan;
+  // Legacy compat — not used in new tier UI
+}
+function selectTier(tier) {
+  _selectedTier = tier;
+  document.getElementById('tier-ia').classList.toggle('selected', tier === 'ia');
+  document.getElementById('tier-trader').classList.toggle('selected', tier === 'trader');
+}
+function selectTierPlan(tier, plan) {
+  _selectedTier = tier;
+  _selectedPlan = plan;
+  selectTier(tier);
+  // Update active price buttons within the selected tier
+  ['ia','trader'].forEach(function(t) {
+    var mEl = document.getElementById(t + '-monthly');
+    var aEl = document.getElementById(t + '-annual');
+    if (mEl) mEl.classList.toggle('active', t === tier && plan === 'monthly');
+    if (aEl) aEl.classList.toggle('active', t === tier && plan === 'annual');
+    // Keep other tier's default selection visible
+    if (t !== tier) {
+      if (mEl) mEl.classList.add('active');
+      if (aEl) aEl.classList.remove('active');
+    }
+  });
+}
+
+function authShowError(msg) {
+  var el = document.getElementById('auth-error');
+  el.textContent = msg;
+  el.classList.add('show');
+}
+
+async function doLogin() {
+  var email    = document.getElementById('login-email').value.trim();
+  var password = document.getElementById('login-password').value;
+  if (!email || !password) return authShowError('Please enter your email and password.');
+  var btn = document.getElementById('login-btn');
+  btn.disabled = true; btn.textContent = 'Signing in…';
+  try {
+    var res = await fetch(CF_PROXY + 'auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password })
+    });
+    var data = await res.json();
+    if (!res.ok) { authShowError(data.error || 'Login failed.'); return; }
+    authSuccess(data);
+  } catch(e) {
+    authShowError('Connection error. Please try again.');
+  } finally {
+    btn.disabled = false; btn.textContent = 'Sign In';
+  }
+}
+
+async function doSignup() {
+  var email    = document.getElementById('signup-email').value.trim();
+  var password = document.getElementById('signup-password').value;
+  if (!email || !password) return authShowError('Please enter your email and password.');
+  if (password.length < 8) return authShowError('Password must be at least 8 characters.');
+  var btn = document.getElementById('signup-btn');
+  btn.disabled = true; btn.textContent = 'Creating account…';
+  try {
+    var res = await fetch(CF_PROXY + 'auth/signup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password })
+    });
+    var data = await res.json();
+    if (!res.ok) { authShowError(data.error || 'Signup failed.'); return; }
+    // Account created — now redirect to Stripe checkout
+    _authToken = data.token;
+    _authUser  = data;
+    await doCheckout(_selectedTier, _selectedPlan);
+  } catch(e) {
+    authShowError('Connection error. Please try again.');
+  } finally {
+    btn.disabled = false; btn.textContent = 'Start Free Trial →';
+  }
+}
+
+async function doCheckout(tier, plan) {
+  tier = tier || _selectedTier || 'ia';
+  plan = plan || _selectedPlan || 'monthly';
+  try {
+    var res = await fetch(CF_PROXY + 'stripe/checkout', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + _authToken },
+      body: JSON.stringify({
+        tier: tier,
+        plan: plan,
+        successUrl: window.location.href,
+        cancelUrl:  window.location.href
+      })
+    });
+    var data = await res.json();
+    if (data.url) { window.location.href = data.url; }
+    else { authShowError(data.error || 'Could not create checkout session.'); }
+  } catch(e) {
+    authShowError('Connection error. Please try again.');
+  }
+}
+
+async function doUpgrade() {
+  if (!_authToken) return;
+  var btn = document.getElementById('trial-upgrade-btn');
+  btn.textContent = 'Loading…';
+  await doCheckout('ia', 'monthly');
+  btn.textContent = 'Upgrade Now';
+}
+
+function authSuccess(data) {
+  _authToken = data.token;
+  _authUser  = data;
+  _userTier  = data.tier || 'trial';
+  try { localStorage.setItem('oe_token', data.token); } catch(e) {}
+  document.getElementById('auth-overlay').classList.add('hidden');
+  updateTrialBanner(data);
+  applyTierUI();
+  // Now that we have a valid token, load the dashboard data
+  refreshDashboard();
+}
+
+function authLogout(msg) {
+  _authToken = null;
+  _authUser  = null;
+  try { localStorage.removeItem('oe_token'); } catch(e) {}
+  document.getElementById('auth-overlay').classList.remove('hidden');
+  document.getElementById('trial-banner').classList.add('hidden');
+  // Show session-kicked message if provided
+  var errEl = document.getElementById('auth-error');
+  if (msg && errEl) { errEl.textContent = msg; errEl.classList.add('show'); }
+}
+
+// Check API responses for session-kicked (403)
+function checkSessionKicked(r) {
+  if (r.status === 403) {
+    r.clone().json().then(function(d) {
+      if (d.error && d.error.indexOf('logged in elsewhere') !== -1) {
+        authLogout(d.error);
+      }
+    }).catch(function() {});
+    return true;
+  }
+  return false;
+}
+
+function updateTrialBanner(data) {
+  var banner = document.getElementById('trial-banner');
+  var msg = document.getElementById('trial-days-left');
+  var btn = document.getElementById('trial-upgrade-btn');
+  var tierLabel = (data.tier === 'trader') ? 'Trader Edition' : (data.tier === 'ia') ? 'IA Edition' : '';
+  if (data.status === 'trialing' && data.trialEnd) {
+    var daysLeft = Math.max(0, Math.ceil((data.trialEnd - Math.floor(Date.now()/1000)) / 86400));
+    msg.textContent = daysLeft + ' day' + (daysLeft !== 1 ? 's' : '');
+    btn.style.display = '';
+    banner.classList.remove('hidden');
+  } else if (data.status === 'active') {
+    var planLabel = (data.plan === 'annual' ? 'Annual' : 'Monthly');
+    var fullLabel = tierLabel ? tierLabel + ' · ' + planLabel : planLabel + ' plan';
+    msg.textContent = fullLabel;
+    btn.style.display = 'none';
+    banner.classList.remove('hidden');
+    banner.querySelector('span').innerHTML = 'Subscription active — <strong id="trial-days-left">' + fullLabel + '</strong>';
+  } else if (data.status === 'trial_expired' || data.status === 'past_due') {
+    msg.textContent = '';
+    btn.textContent = 'Subscribe Now';
+    btn.style.display = '';
+    banner.classList.remove('hidden');
+    banner.querySelector('span').innerHTML = 'Your trial has expired';
+  } else {
+    banner.classList.add('hidden');
+  }
+}
+
+async function initAuth() {
+  // Restore token from localStorage
+  try { _authToken = _authToken || localStorage.getItem('oe_token'); } catch(e) {}
+
+  // Check if returning from Stripe checkout
+  var params = new URLSearchParams(window.location.search);
+  if (params.get('session_id') && _authToken) {
+    // Verify token and refresh status
+    var res = await fetch(CF_PROXY + 'auth/verify', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + _authToken }
+    });
+    var data = await res.json();
+    if (data.valid) {
+      authSuccess({ token: _authToken, ...data });
+      window.history.replaceState({}, '', window.location.pathname);
+      return;
+    }
+  }
+
+  // Try to verify saved token
+  if (_authToken) {
+    try {
+      var res = await fetch(CF_PROXY + 'auth/verify', {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + _authToken }
+      });
+      var data = await res.json();
+      if (data.valid) {
+        authSuccess({ token: _authToken, ...data });
+        return;
+      }
+    } catch(e) {}
+    // Token invalid — clear it
+    _authToken = null;
+    try { localStorage.removeItem('oe_token'); } catch(e) {}
+  }
+
+  // Show overlay for unauthenticated users
+  document.getElementById('auth-overlay').classList.remove('hidden');
+}
+
+// Run auth check on load
+document.addEventListener('DOMContentLoaded', function() {
+  initAuth();
+});
+
+const DEFAULT_TICKERS = ['TSLA','NVDA','AMD','MRVL','PLTR','ALAB','AVGO','MU','GOOG','SATS','NPPTF']; // IA11
+
+// Hardcoded earnings dates (YYYY-MM-DD)
+const EARNINGS = {
+  TSLA: '2026-04-28', NVDA: '2026-05-26', PLTR: '2026-05-05',
+  AMD:  '2026-04-29', AVGO: '2026-06-12', TSM:  '2026-04-17',
+  MU:   '2026-06-25', ASML: '2026-04-16', ALAB: '2026-05-20',
+  MRVL: '2026-05-29', ARM:  '2026-05-07', GOOG: '2026-04-29',
+  USO:  null, XLU: null
+};
+
+// ═══════════════════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════════════════
+var currentTheme    = localStorage.getItem('owp-theme')    || 'cyberpunk';
+var currentTF       = '1day'; // fixed — dashboard uses per-strategy TFs, analyzer uses this
+var currentSort     = localStorage.getItem('owp-sort')     || 'score';
+var currentTab      = localStorage.getItem('owp-tab')      || 'dashboard';
+var tickers         = JSON.parse(localStorage.getItem('owp-tickers') || 'null') || DEFAULT_TICKERS.slice();
+var cardData        = {}; // ticker -> data object
+var refreshTimer    = null;
+
+// ═══════════════════════════════════════════════════════
+// THEME
+// ═══════════════════════════════════════════════════════
+function applyTheme() {
+  if (currentTheme === 'classic') {
+    document.body.classList.add('classic');
+  } else {
+    document.body.classList.remove('classic');
+  }
+}
+function toggleTheme() {
+  currentTheme = currentTheme === 'cyberpunk' ? 'classic' : 'cyberpunk';
+  localStorage.setItem('owp-theme', currentTheme);
+  applyTheme();
+}
+applyTheme();
+
+// ═══════════════════════════════════════════════════════
+// TABS
+// ═══════════════════════════════════════════════════════
+document.querySelectorAll('.tab').forEach(function(tab) {
+  tab.addEventListener('click', function() {
+    document.querySelectorAll('.tab').forEach(function(t) { t.classList.remove('active'); });
+    document.querySelectorAll('.panel').forEach(function(p) { p.classList.remove('active'); });
+    tab.classList.add('active');
+    document.getElementById('panel-' + tab.dataset.tab).classList.add('active');
+    renderTickerStrip(); // update strip labels based on active tab
+    localStorage.setItem('owp-tab', tab.dataset.tab); // remember last tab
+    // Render mini rankings when switching to an analyzer tab
+    var tid = tab.dataset.tab;
+    if (tid === 'put' || tid === 'cc' || tid === 'leaps' || tid === 'synth') {
+      renderMiniRankings(tid, null);
+    }
+  });
+});
+
+// ═══════════════════════════════════════════════════════
+// CLOCK & MARKET STATUS
+// ═══════════════════════════════════════════════════════
+function isMarketOpen() {
+  var now = new Date();
+  // CST = UTC-6, CDT = UTC-5
+  var offset = -6; // CST default
+  var month  = now.getUTCMonth() + 1;
+  var day    = now.getUTCDate();
+  // Rough DST: March-November use CDT (-5)
+  if (month > 3 && month < 11) offset = -5;
+  var cst = new Date(now.getTime() + offset * 3600000);
+  var h   = cst.getUTCHours();
+  var m   = cst.getUTCMinutes();
+  var dow = cst.getUTCDay(); // 0=Sun
+  if (dow === 0 || dow === 6) return false;
+  var mins = h * 60 + m;
+  return mins >= 8 * 60 + 30 && mins < 15 * 60; // 8:30-15:00 CST
+}
+
+function updateClock() {
+  var now    = new Date();
+  var offset = -6;
+  var month  = now.getUTCMonth() + 1;
+  if (month > 3 && month < 11) offset = -5;
+  var cst = new Date(now.getTime() + offset * 3600000);
+  var h   = String(cst.getUTCHours()).padStart(2,'0');
+  var m   = String(cst.getUTCMinutes()).padStart(2,'0');
+  var s   = String(cst.getUTCSeconds()).padStart(2,'0');
+  var tz  = offset === -5 ? 'CDT' : 'CST';
+  document.getElementById('clock').textContent = h + ':' + m + ':' + s + ' ' + tz;
+
+  var open = isMarketOpen();
+  var el   = document.getElementById('mkt-status');
+  if (open) {
+    el.textContent = 'MARKET OPEN';
+    el.className   = 'market-status open';
+  } else {
+    // Show next open countdown
+    el.textContent = 'CLOSED';
+    el.className   = 'market-status closed';
+  }
+}
+setInterval(updateClock, 1000);
+updateClock();
+
+// ═══════════════════════════════════════════════════════
+// AUTO REFRESH
+// ═══════════════════════════════════════════════════════
+function scheduleAutoRefresh() {
+  if (refreshTimer) clearInterval(refreshTimer);
+  refreshTimer = setInterval(function() {
+    if (isMarketOpen()) {
+      refreshDashboard();
+    }
+  }, 5 * 60 * 1000); // every 5 min
+}
+scheduleAutoRefresh();
+
+// ═══════════════════════════════════════════════════════
+// SORT
+// ═══════════════════════════════════════════════════════
+function setSort(s) {
+  currentSort = s;
+  localStorage.setItem('owp-sort', s);
+  document.querySelectorAll('#sort-group .tgl').forEach(function(b) {
+    b.classList.toggle('active', b.dataset.sort === s);
+  });
+  renderSorted();
+}
+
+// ═══════════════════════════════════════════════════════
+// TICKER MODAL
+// ═══════════════════════════════════════════════════════
+// Apply tier-based UI restrictions
+function applyTierUI() {
+  var isTrader = (_userTier === 'trader');
+  // Show/hide TICKERS button label hint
+  // Show/hide custom section in ticker modal
+  // For non-trader tiers, reset tickers to IA11 only
+  if (!isTrader) {
+    tickers = IA11.slice();
+    localStorage.setItem('owp-tickers', JSON.stringify(tickers));
+  } else {
+    // Ensure IA11 tickers are always included for trader too
+    IA11.forEach(function(t) {
+      if (!tickers.includes(t)) tickers.unshift(t);
+    });
+  }
+}
+
+function openTickerModal() {
+  renderTickerTags();
+  document.getElementById('ticker-modal').classList.add('open');
+  var inputEl = document.getElementById('modal-input');
+  if (inputEl) inputEl.value = '';
+}
+function closeTickerModal() {
+  document.getElementById('ticker-modal').classList.remove('open');
+}
+function renderTickerTags() {
+  var isTrader = (_userTier === 'trader');
+  // Render IA11 section (always locked / non-removable)
+  var iaHtml = '';
+  IA11.forEach(function(t) {
+    iaHtml += '<div class="ticker-tag locked">' + t + '</div>';
+  });
+  document.getElementById('ticker-tags-ia').innerHTML = iaHtml;
+
+  // Custom tickers section
+  var customSection = document.getElementById('ticker-custom-section');
+  var upgradeMsg = document.getElementById('ticker-upgrade-msg');
+  if (isTrader) {
+    customSection.style.display = '';
+    upgradeMsg.style.display = 'none';
+    var customTickers = tickers.filter(function(t) { return !IA11.includes(t); });
+    var customHtml = '';
+    customTickers.forEach(function(t) {
+      customHtml += '<div class="ticker-tag">' + t +
+        '<span class="remove-tag" onclick="removeTicker(\'' + t + '\')">\u00d7</span></div>';
+    });
+    document.getElementById('ticker-tags-custom').innerHTML = customHtml;
+    var remaining = 14 - customTickers.length;
+    document.getElementById('ticker-limit-info').textContent =
+      customTickers.length + '/14 custom slots used' + (remaining > 0 ? ' \u00b7 ' + remaining + ' remaining' : ' \u00b7 limit reached');
+  } else {
+    customSection.style.display = 'none';
+    upgradeMsg.style.display = '';
+  }
+}
+function removeTicker(t) {
+  // Only allow removing non-IA11 tickers
+  if (IA11.includes(t)) return;
+  tickers = tickers.filter(function(x) { return x !== t; });
+  renderTickerTags();
+}
+function addTicker() {
+  if (_userTier !== 'trader') return; // only trader can add
+  var val = document.getElementById('modal-input').value.trim().toUpperCase();
+  if (!val) return;
+  if (tickers.includes(val)) { document.getElementById('modal-input').value = ''; return; }
+  var customCount = tickers.filter(function(t) { return !IA11.includes(t); }).length;
+  if (customCount >= 14) { return; } // at limit
+  tickers.push(val);
+  renderTickerTags();
+  document.getElementById('modal-input').value = '';
+}
+document.getElementById('modal-input').addEventListener('keydown', function(e) {
+  if (e.key === 'Enter') addTicker();
+});
+function saveTickersAndClose() {
+  localStorage.setItem('owp-tickers', JSON.stringify(tickers));
+  closeTickerModal();
+  refreshDashboard();
+}
+document.getElementById('ticker-modal').addEventListener('click', function(e) {
+  if (e.target === this) closeTickerModal();
+});
+
+
+
+// ═══════════════════════════════════════════════════════
+// UTILITIES
+// ═══════════════════════════════════════════════════════
+
+// SVG sparkline — renders an array of values as a tiny inline chart
+// Returns an SVG string or empty string if data is insufficient
+function sparklineSVG(values, w, h, color) {
+  if (!values || values.length < 3) return '';
+  w = w || 60; h = h || 20;
+  color = color || 'var(--accent)';
+  var min = Math.min.apply(null, values);
+  var max = Math.max.apply(null, values);
+  var range = max - min || 1;
+  var pts = values.map(function(v, i) {
+    var x = (i / (values.length - 1)) * w;
+    var y = h - ((v - min) / range) * (h - 2) - 1; // 1px padding top/bottom
+    return x.toFixed(1) + ',' + y.toFixed(1);
+  }).join(' ');
+  // Trend direction: compare last 5 avg to first 5 avg
+  var first5 = values.slice(0, 5).reduce(function(a,b){return a+b;},0) / 5;
+  var last5  = values.slice(-5).reduce(function(a,b){return a+b;},0) / 5;
+  var trend  = last5 > first5 * 1.05 ? 'up' : last5 < first5 * 0.95 ? 'down' : 'flat';
+  var trendColor = trend === 'up' ? 'var(--green)' : trend === 'down' ? 'var(--red)' : 'var(--text-muted)';
+  return '<svg width="' + w + '" height="' + h + '" viewBox="0 0 ' + w + ' ' + h + '" style="vertical-align:middle;">' +
+    '<polyline points="' + pts + '" fill="none" stroke="' + trendColor + '" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>' +
+  '</svg>';
+}
+
+function fmt(n, dec) {
+  if (n === null || n === undefined || isNaN(n)) return '—';
+  return Number(n).toFixed(dec !== undefined ? dec : 2);
+}
+function fmtDollar(n) {
+  if (n === null || n === undefined || isNaN(n)) return '—';
+  return '$' + Number(n).toFixed(2);
+}
+function fmtK(n) {
+  if (n === null || n === undefined || isNaN(n)) return '—';
+  if (Math.abs(n) >= 1000) return (n / 1000).toFixed(1) + 'k';
+  return String(Math.round(n));
+}
+function spinner() {
+  return '<span class="spinner"></span>';
+}
+function dteFromStr(dateStr) {
+  if (!dateStr) return null;
+  var parts = dateStr.split('-');
+  if (parts.length !== 3) return null;
+  var exp     = new Date(Date.UTC(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2])));
+  var now     = new Date();
+  var todayUTC = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  return Math.round((exp - todayUTC) / 86400000);
+}
+function isThirdFriday(dateStr) {
+  var parts = dateStr.split('-');
+  var d     = new Date(Date.UTC(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2])));
+  if (d.getUTCDay() !== 5) return false;
+  var day   = d.getUTCDate();
+  return day >= 15 && day <= 21;
+}
+function findBestExpiry(expirations, minDTE, maxDTE) {
+  var candidates = expirations.filter(function(e) {
+    var d = dteFromStr(e);
+    return d !== null && d >= minDTE && d <= maxDTE;
+  });
+  var monthly = candidates.filter(isThirdFriday);
+  if (monthly.length > 0) return monthly[0];
+  if (candidates.length > 0) return candidates[0];
+  return null;
+}
+function setStatus(id, msg, type) {
+  var el = document.getElementById(id);
+  if (!el) return;
+  el.innerHTML  = msg;
+  el.className  = 'status-msg' + (type ? ' ' + type : '');
+}
+
+// ═══════════════════════════════════════════════════════
+// API CALLS
+// ═══════════════════════════════════════════════════════
+async function fetchTD(endpoint, params) {
+  var url = new URL('https://api.twelvedata.com/' + endpoint);
+  // API key injected server-side by Worker proxy
+  Object.keys(params).forEach(function(k) { url.searchParams.set(k, params[k]); });
+  // Route through proxy with auth token
+  var proxyUrl = CF_PROXY + '?url=' + encodeURIComponent(url.toString());
+  var headers = _authToken ? { 'Authorization': 'Bearer ' + _authToken } : {};
+  var r = await fetch(proxyUrl, { headers: headers });
+  if (checkSessionKicked(r)) throw new Error('session-kicked');
+  if (!r.ok) throw new Error('Twelve Data HTTP ' + r.status);
+  var data = await r.json();
+  if (data.status === 'error') throw new Error('TD: ' + (data.message || 'API error'));
+  return data;
+}
+
+// ═══════════════════════════════════════════════════════
+// MARKETDATA CACHE (15-minute TTL in localStorage)
+// ═══════════════════════════════════════════════════════
+var MD_CACHE_TTL = 15 * 60 * 1000; // 15 minutes in ms
+
+function mdCacheKey(path, params) {
+  var key = 'owp_md_' + path;
+  if (params) key += '_' + Object.keys(params).sort().map(function(k){ return k+'='+params[k]; }).join('&');
+  return key;
+}
+
+function mdCacheGet(key) {
+  try {
+    var raw = localStorage.getItem(key);
+    if (!raw) return null;
+    var entry = JSON.parse(raw);
+    if (Date.now() - entry.ts > MD_CACHE_TTL) { localStorage.removeItem(key); return null; }
+    return entry.data;
+  } catch(e) { return null; }
+}
+
+function mdCacheSet(key, data) {
+  try { localStorage.setItem(key, JSON.stringify({ ts: Date.now(), data: data })); } catch(e) {}
+}
+
+function clearMDCache() {
+  try {
+    Object.keys(localStorage).forEach(function(k) {
+      if (k.startsWith('owp_md_')) localStorage.removeItem(k);
+    });
+  } catch(e) {}
+}
+
+async function fetchMD(path, params) {
+  // Check cache first
+  var cacheKey = mdCacheKey(path, params);
+  var cached = mdCacheGet(cacheKey);
+  if (cached) return cached;
+
+  // Symbol goes IN the path: options/expirations/TSLA/
+  // Worker BASE = https://api.marketdata.app/v1, so no /v1/ prefix here
+  var url = new URL(CF_PROXY);
+  url.searchParams.set('path', path);
+  if (params) {
+    Object.keys(params).forEach(function(k) { url.searchParams.set(k, params[k]); });
+  }
+  var headers = _authToken ? { 'Authorization': 'Bearer ' + _authToken } : {};
+  var r = await fetch(url.toString(), { headers: headers });
+  if (checkSessionKicked(r)) throw new Error('session-kicked');
+  if (!r.ok) {
+    var errText = await r.text();
+    throw new Error('MarketData HTTP ' + r.status + ': ' + errText);
+  }
+  var data = await r.json();
+  if (data.s === 'no_data') throw new Error('No options data available.');
+
+  // Store in cache
+  mdCacheSet(cacheKey, data);
+  return data;
+}
+
+async function fetchPriceData(ticker, tf) {
+  var useTF = tf || currentTF; // callers can pin a timeframe; analyzer tabs use currentTF
+  var [quoteData, rsiData, smaData] = await Promise.all([
+    fetchTD('quote',  { symbol: ticker }),
+    fetchTD('rsi',    { symbol: ticker, interval: useTF, time_period: 10, outputsize: 1 }),
+    fetchTD('sma',    { symbol: ticker, interval: useTF, time_period: 200, outputsize: 1 })
+  ]);
+  var price    = parseFloat(quoteData.close || quoteData.price);
+  var change   = parseFloat(quoteData.change);
+  var changePct= parseFloat(quoteData.percent_change);
+  var week52H  = parseFloat(quoteData.fifty_two_week && quoteData.fifty_two_week.high  ? quoteData.fifty_two_week.high  : quoteData.high);
+  var week52L  = parseFloat(quoteData.fifty_two_week && quoteData.fifty_two_week.low   ? quoteData.fifty_two_week.low   : quoteData.low);
+  var rsiVals  = rsiData.values || [];
+  var rsi      = parseFloat(rsiVals.length > 0 ? rsiVals[0].rsi : (rsiData.rsi || NaN));
+  var smaVals  = smaData.values || [];
+  var sma200   = parseFloat(smaVals.length > 0 ? smaVals[0].sma : (smaData.sma || NaN));
+  return { price, change, changePct, week52H, week52L, rsi, sma200 };
+}
+
+// IV Rank derived from chain IV values (ATM IV vs chain min/max)
+// Returns { ivRank, atmIV } or null
+async function fetchIVData(ticker, expiration) {
+  try {
+    // Use put chain to get IV values across strikes
+    var chain = await fetchMD('options/chain/' + ticker + '/', {
+      expiration: expiration,
+      side: 'put'
+    });
+    if (!chain || !chain.iv || chain.iv.length === 0) return null;
+
+    // Collect valid IV values
+    var ivs = [];
+    for (var i = 0; i < chain.iv.length; i++) {
+      var v = chain.iv[i];
+      if (v !== null && v !== undefined && !isNaN(v) && v > 0) {
+        ivs.push(v <= 1 ? v * 100 : v); // normalize to percentage
+      }
+    }
+    if (ivs.length === 0) return null;
+
+    // ATM IV = median of middle third of strikes (most liquid area)
+    ivs.sort(function(a, b) { return a - b; });
+    var mid = Math.floor(ivs.length / 2);
+    var atmIV = ivs[mid];
+
+    var ivMin = ivs[0];
+    var ivMax = ivs[ivs.length - 1];
+    var ivRange = ivMax - ivMin;
+
+    // IV Rank = position of ATM IV within chain's IV range (0-100)
+    var ivRank = ivRange > 0 ? ((atmIV - ivMin) / ivRange) * 100 : 50;
+    ivRank = Math.min(100, Math.max(0, ivRank));
+
+    return { ivRank: ivRank, atmIV: atmIV };
+  } catch(e) { return null; }
+}
+
+// Legacy wrapper — returns just ivRank number or null
+async function fetchIVRank(ticker, expiration) {
+  var result = await fetchIVData(ticker, expiration);
+  return result ? result.ivRank : null;
+}
+
+async function fetchATRSeries(ticker) {
+  // 30 daily ATR values for sparkline — measures price volatility trend
+  var data = await fetchTD('atr', { symbol: ticker, interval: '1day', time_period: 14, outputsize: 30 });
+  var vals = data.values || [];
+  return vals.map(function(v) { return parseFloat(v.atr); }).reverse(); // oldest first
+}
+
+async function fetchExpirations(ticker) {
+  var data = await fetchMD('options/expirations/' + ticker + '/');
+  return data.expirations || [];
+}
+
+async function fetchChain(ticker, expiration, side) {
+  return await fetchMD('options/chain/' + ticker + '/', {
+    expiration: expiration,
+    side: side
+  });
+}
+
+// Earnings before expiry check (uses hardcoded dates)
+function earningsBeforeExpiry(ticker, expiryStr) {
+  var eDate = EARNINGS[ticker];
+  if (!eDate) return false; // no known earnings
+  var earningsDate = new Date(eDate);
+  var expiryDate   = new Date(expiryStr);
+  var today        = new Date();
+  return earningsDate > today && earningsDate < expiryDate;
+}
+
+// ═══════════════════════════════════════════════════════
+// DASHBOARD — RENDER SKELETON CARDS
+// ═══════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════
+// DASHBOARD — 4-COLUMN LAYOUT
+// Columns: CSP (live scored) | CC (live scored) |
+//          LEAPS (RSI proxy) | Bull Synth (RSI proxy)
+// ═══════════════════════════════════════════════════════
+
+function scoreToGrade(score, phase) {
+  if (!phase || phase < 2) return '';
+  if (score >= 6) return 'A';
+  if (score >= 5) return 'B';
+  if (score >= 4) return 'C';
+  if (score >= 3) return 'D';
+  return 'F';
+}
+
+var COL_IDS = { put: 'col-put', cc: 'col-cc', leaps: 'col-leaps', synth: 'col-synth' };
+
+function renderSkeletons() {
+  // Populate all 4 columns with loading skeletons
+  Object.values(COL_IDS).forEach(function(colId) {
+    var col = document.getElementById(colId);
+    col.innerHTML = '';
+    tickers.slice(0, 4).forEach(function(t) {
+      col.innerHTML += buildSkeletonRow(t);
+    });
+  });
+  // Reset cardData
+  tickers.forEach(function(t) {
+    cardData[t] = { ticker: t, loading: true };
+  });
+}
+
+function buildSkeletonRow(ticker) {
+  var skMini = ['IV','RSI','EARN','PREM','DELTA','DTE'].map(function(l) {
+    return '<div class="mini-box mini-na"><span class="mini-label">' + l + '</span><span class="mini-val">—</span></div>';
+  }).join('');
+  return '<div class="col-card col-loading">' +
+    '<div class="card-header">' +
+      '<div><div class="card-ticker">' + ticker + '</div><div class="card-name">Loading…</div></div>' +
+      '<div class="grade-box grade-">—</div>' +
+    '</div>' +
+    '<div style="height:14px;background:var(--surface2);border-radius:4px;margin-bottom:8px"></div>' +
+    '<div style="height:14px;background:var(--surface2);border-radius:4px;margin-bottom:8px"></div>' +
+    '<div class="criteria-row">' + skMini + '</div>' +
+    '<div class="card-footer"><span class="score-text">Loading…</span></div>' +
+  '</div>';
+}
+
+// Build a full rich card for a dashboard column
+function buildColCard(ticker, d, strategy) {
+  var isScored = (strategy === 'put' || strategy === 'cc');
+  var score;
+  if (strategy === 'put')        score = d.putScore || 0;
+  else if (strategy === 'cc')    score = d.ccScore || 0;
+  else if (strategy === 'leaps') score = d.leapsScore || 0;
+  else                           score = d.synthScore || 0;
+
+  var totalCriteria = isScored ? 6 : 7;
+
+  // Grade — only meaningful once phase 2 data is loaded
+  var grade = '';
+  if (d.phase >= 2) {
+    if (isScored) {
+      grade = score >= 6 ? 'A' : score >= 5 ? 'B' : score >= 4 ? 'C' : score >= 3 ? 'D' : 'F';
+    } else {
+      if (d.phase >= 3) {
+        // Phase 3: full real score out of 7
+        grade = score >= 6 ? 'A' : score >= 5 ? 'B' : score >= 4 ? 'C' : score >= 3 ? 'D' : 'F';
+      } else {
+        // Phase 2 proxy: grade on checked criteria ratio only
+        var checked = 0, passed = 0;
+        var cxArr = strategy === 'leaps'
+          ? [d.leaps_c1,d.leaps_c2,d.leaps_c3,d.leaps_c4,d.leaps_c5,d.leaps_c6,d.leaps_c7]
+          : [d.synth_c1,d.synth_c2,d.synth_c3,d.synth_c4,d.synth_c5,d.synth_c6,d.synth_c7];
+        for (var gi = 0; gi < cxArr.length; gi++) {
+          if (cxArr[gi] !== null && cxArr[gi] !== undefined) { checked++; if (cxArr[gi]) passed++; }
+        }
+        grade = checked > 0 ? (passed / checked >= 0.85 ? 'A' : passed / checked >= 0.70 ? 'B' : passed / checked >= 0.50 ? 'C' : passed / checked >= 0.30 ? 'D' : 'F') : '';
+      }
+    }
+  }
+
+  var rsi      = d.rsi;
+  var rsiColor = !isNaN(rsi) ? (rsi < 30 ? 'down' : rsi > 65 ? 'up' : '') : '';
+  var rsiDisp  = !isNaN(rsi) ? fmt(rsi, 1) : '—';
+
+  // Badge
+  var badgeCls, badgeTxt;
+  if (isScored) {
+    if (score >= 5)      { badgeCls = 'badge-ideal';    badgeTxt = 'IDEAL · ' + score + '/6'; }
+    else if (score >= 3) { badgeCls = 'badge-watch';    badgeTxt = 'WATCH · ' + score + '/6'; }
+    else                 { badgeCls = 'badge-notready'; badgeTxt = 'NO TRADE · ' + score + '/6'; }
+  } else {
+    // LEAPS/Synth: show score out of 7
+    if (score >= 5)      { badgeCls = 'badge-ideal';    badgeTxt = 'IDEAL · ' + score + '/7'; }
+    else if (score >= 3) { badgeCls = 'badge-watch';    badgeTxt = 'WATCH · ' + score + '/7'; }
+    else                 { badgeCls = 'badge-notready'; badgeTxt = 'WAIT · ' + score + '/7'; }
+  }
+
+  // Price / change
+  var priceDisp = d.price ? fmtDollar(d.price) : '—';
+  var chgSign   = (d.changePct >= 0) ? '+' : '';
+  var chgDisp   = (d.changePct !== null && d.changePct !== undefined) ? chgSign + fmt(d.changePct, 2) + '%' : '';
+  var chgColor  = (d.changePct >= 0) ? 'up' : 'down';
+
+  // 52W range
+  var rangePos = 50;
+  if (d.week52H && d.week52L && d.price) {
+    var span = d.week52H - d.week52L;
+    rangePos = span > 0 ? Math.min(100, Math.max(0, (d.price - d.week52L) / span * 100)) : 50;
+  }
+  var priceColor = rangePos > 70 ? 'up' : rangePos < 30 ? 'down' : '';
+
+  // Criteria mini boxes — PUT/CC use scored criteria, LEAPS/Synth show RSI + price position
+  // Pick the right criteria set based on strategy
+  var cx = {};
+  if (strategy === 'put') {
+    cx = { c1: d.put_c1, c2: d.put_c2, c3: d.put_c3, c4: d.put_c4, c5: d.put_c5, c6: d.put_c6 };
+  } else if (strategy === 'cc') {
+    cx = { c1: d.cc_c1, c2: d.cc_c2, c3: d.cc_c3, c4: d.cc_c4, c5: d.cc_c5, c6: d.cc_c6 };
+  }
+
+  // For LEAPS phase 3 cards, show actual IV%; for others show IV rank
+  var ivDisp;
+  if (strategy === 'leaps' && d.phase >= 3 && d.currentIV !== null && d.currentIV !== undefined) {
+    ivDisp = Math.round(d.currentIV) + '%';
+  } else {
+    ivDisp = d.ivRank !== null && d.ivRank !== undefined ? Math.round(d.ivRank) + '%' : (d.phase < 2 ? '…' : '—');
+  }
+  var earnDisp = cx.c3 === true ? 'OK' : cx.c3 === false ? 'RISK' : (d.phase < 2 ? '…' : '—');
+  var premDisp = d.premPct !== null && d.premPct !== undefined ? fmt(d.premPct, 1) + '%' : (d.phase < 2 ? '…' : '—');
+  var dteDisp  = d.dte !== null && d.dte !== undefined ? d.dte + 'd' : (d.phase < 2 ? '…' : '—');
+  var strkDisp = d.phase < 2 ? '…' : (cx.c5 === true ? '✓' : cx.c5 === false ? '✗' : '—');
+
+  function mb(label, pass, val) {
+    var cls = pass === true ? 'mini-pass' : pass === false ? 'mini-fail' : 'mini-na';
+    return '<div class="mini-box ' + cls + '"><span class="mini-label">' + label + '</span><span class="mini-val">' + (val !== undefined ? val : (pass === true ? '✓' : pass === false ? '✗' : '?')) + '</span></div>';
+  }
+
+  var criteriaHtml;
+  if (isScored) {
+    criteriaHtml =
+      mb('IV',    cx.c1, ivDisp) +
+      mb('RSI',   cx.c2, rsiDisp) +
+      mb('EARN',  cx.c3, earnDisp) +
+      mb('PREM',  cx.c4, premDisp) +
+      mb('DELTA', cx.c5, strkDisp) +
+      mb('DTE',   cx.c6, dteDisp);
+  } else if (strategy === 'leaps') {
+    // LEAPS: 7 criteria — RSI, IV, Strike, Duration, OI, Spread, CAGR
+    criteriaHtml =
+      mb('RSI',   d.leaps_c1, (d.leapsRSI !== undefined && !isNaN(d.leapsRSI) ? fmt(d.leapsRSI,1) : rsiDisp) + 'w') +
+      mb('IV',    d.leaps_c2, ivDisp) +
+      mb('STRK',  d.leaps_c3, d.leaps_c3 === null ? '—' : (d.leaps_c3 ? '✓' : '✗')) +
+      mb('DUR',   d.leaps_c4, d.leaps_c4 === true ? '✓' : d.leaps_c4 === false ? '✗' : '—') +
+      mb('OI',    d.leaps_c5, d.leaps_c5 === null ? '—' : (d.leaps_c5 ? '✓' : '✗')) +
+      mb('BID/A', d.leaps_c6, d.leaps_c6 === null ? '—' : (d.leaps_c6 ? '✓' : '✗')) +
+      mb('CAGR',  d.leaps_c7, d.leaps_c7 === null ? '—' : (d.leaps_c7 ? (d.leapsCAGR !== null && d.leapsCAGR !== undefined ? Math.round(d.leapsCAGR)+'%' : '✓') : (d.leapsCAGR !== null && d.leapsCAGR !== undefined ? Math.round(d.leapsCAGR)+'%' : '✗')));
+  } else {
+    // Bull Synthetic: 7 criteria — RSI<30, RSI<40, CallΔ, Duration, Debit, OI, Spread
+    criteriaHtml =
+      mb('RSI30', d.synth_c1, rsiDisp) +
+      mb('RSI40', d.synth_c2, rsiDisp) +
+      mb('CALLΔ', d.synth_c3, d.synth_c3 === null ? '—' : (d.synth_c3 ? '✓' : '✗')) +
+      mb('DUR',   d.synth_c4, d.synth_c4 === true ? '✓' : d.synth_c4 === false ? '✗' : '—') +
+      mb('DEBIT', d.synth_c5, d.synth_c5 === null ? '—' : (d.synth_c5 ? '✓' : '✗')) +
+      mb('OI',    d.synth_c6, d.synth_c6 === null ? '—' : (d.synth_c6 ? '✓' : '✗')) +
+      mb('SPRD',  d.synth_c7, d.synth_c7 === null ? '—' : (d.synth_c7 ? '✓' : '✗'));
+  }
+
+  // Footer score / label
+  var scoreHtml = d.phase >= 2
+    ? '<span class="' + badgeCls + ' card-badge" style="font-size:9px;padding:1px 6px">' + badgeTxt + '</span>'
+    : '<span class="score-text">Loading <span class="loading-dot"></span></span>';
+
+  var cardGlowCls = badgeCls === 'badge-ideal' ? ' card-ideal' : badgeCls === 'badge-notready' ? ' card-notrade' : '';
+
+  return '<div class="col-card' + cardGlowCls + '" id="colrow-' + ticker + '-' + strategy + '" onclick="navigateToAnalyzer(\'' + ticker + '\',\'' + strategy + '\')">' +
+    '<div class="card-header">' +
+      '<div>' +
+        '<div class="card-ticker">' + ticker + '</div>' +
+        '<div class="card-name" style="font-size:9px;color:var(--text-muted)">' + (strategy.toUpperCase()) + (d.expiry ? ' · ' + d.expiry : '') + '</div>' +
+      '</div>' +
+      '<div class="grade-box grade-' + grade + '">' + (grade || '—') + '</div>' +
+    '</div>' +
+    '<div class="card-price-row">' +
+      '<span class="card-price ' + priceColor + '">' + priceDisp + '</span>' +
+      '<span class="card-chg ' + chgColor + '">' + chgDisp + '</span>' +
+    '</div>' +
+    '<div class="range-row">' +
+      '<div class="range-labels">' +
+        '<span>' + (d.week52L ? fmtDollar(d.week52L) : '—') + '</span>' +
+        '<span style="color:var(--text-muted);font-size:8px">52W</span>' +
+        '<span>' + (d.week52H ? fmtDollar(d.week52H) : '—') + '</span>' +
+      '</div>' +
+      '<div class="range-track">' +
+        '<div class="range-fill" style="width:' + rangePos + '%"></div>' +
+        '<div class="range-dot" style="left:' + rangePos + '%"></div>' +
+      '</div>' +
+    '</div>' +
+    '<div class="criteria-row' + (isScored ? '' : ' criteria-7') + '">' + criteriaHtml + '</div>' +
+    (d.atrSeries && d.atrSeries.length >= 3
+      ? '<div style="display:flex;align-items:center;gap:6px;padding:2px 10px;font-size:9px;color:var(--text-muted);">VOL 30D ' + sparklineSVG(d.atrSeries, 60, 16) + '</div>'
+      : '') +
+    '<div class="card-footer">' + scoreHtml + '<span style="font-size:9px;color:var(--text-muted)">RSI ' + rsiDisp + '</span></div>' +
+  '</div>';
+}
+
+function renderColumns() {
+  // Build sorted lists for each column
+  var putSorted   = tickers.slice().filter(function(t){ return cardData[t] && !cardData[t].loading; });
+  var ccSorted    = putSorted.slice();
+  var leapsSorted = putSorted.slice();
+  var synthSorted = putSorted.slice();
+
+  // CSP: sort by putScore desc, ties broken by RSI asc
+  putSorted.sort(function(a, b) {
+    var sa = cardData[a].putScore !== null ? cardData[a].putScore : -1;
+    var sb = cardData[b].putScore !== null ? cardData[b].putScore : -1;
+    if (sb !== sa) return sb - sa;
+    return (cardData[a].rsi || 999) - (cardData[b].rsi || 999);
+  });
+
+  // CC: sort by ccScore desc, ties broken by RSI desc
+  ccSorted.sort(function(a, b) {
+    var sa = cardData[a].ccScore !== null ? cardData[a].ccScore : -1;
+    var sb = cardData[b].ccScore !== null ? cardData[b].ccScore : -1;
+    if (sb !== sa) return sb - sa;
+    return (cardData[b].rsi || 0) - (cardData[a].rsi || 0);
+  });
+
+  // LEAPS: sort by leapsScore desc, ties broken by RSI asc
+  leapsSorted.sort(function(a, b) {
+    var sa = cardData[a].leapsScore !== null ? cardData[a].leapsScore : -1;
+    var sb = cardData[b].leapsScore !== null ? cardData[b].leapsScore : -1;
+    if (sb !== sa) return sb - sa;
+    return (cardData[a].rsi || 999) - (cardData[b].rsi || 999);
+  });
+
+  // Bull Synth: sort by synthScore desc, ties broken by RSI asc
+  synthSorted.sort(function(a, b) {
+    var sa = cardData[a].synthScore !== null ? cardData[a].synthScore : -1;
+    var sb = cardData[b].synthScore !== null ? cardData[b].synthScore : -1;
+    if (sb !== sa) return sb - sa;
+    return (cardData[a].rsi || 999) - (cardData[b].rsi || 999);
+  });
+
+  // Render each column
+  var colPut   = document.getElementById('col-put');
+  var colCC    = document.getElementById('col-cc');
+  var colLeaps = document.getElementById('col-leaps');
+  var colSynth = document.getElementById('col-synth');
+
+  colPut.innerHTML   = putSorted.slice(0,4).map(function(t)   { return buildColCard(t, cardData[t], 'put');   }).join('');
+  colCC.innerHTML    = ccSorted.slice(0,4).map(function(t)     { return buildColCard(t, cardData[t], 'cc');    }).join('');
+  colLeaps.innerHTML = leapsSorted.slice(0,4).map(function(t)  { return buildColCard(t, cardData[t], 'leaps'); }).join('');
+  colSynth.innerHTML = synthSorted.slice(0,4).map(function(t)  { return buildColCard(t, cardData[t], 'synth'); }).join('');
+
+  // Trigger full phase 3 analysis once all tickers are loaded
+  triggerPhase3();
+
+  // Refresh mini rankings for ALL analyzer tabs (panels are hidden but DOM exists)
+  ['put', 'cc', 'leaps', 'synth'].forEach(function(tid) {
+    var activeInput = document.getElementById(tid + '-ticker');
+    var activeTicker = activeInput ? (activeInput.value || null) : null;
+    renderMiniRankings(tid, activeTicker);
+  });
+}
+
+// Keep renderSorted as a no-op alias so existing call in fetchTickerData still works
+function renderSorted() { renderColumns(); }
+
+// ═══════════════════════════════════════════════════════
+// DASHBOARD — FETCH ONE TICKER (populates cardData)
+// ═══════════════════════════════════════════════════════
+async function fetchTickerData(ticker) {
+  try {
+    // Phase 1: price + RSI — always Daily for dashboard scoring
+    var pd = await fetchPriceData(ticker, '1day');
+
+    var d = {
+      ticker:    ticker,
+      loading:   false,
+      phase:     1,
+      price:     pd.price,
+      change:    pd.change,
+      changePct: pd.changePct,
+      week52H:   pd.week52H,
+      week52L:   pd.week52L,
+      rsi:       pd.rsi,
+      sma200:    pd.sma200,
+      ivRank:    null,
+      expiry:    null,
+      dte:       null,
+      bestStrike:null,
+      bestPremium:null,
+      premPct:   null,
+      putScore:  null,
+      ccScore:   null,
+      score:     null,
+      c1: null, c2: null, c3: null, c4: null, c5: null, c6: null
+    };
+    cardData[ticker] = d;
+    updateCard(ticker);
+
+    // Phase 2: options data + ATR sparkline (parallel)
+    var _p2 = await Promise.all([
+      fetchExpirations(ticker).catch(function() { return []; }),
+      fetchATRSeries(ticker).catch(function() { return []; })
+    ]);
+    var expirations = _p2[0];
+    d.atrSeries    = _p2[1]; // 30-day ATR for sparkline
+    var bestExpiry = findBestExpiry(expirations, 30, 50);
+    if (!bestExpiry) bestExpiry = findBestExpiry(expirations, 25, 60);
+
+    var dte          = bestExpiry ? dteFromStr(bestExpiry) : null;
+    var earningsRisk = bestExpiry ? earningsBeforeExpiry(ticker, bestExpiry) : null;
+    var bestPremium  = null, bestStrike = null, bestDelta = null, ivRank = null;
+
+    if (bestExpiry) {
+      try {
+        var putChain = await fetchChain(ticker, bestExpiry, 'put');
+
+        // IV rank from chain
+        if (putChain && putChain.iv && putChain.iv.length > 0) {
+          var ivs = [];
+          for (var ii = 0; ii < putChain.iv.length; ii++) {
+            var v = putChain.iv[ii];
+            if (v !== null && v !== undefined && !isNaN(v) && v > 0)
+              ivs.push(v <= 1 ? v * 100 : v);
+          }
+          if (ivs.length > 0) {
+            ivs.sort(function(a,b){return a-b;});
+            var atmIV   = ivs[Math.floor(ivs.length/2)];
+            var ivRange = ivs[ivs.length-1] - ivs[0];
+            ivRank = ivRange > 0 ? Math.min(100, Math.max(0, (atmIV - ivs[0]) / ivRange * 100)) : 50;
+          }
+        }
+
+        // Best strike near delta 0.20
+        if (putChain && putChain.strike) {
+          var bestDiff = Infinity;
+          for (var i = 0; i < putChain.strike.length; i++) {
+            var delta = putChain.delta ? putChain.delta[i] : null;
+            if (delta === null) continue;
+            var diff = Math.abs(Math.abs(delta) - 0.20);
+            if (diff < bestDiff) {
+              bestDiff    = diff;
+              bestStrike  = putChain.strike[i];
+              bestDelta   = delta;
+              bestPremium = putChain.mid ? putChain.mid[i] : null;
+            }
+          }
+        }
+      } catch(e) { /* options unavailable */ }
+    }
+
+    var premPct = (bestPremium && pd.price) ? (bestPremium / pd.price * 100) : null;
+    var deltaOk = bestDelta !== null && Math.abs(bestDelta) >= 0.15 && Math.abs(bestDelta) <= 0.25;
+
+    // Score PUT criteria
+    var put_c1 = ivRank !== null ? ivRank >= 50 : null;
+    var put_c2 = pd.rsi < 30;
+    var put_c3 = earningsRisk === null ? null : !earningsRisk;
+    var put_c4 = premPct !== null ? premPct > 2 : null;
+    var put_c5 = deltaOk;
+    var put_c6 = dte !== null ? (dte >= 30 && dte <= 45) : null;
+    var putScore = [put_c1,put_c2,put_c3,put_c4,put_c5,put_c6].filter(function(x){return x===true;}).length;
+
+    // Score CC criteria
+    var cc_c1 = ivRank !== null ? ivRank >= 50 : null;
+    var cc_c2 = pd.rsi > 65;
+    var cc_c3 = earningsRisk === null ? null : !earningsRisk;
+    var cc_c4 = premPct !== null ? premPct >= 2 : null;
+    var cc_c5 = deltaOk;
+    var cc_c6 = dte !== null ? (dte >= 30 && dte <= 45) : null;
+    var ccScore = [cc_c1,cc_c2,cc_c3,cc_c4,cc_c5,cc_c6].filter(function(x){return x===true;}).length;
+
+    // Score LEAPS criteria (proxy — from available data, no extra fetches)
+    // LEAPS 7 criteria: RSI<30, IV<55%, Strike Deep ITM, Duration 18+mo, OI≥300, Bid/Ask≤10%, CAGR≤35%
+    var hasLeapsExp = expirations.some(function(e) { return dteFromStr(e) >= 540; });
+    var leaps_c1 = pd.rsi < 30;                                     // RSI < 30
+    var leaps_c2 = ivRank !== null ? ivRank < 55 : null;             // IV < 55%
+    var leaps_c3 = null;                                             // Strike Deep ITM (need chain)
+    var leaps_c4 = hasLeapsExp;                                      // Duration 18+ months
+    var leaps_c5 = null;                                             // OI ≥ 300 (need chain)
+    var leaps_c6 = null;                                             // Bid/Ask ≤ 10% (need chain)
+    var leaps_c7 = null;                                             // CAGR ≤ 35% (need chain)
+    var leapsScore = [leaps_c1,leaps_c2,leaps_c3,leaps_c4,leaps_c5,leaps_c6,leaps_c7].filter(function(x){return x===true;}).length;
+
+    // Score Bull Synthetic criteria (proxy)
+    // Synth 7: RSI<30, RSI<40, Call ITM Δ0.55-0.75, Duration≥365d, Net Debit≤2%, Both OI≥200, Spreads≤$1
+    var hasSynthExp = expirations.some(function(e) { return dteFromStr(e) >= 365; });
+    var synth_c1 = pd.rsi < 30;                                     // RSI < 30
+    var synth_c2 = pd.rsi < 40;                                     // RSI < 40
+    var synth_c3 = null;                                             // Call ITM delta (need chain)
+    var synth_c4 = hasSynthExp;                                      // Duration ≥ 365 days
+    var synth_c5 = null;                                             // Net Debit ≤ 2% (need chain)
+    var synth_c6 = null;                                             // Both OI ≥ 200 (need chain)
+    var synth_c7 = null;                                             // Spreads ≤ $1 (need chain)
+    var synthScore = [synth_c1,synth_c2,synth_c3,synth_c4,synth_c5,synth_c6,synth_c7].filter(function(x){return x===true;}).length;
+
+    d.phase        = 2;
+    d.putScore     = putScore;
+    d.ccScore      = ccScore;
+    d.leapsScore   = leapsScore;
+    d.synthScore   = synthScore;
+    d.expirations  = expirations; // cache — reused by phase 3 to avoid re-fetch
+    // Store per-strategy criteria for card rendering
+    d.put_c1 = put_c1; d.put_c2 = put_c2; d.put_c3 = put_c3;
+    d.put_c4 = put_c4; d.put_c5 = put_c5; d.put_c6 = put_c6;
+    d.cc_c1  = cc_c1;  d.cc_c2  = cc_c2;  d.cc_c3  = cc_c3;
+    d.cc_c4  = cc_c4;  d.cc_c5  = cc_c5;  d.cc_c6  = cc_c6;
+    d.leaps_c1 = leaps_c1; d.leaps_c2 = leaps_c2; d.leaps_c3 = leaps_c3;
+    d.leaps_c4 = leaps_c4; d.leaps_c5 = leaps_c5; d.leaps_c6 = leaps_c6; d.leaps_c7 = leaps_c7;
+    d.synth_c1 = synth_c1; d.synth_c2 = synth_c2; d.synth_c3 = synth_c3;
+    d.synth_c4 = synth_c4; d.synth_c5 = synth_c5; d.synth_c6 = synth_c6; d.synth_c7 = synth_c7;
+    d.ivRank     = ivRank;
+    d.expiry     = bestExpiry;
+    d.dte        = dte;
+    d.bestStrike = bestStrike;
+    d.bestPremium= bestPremium;
+    d.premPct    = premPct;
+    d.earningsRisk = earningsRisk;
+    // Keep legacy score field for any remaining references
+    d.score = Math.max(putScore, ccScore);
+
+    cardData[ticker] = d;
+    updateCard(ticker);
+    renderColumns();
+
+  } catch(e) {
+    // Mark as failed but still show in columns with error state
+    if (cardData[ticker]) {
+      cardData[ticker].loading = false;
+      cardData[ticker].phase = 2;
+      cardData[ticker].error = e.message.substring(0, 30);
+    }
+    renderColumns();
+  }
+}
+
+
+// ═══════════════════════════════════════════════════════
+// PHASE 3 — FULL LEAPS/SYNTH SCORING FOR TOP TICKERS
+// Runs after all phase 2 loads complete, updates top 3
+// ═══════════════════════════════════════════════════════
+async function runLeapsPhase3(ticker) {
+  try {
+    var d = cardData[ticker];
+    if (!d) return;
+
+    // LEAPS uses Weekly RSI — fetch separately since dashboard uses Daily
+    var weeklyRSI = d.rsi; // fallback to daily if weekly fetch fails
+    try {
+      var wRsiData = await fetchTD('rsi', { symbol: ticker, interval: '1week', time_period: 10, outputsize: 1 });
+      var wVals = wRsiData.values || [];
+      if (wVals.length > 0) weeklyRSI = parseFloat(wVals[0].rsi);
+    } catch(e) { /* use daily RSI as fallback */ }
+
+    var pd = { price: d.price, rsi: weeklyRSI };
+
+    // Reuse cached expirations from phase 2 — no extra API call
+    var expirations = d.expirations || await fetchExpirations(ticker);
+    var leapsExpiries = expirations.filter(function(e) { return dteFromStr(e) >= 540; });
+    if (leapsExpiries.length === 0)
+      leapsExpiries = expirations.filter(function(e) { return dteFromStr(e) >= 365; });
+    if (leapsExpiries.length === 0) return;
+
+    // Fetch only the single best LEAPS expiry — not up to 4
+    var bestLeapsExp = leapsExpiries[0];
+    var repChain = await fetchChain(ticker, bestLeapsExp, 'call').catch(function() { return null; });
+    var repDTE   = dteFromStr(bestLeapsExp);
+
+    // Reuse IV rank already fetched in phase 2 — no extra fetchIVData call
+    var currentIV = d.ivRank !== null && d.ivRank !== undefined ? d.ivRank : null;
+    var bestStrike = null, bestDelta = null, bestPremium = null, bestOI = null, bestSpread = null;
+
+    if (repChain && repChain.strike) {
+      var bd = Infinity;
+      for (var i = 0; i < repChain.strike.length; i++) {
+        var dv = repChain.delta ? repChain.delta[i] : null;
+        if (dv === null) continue;
+        var dif = Math.abs(dv - 0.75);
+        if (dif < bd) {
+          bd = dif;
+          bestStrike  = repChain.strike[i];
+          bestDelta   = dv;
+          bestPremium = repChain.mid ? repChain.mid[i] : null;
+          bestOI      = repChain.openInterest ? repChain.openInterest[i] : null;
+          var b4 = repChain.bid ? repChain.bid[i] : null;
+          var a4 = repChain.ask ? repChain.ask[i] : null;
+          bestSpread = (b4 && a4 && repChain.mid && repChain.mid[i]) ?
+            ((a4 - b4) / repChain.mid[i] * 100) : null;
+        }
+      }
+    }
+
+    var repYears = repDTE / 365;
+    var breakeven = (bestStrike && bestPremium) ? bestStrike + bestPremium : null;
+    var breakevenCAGR = (breakeven && pd.price && repYears > 0) ?
+      (Math.pow(breakeven / pd.price, 1 / repYears) - 1) * 100 : null;
+    var deltaOk = bestDelta !== null && bestDelta >= 0.70 && bestDelta <= 0.90;
+
+    d.leaps_c1 = pd.rsi < 30;
+    d.leaps_c2 = currentIV !== null ? currentIV < 55 : null;
+    d.leaps_c3 = deltaOk;
+    d.leaps_c4 = repDTE >= 540;
+    d.leaps_c5 = bestOI !== null ? bestOI >= 300 : null;
+    d.leaps_c6 = bestSpread !== null ? bestSpread <= 10 : null;
+    d.leaps_c7 = breakevenCAGR !== null ? breakevenCAGR <= 35 : null;
+    d.currentIV  = currentIV;    // store actual IV% for card display
+    d.leapsCAGR  = breakevenCAGR; // store for card display
+    d.leapsRSI   = weeklyRSI;    // store weekly RSI used for LEAPS scoring
+    d.leapsScore = [d.leaps_c1,d.leaps_c2,d.leaps_c3,d.leaps_c4,d.leaps_c5,d.leaps_c6,d.leaps_c7]
+      .filter(function(x){return x===true;}).length;
+    d.phase = 3;
+    renderColumns();
+    renderMiniRankings('leaps');
+  } catch(e) { /* silently skip if data unavailable */ }
+}
+
+async function runSynthPhase3(ticker) {
+  try {
+    var d = cardData[ticker];
+    if (!d) return;
+    var pd = { price: d.price, rsi: d.rsi };
+
+    // Reuse cached expirations from phase 2 — no extra API call
+    var expirations = d.expirations || await fetchExpirations(ticker);
+    var synthExp = expirations.filter(function(e) { return dteFromStr(e) >= 365; });
+    if (synthExp.length === 0) return;
+    synthExp.sort(function(a,b){ return dteFromStr(b) - dteFromStr(a); });
+    var bestExpiry = synthExp[0];
+    var dte = dteFromStr(bestExpiry);
+
+    var results = await Promise.all([
+      fetchChain(ticker, bestExpiry, 'call').catch(function(){return null;}),
+      fetchChain(ticker, bestExpiry, 'put').catch(function(){return null;})
+    ]);
+    var callChain = results[0], putChain = results[1];
+
+    // Find put near ATM first — OTM only (strike ≤ current price), price-proximity primary
+    // Split-strike Bull Synthetic: BUY call ~7% ITM, SELL put near ATM above call strike
+    var callTarget3 = pd.price * 0.93;
+    var slCall = null;
+    if (callChain && callChain.strike) {
+      var bC = Infinity;
+      for (var i = 0; i < callChain.strike.length; i++) {
+        var dC = callChain.delta ? Math.abs(callChain.delta[i]) : null;
+        var sC = callChain.strike[i];
+        if (sC > pd.price) continue;
+        if (dC === null) continue;
+        var difC = Math.abs(sC - callTarget3);
+        if (dC >= 0.55 && dC <= 0.85 && difC < bC) {
+          bC = difC;
+          slCall = { strike: sC, mid: callChain.mid ? callChain.mid[i] : null,
+            bid: callChain.bid ? callChain.bid[i] : null, ask: callChain.ask ? callChain.ask[i] : null,
+            delta: dC, oi: callChain.openInterest ? callChain.openInterest[i] : null };
+        }
+      }
+      if (!slCall) {
+        var bCD = Infinity;
+        for (var i2 = 0; i2 < callChain.strike.length; i2++) {
+          var sC2 = callChain.strike[i2];
+          if (sC2 > pd.price) continue;
+          var d2 = Math.abs(sC2 - callTarget3);
+          if (d2 < bCD) {
+            bCD = d2;
+            slCall = { strike: sC2, mid: callChain.mid ? callChain.mid[i2] : null,
+              bid: callChain.bid ? callChain.bid[i2] : null, ask: callChain.ask ? callChain.ask[i2] : null,
+              delta: callChain.delta ? Math.abs(callChain.delta[i2]) : null,
+              oi: callChain.openInterest ? callChain.openInterest[i2] : null };
+          }
+        }
+      }
+    }
+    if (!slCall) return;
+
+    var putTarget3 = pd.price * 0.98;
+    var slPut = null;
+    if (putChain && putChain.strike) {
+      var bP = Infinity;
+      for (var j = 0; j < putChain.strike.length; j++) {
+        var dP = putChain.delta ? Math.abs(putChain.delta[j]) : null;
+        var sP = putChain.strike[j];
+        if (sP <= slCall.strike || sP > pd.price) continue;
+        if (dP === null) continue;
+        var difP = Math.abs(sP - putTarget3);
+        if (dP >= 0.30 && dP <= 0.60 && difP < bP) {
+          bP = difP;
+          slPut = { strike: sP, mid: putChain.mid ? putChain.mid[j] : null,
+            bid: putChain.bid ? putChain.bid[j] : null, ask: putChain.ask ? putChain.ask[j] : null,
+            delta: putChain.delta ? putChain.delta[j] : null,
+            oi: putChain.openInterest ? putChain.openInterest[j] : null };
+        }
+      }
+      if (!slPut) {
+        var bPD = Infinity;
+        for (var k = 0; k < putChain.strike.length; k++) {
+          var sK = putChain.strike[k];
+          if (sK <= slCall.strike || sK > pd.price) continue;
+          var distP = Math.abs(sK - putTarget3);
+          if (distP < bPD) {
+            bPD = distP;
+            slPut = { strike: sK, mid: putChain.mid ? putChain.mid[k] : null,
+              bid: putChain.bid ? putChain.bid[k] : null, ask: putChain.ask ? putChain.ask[k] : null,
+              delta: putChain.delta ? putChain.delta[k] : null,
+              oi: putChain.openInterest ? putChain.openInterest[k] : null };
+          }
+        }
+      }
+    }
+    if (!slPut) return;
+    var netCost    = (slCall.mid !== null && slPut.mid !== null) ? slCall.mid - slPut.mid : null;
+    var netCostPct = (netCost !== null && pd.price) ? (netCost / pd.price * 100) : null;
+    var callSpread = (slCall.bid !== null && slCall.ask !== null) ? slCall.ask - slCall.bid : null;
+    var putSpread  = (slPut.bid  !== null && slPut.ask  !== null) ? slPut.ask  - slPut.bid  : null;
+
+    d.synth_c1 = pd.rsi < 30;
+    d.synth_c2 = pd.rsi < 40;
+    d.synth_c3 = slCall.delta !== null ? (slCall.delta >= 0.55 && slCall.delta <= 0.85) : null;
+    d.synth_c4 = dte >= 365;
+    d.synth_c5 = netCostPct !== null ? netCostPct <= 15 : null;
+    d.synth_c6 = (slCall.oi !== null && slPut.oi !== null) ? (slCall.oi >= 200 && slPut.oi >= 200) : null;
+    d.synth_c7 = (callSpread !== null && putSpread !== null) ? (callSpread <= 1.0 && putSpread <= 1.0) : null;
+    d.synthScore = [d.synth_c1,d.synth_c2,d.synth_c3,d.synth_c4,d.synth_c5,d.synth_c6,d.synth_c7]
+      .filter(function(x){return x===true;}).length;
+    d.phase = 3;
+    renderColumns();
+    renderMiniRankings('synth');
+  } catch(e) { /* silently skip */ }
+}
+
+var _phase3Triggered = false;
+// Called once all tickers reach phase 2 — runs full analysis on top 3 per LEAPS/Synth column
+function triggerPhase3() {
+  if (_phase3Triggered) return;
+  var loaded = tickers.filter(function(t){ return cardData[t] && cardData[t].phase >= 2; });
+  if (loaded.length < tickers.length) return; // not all loaded yet
+  _phase3Triggered = true;
+
+  // Sort LEAPS top 3
+  var leapsSorted = loaded.slice().sort(function(a,b) {
+    var sa = cardData[a].leapsScore !== null ? cardData[a].leapsScore : -1;
+    var sb = cardData[b].leapsScore !== null ? cardData[b].leapsScore : -1;
+    if (sb !== sa) return sb - sa;
+    return (cardData[a].rsi || 999) - (cardData[b].rsi || 999);
+  });
+  var leapsTop3 = leapsSorted.slice(0, 3);
+
+  // Sort Synth top 3
+  var synthSorted = loaded.slice().sort(function(a,b) {
+    var sa = cardData[a].synthScore !== null ? cardData[a].synthScore : -1;
+    var sb = cardData[b].synthScore !== null ? cardData[b].synthScore : -1;
+    if (sb !== sa) return sb - sa;
+    return (cardData[a].rsi || 999) - (cardData[b].rsi || 999);
+  });
+  var synthTop3 = synthSorted.slice(0, 3);
+
+  // Run in parallel — all 6 at once
+  leapsTop3.forEach(function(t) { runLeapsPhase3(t); });
+  synthTop3.forEach(function(t) { runSynthPhase3(t); });
+}
+
+// ═══════════════════════════════════════════════════════
+// DASHBOARD — APPLY SERVER SCORES & REFRESH
+// ═══════════════════════════════════════════════════════
+
+// Map server-side scoring response into cardData format for rendering
+function applyServerScores(s) {
+  var d = {
+    ticker:      s.ticker,
+    loading:     false,
+    phase:       2,
+    price:       s.price,
+    change:      s.change,
+    changePct:   s.changePct,
+    week52H:     s.week52H,
+    week52L:     s.week52L,
+    rsi:         s.rsi,
+    sma200:      s.sma200,
+    ivRank:      s.ivRank,
+    expiry:      s.expiry,
+    dte:         s.dte,
+    bestStrike:  s.bestStrike,
+    bestPremium: s.bestPremium,
+    premPct:     s.premPct,
+    earningsRisk:s.earningsRisk,
+    atrSeries:   s.atrSeries,
+    putScore:    s.put.score,
+    ccScore:     s.cc.score,
+    leapsScore:  s.leaps.score,
+    synthScore:  s.synth.score,
+    // Per-strategy criteria pass/fail
+    put_c1: s.put.c1, put_c2: s.put.c2, put_c3: s.put.c3,
+    put_c4: s.put.c4, put_c5: s.put.c5, put_c6: s.put.c6,
+    cc_c1:  s.cc.c1,  cc_c2:  s.cc.c2,  cc_c3:  s.cc.c3,
+    cc_c4:  s.cc.c4,  cc_c5:  s.cc.c5,  cc_c6:  s.cc.c6,
+    leaps_c1: s.leaps.c1, leaps_c2: s.leaps.c2, leaps_c3: s.leaps.c3,
+    leaps_c4: s.leaps.c4, leaps_c5: s.leaps.c5, leaps_c6: s.leaps.c6, leaps_c7: s.leaps.c7,
+    synth_c1: s.synth.c1, synth_c2: s.synth.c2, synth_c3: s.synth.c3,
+    synth_c4: s.synth.c4, synth_c5: s.synth.c5, synth_c6: s.synth.c6, synth_c7: s.synth.c7,
+    // Legacy fields for card rendering
+    score: s.put.score,
+    c1: s.put.c1, c2: s.put.c2, c3: s.put.c3, c4: s.put.c4, c5: s.put.c5, c6: s.put.c6
+  };
+  cardData[s.ticker] = d;
+  updateCard(s.ticker);
+}
+
+function refreshDashboard(forceRefresh) {
+  if (forceRefresh) clearMDCache(); // manual refresh clears cache
+  cardData = {};
+  _phase3Triggered = false;
+  renderSkeletons();
+  // Single server-side scoring request — all logic runs on the Worker
+  var headers = { 'Content-Type': 'application/json' };
+  if (_authToken) headers['Authorization'] = 'Bearer ' + _authToken;
+  fetch(CF_PROXY + 'api/scores', {
+    method: 'POST',
+    headers: headers,
+    body: JSON.stringify({ tickers: tickers })
+  })
+  .then(function(r) {
+    if (checkSessionKicked(r)) throw new Error('session-kicked');
+    return r.json();
+  })
+  .then(function(data) {
+    if (data.error) { console.error('Scores API:', data.error); return; }
+    // Update tier from server response
+    if (data.tier) { _userTier = data.tier; applyTierUI(); }
+    (data.scores || []).forEach(function(s) {
+      if (s.error) { console.warn(s.ticker + ':', s.error); return; }
+      applyServerScores(s);
+    });
+    // Trigger phase 3 for top LEAPS/Synth tickers
+    triggerPhase3();
+  })
+  .catch(function(err) { console.error('Scores fetch failed:', err); });
+}
+
+// Initial load — deferred until auth completes
+// sort-group removed (4-column layout has no sort toolbar)
+// refreshDashboard() is now called from authSuccess() after login/token verify
+
+// ═══════════════════════════════════════════════════════
+// ANALYZER SHARED HELPERS
+// ═══════════════════════════════════════════════════════
+function priceBarHtml(ticker, pd, tfLabel) {
+  var chgColor = pd.change >= 0 ? 'up' : 'down';
+  var chgSign  = pd.change >= 0 ? '+' : '';
+  var aboveSMA = pd.price > pd.sma200;
+  var rsiLabel = tfLabel ? 'RSI(10) · ' + tfLabel : 'RSI(10)';
+  return '<div class="price-bar">' +
+    '<span class="pb-ticker">' + ticker + '</span>' +
+    '<span class="pb-price ' + chgColor + '">' + fmtDollar(pd.price) +
+      '<span style="font-size:13px;margin-left:8px">' + chgSign + fmt(pd.change) + ' (' + chgSign + fmt(pd.changePct,2) + '%)</span>' +
+    '</span>' +
+    '<div class="stat-group"><span class="stat-label">' + rsiLabel + '</span>' +
+      '<span class="stat-value ' + (pd.rsi < 30 ? 'down' : pd.rsi > 65 ? 'up' : '') + '">' + fmt(pd.rsi,1) + '</span></div>' +
+    '<div class="stat-group"><span class="stat-label">200 SMA</span>' +
+      '<span class="stat-value">' + fmtDollar(pd.sma200) + '</span></div>' +
+    '<div class="stat-group"><span class="stat-label">vs SMA</span>' +
+      '<span class="stat-value ' + (aboveSMA ? 'up' : 'down') + '">' + (aboveSMA ? '▲ Above' : '▼ Below') + '</span></div>' +
+  '</div>';
+}
+
+function critRow(rank, label, pass, valStr) {
+  var badge = pass === true
+    ? '<div class="badge-pass">✓</div>'
+    : pass === false
+      ? '<div class="badge-fail">✗</div>'
+      : '<div class="badge-na">—</div>';
+  return '<div class="criterion">' +
+    '<span class="rank-pip">#' + rank + '</span>' +
+    badge +
+    '<span class="crit-label">' + label + '</span>' +
+    '<span class="crit-val">' + (valStr || '') + '</span>' +
+  '</div>';
+}
+
+function scoreSummaryHtml(score, total) {
+  var pct   = score / total;
+  var cls   = pct >= 0.75 ? 'strong' : pct >= 0.5 ? 'moderate' : 'weak';
+  var label = pct >= 0.75 ? '✅ Strong Setup' : pct >= 0.5 ? '⚠️ Moderate Setup' : '❌ Weak Setup';
+  return '<div class="score-summary ' + cls + '">' +
+    '<span class="score-label">' + label + '</span>' +
+    '<span class="score-num">' + score + '/' + total + '</span>' +
+  '</div>';
+}
+
+function buildChainTable(chain, targetDeltaOrStrike, price, isPut, matchByStrike) {
+  if (!chain || !chain.optionSymbol) return '<p style="color:var(--text-muted);font-size:12px">No chain data.</p>';
+  var rows = [];
+  for (var i = 0; i < chain.optionSymbol.length; i++) {
+    rows.push({
+      strike: chain.strike ? chain.strike[i] : null,
+      bid:    chain.bid    ? chain.bid[i]    : null,
+      ask:    chain.ask    ? chain.ask[i]    : null,
+      mid:    chain.mid    ? chain.mid[i]    : null,
+      delta:  chain.delta  ? chain.delta[i]  : null,
+      iv:     chain.iv     ? chain.iv[i]     : null,
+      oi:     chain.openInterest ? chain.openInterest[i] : null,
+      volume: chain.volume ? chain.volume[i] : null
+    });
+  }
+  rows.sort(function(a, b) { return a.strike - b.strike; });
+
+  var bestIdx  = -1;
+  var bestDiff = Infinity;
+  rows.forEach(function(r, i) {
+    var d = Math.abs(r.delta || 0);
+    // When matching by strike, skip delta filter — find closest strike directly
+    if (matchByStrike) {
+      var diff = Math.abs(r.strike - targetDeltaOrStrike);
+      if (diff < bestDiff) { bestDiff = diff; bestIdx = i; }
+    } else if (d >= 0.10 && d <= 0.35) {
+      var diff = Math.abs(d - Math.abs(targetDeltaOrStrike));
+      if (diff < bestDiff) { bestDiff = diff; bestIdx = i; }
+    }
+  });
+
+  var startIdx    = Math.max(0, bestIdx - 4);
+  var endIdx      = Math.min(rows.length - 1, bestIdx + 4);
+  var slice       = rows.slice(startIdx, endIdx + 1);
+  var bestInSlice = bestIdx - startIdx;
+
+  var html = '<div class="chain-table-wrap"><table>' +
+    '<thead><tr><th>Strike</th><th>Bid</th><th>Ask</th><th>Mid</th>' +
+    '<th>Delta</th><th>IV</th><th>OI</th><th>Vol</th><th>Prem%</th></tr></thead><tbody>';
+
+  slice.forEach(function(row, idx) {
+    var isRec   = idx === bestInSlice;
+    var premPct = (row.mid && price) ? (row.mid / price * 100) : null;
+    html += '<tr class="' + (isRec ? 'recommended' : '') + '">' +
+      '<td class="strike-cell">' + (isRec ? '<span class="star">★</span>' : '') + fmtDollar(row.strike) + '</td>' +
+      '<td>' + fmtDollar(row.bid) + '</td>' +
+      '<td>' + fmtDollar(row.ask) + '</td>' +
+      '<td><strong>' + fmtDollar(row.mid) + '</strong></td>' +
+      '<td>' + fmt(row.delta, 2) + '</td>' +
+      '<td>' + (row.iv ? fmt(row.iv * 100, 1) + '%' : '—') + '</td>' +
+      '<td>' + fmtK(row.oi) + '</td>' +
+      '<td>' + fmtK(row.volume) + '</td>' +
+      '<td>' + (premPct !== null ? fmt(premPct, 2) + '%' : '—') + '</td>' +
+    '</tr>';
+  });
+  html += '</tbody></table></div>';
+  return html;
+}
+
+// ═══════════════════════════════════════════════════════
+// PUT ANALYZER
+// ═══════════════════════════════════════════════════════
+async function runPut(forceTicker) {
+  var ticker = forceTicker || document.getElementById('put-ticker').value.trim().toUpperCase();
+  if (!ticker) return;
+  var inp = document.getElementById('put-ticker'); if (inp) inp.value = ticker;
+  var btn = document.getElementById('put-btn');
+  if (btn) btn.disabled = true;
+  document.getElementById('put-results').innerHTML = '';
+  try {
+    setStatus('put-status', spinner() + 'Price & indicators…', 'loading');
+    var pd = await fetchPriceData(ticker);
+
+    setStatus('put-status', spinner() + 'Expirations…', 'loading');
+    var expirations = await fetchExpirations(ticker);
+    var bestExpiry  = findBestExpiry(expirations, 30, 50) || findBestExpiry(expirations, 25, 60);
+    if (!bestExpiry) throw new Error('No expiry in 30-50 DTE window.');
+    var dte = dteFromStr(bestExpiry);
+
+    var earningsRisk = earningsBeforeExpiry(ticker, bestExpiry);
+
+    setStatus('put-status', spinner() + 'Put chain & IV…', 'loading');
+    var chain = await fetchChain(ticker, bestExpiry, 'put');
+
+    // IV Rank derived from chain IV distribution
+    var ivResult = await fetchIVData(ticker, bestExpiry);
+    var ivRank = ivResult ? ivResult.ivRank : null;
+    var atmIV  = ivResult ? ivResult.atmIV  : null;
+
+    var bestStrike = null, bestDelta = null, bestPremium = null;
+    if (chain && chain.strike) {
+      var bd = Infinity;
+      for (var i = 0; i < chain.strike.length; i++) {
+        var d   = chain.delta ? chain.delta[i] : null;
+        if (d === null) continue;
+        var dif = Math.abs(d - (-0.20));
+        if (dif < bd) { bd = dif; bestStrike = chain.strike[i]; bestDelta = d; bestPremium = chain.mid ? chain.mid[i] : null; }
+      }
+    }
+    var premPct  = (bestPremium && pd.price) ? (bestPremium / pd.price * 100) : null;
+    var deltaOk  = bestDelta !== null && Math.abs(bestDelta) >= 0.15 && Math.abs(bestDelta) <= 0.25;
+    var assignCap= bestStrike ? bestStrike * 100 : null;
+
+    var c1 = ivRank !== null ? ivRank >= 50 : null;
+    var c2 = pd.rsi < 30;
+    var c3 = !earningsRisk;
+    var c4 = premPct !== null ? premPct > 2 : null;
+    var c5 = deltaOk;
+    var c6 = dte >= 30 && dte <= 45;
+    var score = [c1,c2,c3,c4,c5,c6].filter(function(x){return x===true;}).length;
+
+    setStatus('put-status', 'Done', 'ok');
+
+    var html = priceBarHtml(ticker, pd, 'Daily');
+    html += '<div class="info-box">' +
+      '<div class="info-item"><div class="info-label">Assignment Capital</div><div class="info-val">' + (assignCap ? '$' + assignCap.toLocaleString() : '—') + '</div></div>' +
+      '<div class="info-item"><div class="info-label">Expiry</div><div class="info-val">' + bestExpiry + '</div></div>' +
+      '<div class="info-item"><div class="info-label">DTE</div><div class="info-val">' + dte + '</div></div>' +
+      '<div class="info-item"><div class="info-label">Target Strike</div><div class="info-val">' + (bestStrike ? fmtDollar(bestStrike) : '—') + '</div></div>' +
+      '<div class="info-item"><div class="info-label">Premium (Mid)</div><div class="info-val">' + (bestPremium ? fmtDollar(bestPremium) : '—') + '</div></div>' +
+      '<div class="info-item"><div class="info-label">Prem %</div><div class="info-val">' + (premPct !== null ? fmt(premPct,2) + '%' : '—') + '</div></div>' +
+      '<div class="info-item"><div class="info-label">IV Rank</div><div class="info-val">' + (ivRank !== null ? fmt(ivRank,1) + '%' : '—') + '</div></div>' +
+    '</div>';
+    // Trade Summary calculations
+    var maxGain    = bestPremium ? bestPremium * 100 : null;
+    var maxLoss    = (bestStrike && bestPremium) ? (bestStrike - bestPremium) * 100 : null;
+    var breakeven  = (bestStrike && bestPremium) ? bestStrike - bestPremium : null;
+    var roc        = (maxGain && assignCap) ? (maxGain / assignCap * 100) : null;
+    var annReturn  = (roc && dte) ? (roc * (365 / dte)) : null;
+
+    function tsItem(label, val, cls, note) {
+      return '<div class="ts-item"><div class="ts-label">' + label + '</div>' +
+        '<div class="ts-val ' + cls + '">' + val + '</div>' +
+        (note ? '<div class="ts-note">' + note + '</div>' : '') + '</div>';
+    }
+    html += '<div class="trade-summary"><h4>Trade Summary — 1 Contract (100 shares)</h4><div class="trade-summary-grid">' +
+      tsItem('Max Gain',        maxGain  ? '$' + fmt(maxGain,2)  : '—', 'ts-gain',    'Premium collected') +
+      tsItem('Max Loss',        maxLoss  ? '$' + fmt(maxLoss,2)  : '—', 'ts-loss',    'If stock goes to $0') +
+      tsItem('Breakeven',       breakeven ? fmtDollar(breakeven) : '—', 'ts-neutral', 'Price at expiry') +
+      tsItem('Return on Capital', roc    ? fmt(roc,2) + '%'      : '—', 'ts-neutral', 'Per contract') +
+      tsItem('Annualized Return', annReturn ? fmt(annReturn,1) + '%' : '—', 'ts-neutral', 'Projected annual') +
+    '</div></div>';
+
+    html += '<div class="scorecard"><h3>Cash-Secured Put — Score</h3><div class="criteria-list">';
+    html += critRow(1,'IV Elevated > 50%', c1, ivRank !== null ? fmt(ivRank,1)+'%' : 'N/A');
+    html += critRow(2,'RSI(10) < 30 · Daily (Oversold)', c2, fmt(pd.rsi,1));
+    html += critRow(3,'No Earnings Before Expiry', c3, earningsRisk ? 'Earnings: '+EARNINGS[ticker] : 'Clear');
+    html += critRow(4,'Premium > 2% of Price', c4, premPct !== null ? fmt(premPct,2)+'%' : 'N/A');
+    html += critRow(5,'Strike Delta 0.15–0.25', c5, bestDelta !== null ? fmt(bestDelta,2) : 'N/A');
+    html += critRow(6,'Duration 30–45 DTE', c6, dte+' days');
+    html += '</div>' + scoreSummaryHtml(score,6) + '</div>';
+
+    // ── Contextual suggestions (warnings first, positives last) ──
+    var suggWarnP = [], suggGoodP = [];
+    if (earningsRisk && c2 && c4) {
+      var eDate = EARNINGS[ticker];
+      suggWarnP.push('💡 <strong>Earnings workaround:</strong> ' + ticker + ' has earnings on ' + eDate + ' inside your expiry window. Consider a shorter DTE expiring <strong>before ' + eDate + '</strong> to avoid earnings risk while still capturing the oversold setup.');
+    }
+    if (!c2 && pd.rsi > 30 && pd.rsi < 45) {
+      suggWarnP.push('💡 <strong>RSI almost there:</strong> RSI is ' + fmt(pd.rsi,1) + ' — watch for a continued dip below 30 before entering. Set a price alert.');
+    }
+    if (!c1 && ivRank !== null && ivRank >= 35) {
+      suggWarnP.push('💡 <strong>IV warming up:</strong> IV is ' + fmt(ivRank,1) + '% — approaching the 50% threshold. Wait for a volatility spike (news, market selloff) before selling the put for maximum premium.');
+    }
+    if (!c4 && premPct !== null && premPct >= 1.5) {
+      suggWarnP.push('💡 <strong>Premium close:</strong> Premium is ' + fmt(premPct,2) + '% — just below the 2% floor. Try a slightly lower strike to collect more premium.');
+    }
+    if (score === 6) {
+      suggGoodP.push('✅ <strong>All criteria met</strong> — this is an ideal setup. Consider entering today with the recommended strike above.');
+    }
+    var suggestionsP = suggWarnP.concat(suggGoodP);
+    if (suggestionsP.length > 0) {
+      html += '<div class="suggestions-box">' + suggestionsP.map(function(s){ return '<div class="suggestion-item">' + s + '</div>'; }).join('') + '</div>';
+    }
+
+    html += '<div class="chain-section"><h3>Put Chain — '+bestExpiry+' ('+dte+' DTE)</h3>';
+    html += buildChainTable(chain, -0.20, pd.price, true) + '</div>';
+
+    document.getElementById('put-results').innerHTML = html;
+  } catch(e) {
+    setStatus('put-status', '✗ ' + e.message, 'error');
+    document.getElementById('put-results').innerHTML = '<div class="notice">'+e.message+'</div>';
+  } finally { if (btn) btn.disabled = false; }
+}
+
+// ═══════════════════════════════════════════════════════
+// CC ANALYZER
+// ═══════════════════════════════════════════════════════
+async function runCC(forceTicker) {
+  var ticker = forceTicker || document.getElementById('cc-ticker').value.trim().toUpperCase();
+  if (!ticker) return;
+  var inp = document.getElementById('cc-ticker'); if (inp) inp.value = ticker;
+  var btn = document.getElementById('cc-btn');
+  if (btn) btn.disabled = true;
+  document.getElementById('cc-results').innerHTML = '';
+  try {
+    setStatus('cc-status', spinner() + 'Price & indicators…', 'loading');
+    var pd = await fetchPriceData(ticker);
+
+    setStatus('cc-status', spinner() + 'Expirations…', 'loading');
+    var expirations = await fetchExpirations(ticker);
+    var bestExpiry  = findBestExpiry(expirations, 30, 50) || findBestExpiry(expirations, 25, 60);
+    if (!bestExpiry) throw new Error('No expiry in 30-50 DTE window.');
+    var dte = dteFromStr(bestExpiry);
+
+    var earningsRisk = earningsBeforeExpiry(ticker, bestExpiry);
+
+    setStatus('cc-status', spinner() + 'Call chain & IV…', 'loading');
+    var chain = await fetchChain(ticker, bestExpiry, 'call');
+
+    // IV Rank derived from chain IV distribution (use put chain for IV data)
+    var ivResult = await fetchIVData(ticker, bestExpiry);
+    var ivRank = ivResult ? ivResult.ivRank : null;
+    var atmIV  = ivResult ? ivResult.atmIV  : null;
+
+    var bestStrike = null, bestDelta = null, bestPremium = null;
+    if (chain && chain.strike) {
+      // Target 8% OTM strike (5-10% OTM range) — use OTM% as primary, delta as validation
+      var targetOTM = pd.price * 1.08;
+      var bd2 = Infinity;
+      for (var i = 0; i < chain.strike.length; i++) {
+        var d2  = chain.delta ? chain.delta[i] : null;
+        if (d2 === null) continue;
+        if (d2 < 0.10 || d2 > 0.45) continue; // filter out far wings
+        var dif2 = Math.abs(chain.strike[i] - targetOTM);
+        if (dif2 < bd2) { bd2 = dif2; bestStrike = chain.strike[i]; bestDelta = d2; bestPremium = chain.mid ? chain.mid[i] : null; }
+      }
+    }
+    var premPct   = (bestPremium && pd.price) ? (bestPremium / pd.price * 100) : null;
+    var upsidePct = (bestStrike && pd.price) ? ((bestStrike - pd.price) / pd.price * 100) : null;
+    var otmOk     = upsidePct !== null ? (upsidePct >= 5 && upsidePct <= 15) : null;
+    var totalRet  = (upsidePct !== null && premPct !== null) ? (upsidePct + premPct) : null;
+
+    var c1 = ivRank !== null ? ivRank >= 50 : null;
+    var c2 = pd.rsi > 65;
+    var c3 = !earningsRisk;
+    var c4 = premPct !== null ? premPct >= 2 : null;
+    var c5 = otmOk;
+    var c6 = dte >= 30 && dte <= 45;
+    var score = [c1,c2,c3,c4,c5,c6].filter(function(x){return x===true;}).length;
+
+    setStatus('cc-status', 'Done', 'ok');
+
+    var html = priceBarHtml(ticker, pd, 'Daily');
+    html += '<div class="info-box">' +
+      '<div class="info-item"><div class="info-label">Upside if Assigned</div><div class="info-val">' + (upsidePct !== null ? '+'+fmt(upsidePct,2)+'%' : '—') + '</div></div>' +
+      '<div class="info-item"><div class="info-label">Total Return</div><div class="info-val">' + (totalRet !== null ? '+'+fmt(totalRet,2)+'%' : '—') + '</div></div>' +
+      '<div class="info-item"><div class="info-label">Expiry</div><div class="info-val">' + bestExpiry + '</div></div>' +
+      '<div class="info-item"><div class="info-label">DTE</div><div class="info-val">' + dte + '</div></div>' +
+      '<div class="info-item"><div class="info-label">Target Strike</div><div class="info-val">' + (bestStrike ? fmtDollar(bestStrike) : '—') + '</div></div>' +
+      '<div class="info-item"><div class="info-label">Premium (Mid)</div><div class="info-val">' + (bestPremium ? fmtDollar(bestPremium) : '—') + '</div></div>' +
+      '<div class="info-item"><div class="info-label">IV Rank</div><div class="info-val">' + (ivRank !== null ? fmt(ivRank,1)+'%' : '—') + '</div></div>' +
+    '</div>';
+    html += '<div class="scorecard"><h3>Covered Call — Score</h3><div class="criteria-list">';
+    html += critRow(1,'IV Elevated > 50%', c1, ivRank !== null ? fmt(ivRank,1)+'%' : 'N/A');
+    html += critRow(2,'RSI(10) > 65 · Daily (Overbought)', c2, fmt(pd.rsi,1));
+    html += critRow(3,'No Earnings Before Expiry', c3, earningsRisk ? 'Earnings: '+EARNINGS[ticker] : 'Clear');
+    html += critRow(4,'Premium ≥ 2% of Price', c4, premPct !== null ? fmt(premPct,2)+'%' : 'N/A');
+    html += critRow(5,'Strike 5–10% OTM (Δ 0.15–0.25)', c5, (upsidePct !== null ? fmt(upsidePct,1)+'% OTM' : (bestDelta !== null ? 'Δ'+fmt(bestDelta,2) : 'N/A')));
+    html += critRow(6,'Duration 30–45 DTE', c6, dte+' days');
+    html += '</div>' + scoreSummaryHtml(score,6) + '</div>';
+
+    // ── Contextual suggestions (warnings first, positives last) ──
+    var suggWarnC = [], suggGoodC = [];
+    if (earningsRisk && c2 && c4) {
+      var eDate = EARNINGS[ticker];
+      suggWarnC.push('💡 <strong>Earnings workaround:</strong> ' + ticker + ' has earnings on ' + eDate + ' inside your expiry window. Consider a shorter DTE expiring <strong>before ' + eDate + '</strong> to avoid the IV crush and gap risk.');
+    }
+    if (!c2 && pd.rsi < 65 && pd.rsi > 55) {
+      suggWarnC.push('💡 <strong>RSI almost there:</strong> RSI is ' + fmt(pd.rsi,1) + ' — approaching overbought. Watch for a continued rally above 65 before selling the call.');
+    }
+    if (!c1 && ivRank !== null && ivRank >= 35) {
+      suggWarnC.push('💡 <strong>IV warming up:</strong> IV is ' + fmt(ivRank,1) + '% — wait for a volatility spike to get richer premium before capping your upside.');
+    }
+    if (!c4 && premPct !== null && premPct >= 1.5) {
+      suggWarnC.push('💡 <strong>Premium close:</strong> Premium is ' + fmt(premPct,2) + '% — just below 2%. Try a slightly lower (closer) strike to collect more premium.');
+    }
+    if (!c5 && upsidePct !== null) {
+      suggWarnC.push('💡 <strong>Strike too far OTM:</strong> ' + fmt(upsidePct,1) + '% OTM is outside the 5–10% target. The app selected the closest available strike — consider checking if a strike closer to 8% OTM is available.');
+    }
+    if (score === 6) {
+      suggGoodC.push('✅ <strong>All criteria met</strong> — this is an ideal setup. Consider entering today with the recommended strike above.');
+    }
+    var suggestionsC = suggWarnC.concat(suggGoodC);
+    if (suggestionsC.length > 0) {
+      html += '<div class="suggestions-box">' + suggestionsC.map(function(s){ return '<div class="suggestion-item">' + s + '</div>'; }).join('') + '</div>';
+    }
+
+    html += '<div class="btc-note">📌 BTC at 80% profit or 21 DTE, whichever comes first.</div>';
+
+    html += '<div class="chain-section" style="margin-top:14px"><h3>Call Chain — '+bestExpiry+' ('+dte+' DTE)</h3>';
+    html += buildChainTable(chain, bestStrike, pd.price, false, true) + '</div>'; // true = match by strike not delta
+
+    document.getElementById('cc-results').innerHTML = html;
+  } catch(e) {
+    setStatus('cc-status', '✗ ' + e.message, 'error');
+    document.getElementById('cc-results').innerHTML = '<div class="notice">'+e.message+'</div>';
+  } finally { if (btn) btn.disabled = false; }
+}
+
+// ═══════════════════════════════════════════════════════
+// LEAPS ANALYZER
+// ═══════════════════════════════════════════════════════
+async function runLeaps(forceTicker) {
+  var ticker = forceTicker || document.getElementById('leaps-ticker').value.trim().toUpperCase();
+  if (!ticker) return;
+  var btn = document.getElementById('leaps-btn');
+  if (btn) btn.disabled = true;
+  document.getElementById('leaps-results').innerHTML = '';
+  try {
+    setStatus('leaps-status', spinner() + 'Price & indicators…', 'loading');
+    var pd = await fetchPriceData(ticker);
+
+    setStatus('leaps-status', spinner() + 'Expirations…', 'loading');
+    var expirations   = await fetchExpirations(ticker);
+    var leapsExpiries = expirations.filter(function(e) { return dteFromStr(e) >= 540; }).slice(0,4);
+    if (leapsExpiries.length === 0) {
+      leapsExpiries = expirations.filter(function(e) { return dteFromStr(e) >= 365; }).slice(0,4);
+    }
+    if (leapsExpiries.length === 0) throw new Error('No LEAPS expirations found (18+ months).');
+
+    setStatus('leaps-status', spinner() + 'LEAPS chains & IV…', 'loading');
+    var chains = await Promise.all(leapsExpiries.map(function(exp) {
+      return fetchChain(ticker, exp, 'call').catch(function() { return null; });
+    }));
+
+    // IV from nearest standard expiry (30-50 DTE) for more reliable IV Rank
+    var nearExpiry = findBestExpiry(expirations, 30, 60);
+    var ivResult   = nearExpiry ? await fetchIVData(ticker, nearExpiry) : null;
+    var ivRank     = ivResult ? ivResult.ivRank : null;
+    var currentIV  = ivResult ? ivResult.atmIV  : null;
+
+    // Grade from first expiry
+    var repChain = chains[0];
+    var repDTE   = dteFromStr(leapsExpiries[0]);
+    var bestStrike = null, bestDelta = null, bestPremium = null, bestOI = null, bestSpread = null;
+
+    if (repChain && repChain.strike) {
+      var bd3 = Infinity;
+      for (var i = 0; i < repChain.strike.length; i++) {
+        var d3 = repChain.delta ? repChain.delta[i] : null;
+        if (d3 === null) continue;
+        var dif3 = Math.abs(d3 - 0.75);
+        if (dif3 < bd3) {
+          bd3 = dif3;
+          bestStrike  = repChain.strike[i];
+          bestDelta   = d3;
+          bestPremium = repChain.mid ? repChain.mid[i] : null;
+          bestOI      = repChain.openInterest ? repChain.openInterest[i] : null;
+          var b4      = repChain.bid ? repChain.bid[i] : null;
+          var a4      = repChain.ask ? repChain.ask[i] : null;
+          bestSpread  = (b4 && a4 && repChain.mid && repChain.mid[i]) ?
+            ((a4 - b4) / repChain.mid[i] * 100) : null;
+        }
+      }
+    }
+
+    var repYears    = repDTE / 365;
+    var breakeven   = (bestStrike && bestPremium) ? bestStrike + bestPremium : null;
+    var breakevenCAGR = (breakeven && pd.price && repYears > 0) ?
+      (Math.pow(breakeven / pd.price, 1 / repYears) - 1) * 100 : null;
+
+    var deltaOk = bestDelta !== null && bestDelta >= 0.70 && bestDelta <= 0.90;
+    var c1 = pd.rsi < 30;
+    var c2 = currentIV !== null ? currentIV < 55 : null;
+    var c3 = deltaOk;
+    var c4 = repDTE >= 540;
+    var c5 = bestOI !== null ? bestOI >= 300 : null;
+    var c6 = bestSpread !== null ? bestSpread <= 10 : null;
+    var c7 = breakevenCAGR !== null ? breakevenCAGR <= 35 : null;
+    var score = [c1,c2,c3,c4,c5,c6,c7].filter(function(x){return x===true;}).length;
+
+    setStatus('leaps-status', 'Done', 'ok');
+
+    var html = priceBarHtml(ticker, pd, 'Weekly');
+    html += '<div class="info-box">' +
+      '<div class="info-item"><div class="info-label">Current IV</div><div class="info-val">' + (currentIV !== null ? fmt(currentIV,1)+'%' : '—') + '</div></div>' +
+      '<div class="info-item"><div class="info-label">IV Rank</div><div class="info-val">' + (ivRank !== null ? fmt(ivRank,1)+'%' : '—') + '</div></div>' +
+      '<div class="info-item"><div class="info-label">Target Δ</div><div class="info-val">0.75</div></div>' +
+      '<div class="info-item"><div class="info-label">Best Strike</div><div class="info-val">' + (bestStrike ? fmtDollar(bestStrike) : '—') + '</div></div>' +
+      '<div class="info-item"><div class="info-label">Breakeven</div><div class="info-val">' + (breakeven ? fmtDollar(breakeven) : '—') + '</div></div>' +
+      '<div class="info-item"><div class="info-label">BE CAGR/yr</div><div class="info-val">' + (breakevenCAGR !== null ? fmt(breakevenCAGR,1)+'%' : '—') + '</div></div>' +
+    '</div>';
+    html += '<div class="scorecard"><h3>LEAPS Deep ITM Call — Score</h3><div class="criteria-list">';
+    html += critRow(1,'RSI(10) < 30 · Weekly (Entry Timing)', c1, fmt(pd.rsi,1));
+    html += critRow(2,'IV < 55% (Buy Low IV)', c2, currentIV !== null ? fmt(currentIV,1)+'%' : 'N/A');
+    html += critRow(3,'Strike Deep ITM Δ 0.70–0.90', c3, bestDelta !== null ? fmt(bestDelta,2) : 'N/A');
+    html += critRow(4,'Duration 18+ months (540+ DTE)', c4, repDTE+' days');
+    html += critRow(5,'Liquidity OI ≥ 300', c5, bestOI !== null ? fmtK(bestOI) : 'N/A');
+    html += critRow(6,'Bid/Ask Spread ≤ 10%', c6, bestSpread !== null ? fmt(bestSpread,1)+'%' : 'N/A');
+    html += critRow(7,'Breakeven CAGR ≤ 35%/yr', c7, breakevenCAGR !== null ? fmt(breakevenCAGR,1)+'%' : 'N/A');
+    html += '</div>' + scoreSummaryHtml(score,7) + '</div>';
+
+    // ── Pre-calculate best expiry index (used by both CAGR table and chain section) ──
+    var bestExpIdx = 0, bestExpCAGR = Infinity;
+    leapsExpiries.forEach(function(exp, eIdx) {
+      var ch  = chains[eIdx];
+      var dte = dteFromStr(exp);
+      if (!ch || !ch.strike) return;
+      var yr  = dte / 365;
+      var bD  = Infinity, bC = null;
+      for (var i = 0; i < ch.strike.length; i++) {
+        var d = ch.delta ? ch.delta[i] : null;
+        if (d === null || d < 0.60 || d > 0.95) continue;
+        var dif = Math.abs(d - 0.75);
+        if (dif < bD) {
+          bD = dif;
+          var m = ch.mid ? ch.mid[i] : null;
+          var be = ch.strike[i] + (m || 0);
+          bC = (be && pd.price && yr > 0) ? (Math.pow(be / pd.price, 1 / yr) - 1) * 100 : null;
+        }
+      }
+      if (bC !== null && bC < bestExpCAGR) { bestExpCAGR = bC; bestExpIdx = eIdx; }
+    });
+
+    // ── Contextual suggestions ──
+    var suggestions = [];
+    if (!c1 && pd.rsi < 40) {
+      suggestions.push('💡 <strong>RSI approaching entry:</strong> RSI is ' + fmt(pd.rsi,1) + ' — not deeply oversold but acceptable for a long-duration LEAPS entry. Watch for a continued dip below 30 for a stronger signal.');
+    } else if (!c1) {
+      suggestions.push('💡 <strong>RSI too high:</strong> RSI is ' + fmt(pd.rsi,1) + ' — wait for a pullback before buying a deep ITM call. Entering on strength increases your breakeven CAGR.');
+    }
+    if (!c2 && currentIV !== null) {
+      suggestions.push('💡 <strong>IV elevated:</strong> Current IV is ' + fmt(currentIV,1) + '% — you are paying a premium for this option. Wait for a volatility cooldown to get a cheaper entry on the same strike.');
+    }
+    if (!c5 && bestOI !== null) {
+      suggestions.push('💡 <strong>Low liquidity:</strong> Open interest is ' + fmtK(bestOI) + ' — below the 300 threshold. Wide spreads and difficulty exiting are risks. Check a different expiry or a more liquid underlying.');
+    }
+    if (!c6 && bestSpread !== null) {
+      suggestions.push('💡 <strong>Wide spread:</strong> Bid/ask spread is ' + fmt(bestSpread,1) + '% — this eats directly into your return. Use a limit order at the mid price and be patient filling it.');
+    }
+    if (!c7 && breakevenCAGR !== null) {
+      suggestions.push('💡 <strong>Demanding breakeven:</strong> Stock needs to grow ' + fmt(breakevenCAGR,1) + '%/yr just to break even. Consider a higher (less deep) strike to reduce cost, or wait for a lower IV environment.');
+    }
+    if (score === 7) {
+      suggestions.push('✅ <strong>All criteria met</strong> — strong LEAPS setup. Consider entering at the ★ strike in the best expiry table below.');
+    }
+    if (suggestions.length > 0) {
+      html += '<div class="suggestions-box">' + suggestions.map(function(s){ return '<div class="suggestion-item">' + s + '</div>'; }).join('') + '</div>';
+    }
+
+    // ── CAGR across expiries mini-table ──
+    var cagrRows = [];
+    leapsExpiries.forEach(function(exp, eIdx) {
+      var ch  = chains[eIdx];
+      var dte = dteFromStr(exp);
+      if (!ch || !ch.strike) return;
+      var yr  = dte / 365;
+      var bD  = Infinity, bStrike = null, bCAGR = null, bDelta = null, bMid = null;
+      for (var i = 0; i < ch.strike.length; i++) {
+        var d = ch.delta ? ch.delta[i] : null;
+        if (d === null || d < 0.60 || d > 0.95) continue;
+        var dif = Math.abs(d - 0.75);
+        if (dif < bD) {
+          bD = dif;
+          bStrike = ch.strike[i];
+          bDelta  = d;
+          bMid    = ch.mid ? ch.mid[i] : null;
+          var be  = bStrike + (bMid || 0);
+          bCAGR   = (be && pd.price && yr > 0) ? (Math.pow(be / pd.price, 1 / yr) - 1) * 100 : null;
+        }
+      }
+      if (bStrike !== null) cagrRows.push({ exp: exp, dte: dte, strike: bStrike, delta: bDelta, mid: bMid, cagr: bCAGR });
+    });
+
+    if (cagrRows.length > 0) {
+      html += '<div class="scorecard" style="margin-top:10px">' +
+        '<h3>CAGR by Expiry <span style="color:var(--text-muted);font-weight:400;font-size:11px">— Δ0.75 strike, longer = cheaper</span></h3>' +
+        '<div class="leaps-table-wrap"><table><thead><tr>' +
+        '<th>Expiry</th><th>DTE</th><th>Strike</th><th>Mid</th><th>Delta</th><th>CAGR%</th>' +
+        '</tr></thead><tbody>';
+      cagrRows.forEach(function(r) {
+        var isBest = (r.exp === leapsExpiries[bestExpIdx]);
+        html += '<tr' + (isBest ? ' class="recommended"' : '') + '>' +
+          '<td>' + (isBest ? '<span class="star">★</span>' : '') + r.exp + '</td>' +
+          '<td>' + r.dte + '</td>' +
+          '<td>' + fmtDollar(r.strike) + '</td>' +
+          '<td>' + (r.mid !== null ? fmtDollar(r.mid) : '—') + '</td>' +
+          '<td>' + fmt(r.delta,2) + '</td>' +
+          '<td ' + (r.cagr !== null ? (r.cagr > 35 ? 'style="color:var(--red)"' : 'style="color:var(--green)"') : '') + '>' +
+          (r.cagr !== null ? fmt(r.cagr,1)+'%' : '—') + '</td>' +
+        '</tr>';
+      });
+      html += '</tbody></table></div></div>';
+    }
+
+    var selExp = leapsExpiries[bestExpIdx];
+    var selCh  = chains[bestExpIdx];
+    var selDte = dteFromStr(selExp);
+    html += '<div class="chain-section"><h3>Best LEAPS Expiry <span style="color:var(--accent);font-weight:400;font-size:11px">' + selExp + ' (' + selDte + ' DTE) — lowest breakeven CAGR</span></h3>';
+    if (!selCh || !selCh.strike) {
+      html += '<p style="color:var(--text-muted);font-size:11px">No data.</p>';
+    } else {
+      var rows = [];
+      for (var i = 0; i < selCh.strike.length; i++) {
+        var d5 = selCh.delta ? selCh.delta[i] : null;
+        if (d5 !== null && d5 >= 0.60 && d5 <= 0.95) {
+          var b5  = selCh.bid ? selCh.bid[i] : null;
+          var a5  = selCh.ask ? selCh.ask[i] : null;
+          var m5  = selCh.mid ? selCh.mid[i] : null;
+          var sp  = (b5 && a5 && m5) ? ((a5 - b5) / m5 * 100) : null;
+          var oi5 = selCh.openInterest ? selCh.openInterest[i] : null;
+          var yr5 = selDte / 365;
+          var be5 = selCh.strike[i] + (m5 || 0);
+          var cg5 = (be5 && pd.price && yr5 > 0) ? (Math.pow(be5 / pd.price, 1 / yr5) - 1) * 100 : null;
+          rows.push({ strike: selCh.strike[i], bid: b5, ask: a5, mid: m5, delta: d5, oi: oi5, spread: sp, cagr: cg5 });
+        }
+      }
+      rows.sort(function(a, b) { return a.strike - b.strike; });
+      var bestR = -1, bestRD = Infinity;
+      rows.forEach(function(r, ri) {
+        var dif = Math.abs(r.delta - 0.75);
+        if (dif < bestRD) { bestRD = dif; bestR = ri; }
+      });
+      // Slice to ±5 rows around the recommended strike
+      var sliceStart = Math.max(0, bestR - 5);
+      var sliceEnd   = Math.min(rows.length, bestR + 6);
+      var visRows    = rows.slice(sliceStart, sliceEnd);
+      var visBestR   = bestR - sliceStart;
+      html += '<div class="leaps-table-wrap"><table><thead><tr>' +
+        '<th>Strike</th><th>Bid</th><th>Ask</th><th>Mid</th><th>Delta</th><th>OI</th><th>Sprd%</th><th>CAGR%</th>' +
+        '</tr></thead><tbody>';
+      visRows.forEach(function(row, ri) {
+        var isR = ri === visBestR;
+        html += '<tr class="' + (isR ? 'recommended' : '') + '">' +
+          '<td class="strike-cell">' + (isR ? '<span class="star">★</span>' : '') + fmtDollar(row.strike) + '</td>' +
+          '<td>' + fmtDollar(row.bid) + '</td>' +
+          '<td>' + fmtDollar(row.ask) + '</td>' +
+          '<td><strong>' + fmtDollar(row.mid) + '</strong></td>' +
+          '<td>' + fmt(row.delta,2) + '</td>' +
+          '<td>' + fmtK(row.oi) + '</td>' +
+          '<td ' + (row.spread > 10 ? 'style="color:var(--red)"' : '') + '>' + (row.spread !== null ? fmt(row.spread,1)+'%' : '—') + '</td>' +
+          '<td ' + (row.cagr !== null ? (row.cagr > 35 ? 'style="color:var(--red)"' : 'style="color:var(--green)"') : '') + '>' + (row.cagr !== null ? fmt(row.cagr,1)+'%' : '—') + '</td>' +
+        '</tr>';
+      });
+      html += '</tbody></table></div>';
+    }
+    html += '</div>';
+
+    document.getElementById('leaps-results').innerHTML = html;
+  } catch(e) {
+    setStatus('leaps-status', '✗ ' + e.message, 'error');
+    document.getElementById('leaps-results').innerHTML = '<div class="notice">'+e.message+'</div>';
+  } finally { if (btn) btn.disabled = false; }
+}
+
+// ═══════════════════════════════════════════════════════
+// BULL SYNTHETIC ANALYZER
+// ═══════════════════════════════════════════════════════
+async function runSynth(forceTicker) {
+  var ticker = forceTicker || document.getElementById('synth-ticker').value.trim().toUpperCase();
+  if (!ticker) return;
+  var btn = document.getElementById('synth-btn');
+  if (btn) btn.disabled = true;
+  document.getElementById('synth-results').innerHTML = '';
+  try {
+    setStatus('synth-status', spinner() + 'Price & indicators…', 'loading');
+    var pd = await fetchPriceData(ticker);
+
+    setStatus('synth-status', spinner() + 'Expirations…', 'loading');
+    var expirations = await fetchExpirations(ticker);
+    var synthExp    = expirations.filter(function(e) { return dteFromStr(e) >= 365; });
+    if (synthExp.length === 0) throw new Error('No expirations ≥ 365 days.');
+    synthExp.sort(function(a,b) { return dteFromStr(b) - dteFromStr(a); });
+    var bestExpiry = synthExp[0];
+    var dte = dteFromStr(bestExpiry);
+
+    setStatus('synth-status', spinner() + 'Call & put chains…', 'loading');
+    var [callChain, putChain] = await Promise.all([
+      fetchChain(ticker, bestExpiry, 'call'),
+      fetchChain(ticker, bestExpiry, 'put')
+    ]);
+
+    // Split-strike Bull Synthetic structure:
+    // BUY call: ~7% ITM (5-10% below price), delta 0.55-0.85
+    // SELL put: ~2% below price (near ATM), delta 0.30-0.60, ABOVE call strike
+    // Net debit ~5-15% of price is acceptable
+
+    // --- STEP 1: BUY call ~7% below current price (ITM) ---
+    var callTarget = pd.price * 0.93;
+    var slCall = null;
+    if (callChain && callChain.strike) {
+      var bC = Infinity;
+      for (var i = 0; i < callChain.strike.length; i++) {
+        var dC = callChain.delta ? Math.abs(callChain.delta[i]) : null;
+        var sC = callChain.strike[i];
+        if (sC > pd.price) continue; // must be ITM
+        if (dC === null) continue;
+        var difC = Math.abs(sC - callTarget);
+        if (dC >= 0.55 && dC <= 0.85 && difC < bC) {
+          bC = difC;
+          slCall = { strike: sC, bid: callChain.bid ? callChain.bid[i] : null,
+            ask: callChain.ask ? callChain.ask[i] : null, mid: callChain.mid ? callChain.mid[i] : null,
+            delta: dC, oi: callChain.openInterest ? callChain.openInterest[i] : null };
+        }
+      }
+      if (!slCall) { // fallback: closest to 93% of price
+        var bCD = Infinity;
+        for (var i2 = 0; i2 < callChain.strike.length; i2++) {
+          var sC2 = callChain.strike[i2];
+          if (sC2 > pd.price) continue;
+          var dist2 = Math.abs(sC2 - callTarget);
+          if (dist2 < bCD) {
+            bCD = dist2;
+            slCall = { strike: sC2, bid: callChain.bid ? callChain.bid[i2] : null,
+              ask: callChain.ask ? callChain.ask[i2] : null, mid: callChain.mid ? callChain.mid[i2] : null,
+              delta: callChain.delta ? Math.abs(callChain.delta[i2]) : null,
+              oi: callChain.openInterest ? callChain.openInterest[i2] : null };
+          }
+        }
+      }
+    }
+    if (!slCall) throw new Error('No ITM call strike found (5-10% below price).');
+
+    // --- STEP 2: SELL put ~2% below price, ABOVE call strike (near ATM) ---
+    var putTarget = pd.price * 0.98;
+    var slPut = null;
+    if (putChain && putChain.strike) {
+      var bP = Infinity;
+      for (var j = 0; j < putChain.strike.length; j++) {
+        var dP = putChain.delta ? Math.abs(putChain.delta[j]) : null;
+        var sP = putChain.strike[j];
+        if (sP <= slCall.strike) continue; // put must be ABOVE call strike
+        if (sP > pd.price) continue;       // put must be OTM (below current price)
+        if (dP === null) continue;
+        var difP = Math.abs(sP - putTarget);
+        if (dP >= 0.30 && dP <= 0.60 && difP < bP) {
+          bP = difP;
+          slPut = { strike: sP, bid: putChain.bid ? putChain.bid[j] : null,
+            ask: putChain.ask ? putChain.ask[j] : null, mid: putChain.mid ? putChain.mid[j] : null,
+            delta: putChain.delta ? putChain.delta[j] : null,
+            oi: putChain.openInterest ? putChain.openInterest[j] : null };
+        }
+      }
+      if (!slPut) { // fallback: any strike above call, below price
+        var bPD = Infinity;
+        for (var k = 0; k < putChain.strike.length; k++) {
+          var sK = putChain.strike[k];
+          if (sK <= slCall.strike || sK > pd.price) continue;
+          var distP = Math.abs(sK - putTarget);
+          if (distP < bPD) {
+            bPD = distP;
+            slPut = { strike: sK, bid: putChain.bid ? putChain.bid[k] : null,
+              ask: putChain.ask ? putChain.ask[k] : null, mid: putChain.mid ? putChain.mid[k] : null,
+              delta: putChain.delta ? putChain.delta[k] : null,
+              oi: putChain.openInterest ? putChain.openInterest[k] : null };
+          }
+        }
+      }
+    }
+    if (!slPut) throw new Error('No near-ATM put found above call strike.');
+
+    var netCost    = (slCall.mid !== null && slPut.mid !== null) ? slCall.mid - slPut.mid : null;
+    var netCostPct = (netCost !== null && pd.price) ? (netCost / pd.price * 100) : null;
+    var callSpread = (slCall.bid !== null && slCall.ask !== null) ? slCall.ask - slCall.bid : null;
+    var putSpread  = (slPut.bid  !== null && slPut.ask  !== null) ? slPut.ask  - slPut.bid  : null;
+    var strikeGap  = slPut.strike - slCall.strike;
+    // Breakeven: call strike + max(netCost, 0) — if net credit, breakeven is at or below call strike
+    var breakeven  = netCost !== null ? slCall.strike + Math.max(netCost, 0) : null;
+    var beAboveCur = (breakeven !== null && pd.price) ? ((breakeven / pd.price - 1) * 100) : null;
+
+    var c1 = pd.rsi < 30;
+    var c2 = pd.rsi < 40;
+    var c3 = slCall.delta !== null ? (slCall.delta >= 0.55 && slCall.delta <= 0.85) : null;  // ITM call 5-10% below price
+    var c4 = dte >= 365;
+    var c5 = netCostPct !== null ? netCostPct <= 15 : null;  // target ~5-15% net debit
+    var c6 = (slCall.oi !== null && slPut.oi !== null) ? (slCall.oi >= 200 && slPut.oi >= 200) : null;
+    var c7 = (callSpread !== null && putSpread !== null) ? (callSpread <= 1.0 && putSpread <= 1.0) : null;
+    var score = [c1,c2,c3,c4,c5,c6,c7].filter(function(x){return x===true;}).length;
+
+    setStatus('synth-status', 'Done', 'ok');
+
+    var html = priceBarHtml(ticker, pd, 'Daily');
+    html += '<div class="info-box">' +
+      '<div class="info-item"><div class="info-label">Expiry</div><div class="info-val">' + bestExpiry + '</div></div>' +
+      '<div class="info-item"><div class="info-label">DTE</div><div class="info-val">' + dte + '</div></div>' +
+      '<div class="info-item"><div class="info-label">Call Strike</div><div class="info-val">' + fmtDollar(slCall.strike) + '</div></div>' +
+      '<div class="info-item"><div class="info-label">Put Strike</div><div class="info-val">' + fmtDollar(slPut.strike) + '</div></div>' +
+      '<div class="info-item"><div class="info-label">Net Debit</div><div class="info-val">' + (netCost !== null ? fmtDollar(netCost) : '—') + ' (' + (netCostPct !== null ? fmt(netCostPct,2)+'%' : '—') + ')</div></div>' +
+      '<div class="info-item"><div class="info-label">Breakeven</div><div class="info-val">' + (breakeven !== null ? fmtDollar(breakeven) : '—') + (beAboveCur !== null ? ' ('+fmt(beAboveCur,1)+'% away)' : '') + '</div></div>' +
+    '</div>';
+
+    html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">';
+    html += '<div class="scenario-card"><h4>BUY — Call Leg (ITM)</h4>' +
+      '<div class="sc-row"><span class="sc-key">Strike</span><span class="sc-val">' + fmtDollar(slCall.strike) + '</span></div>' +
+      '<div class="sc-row"><span class="sc-key">Bid/Ask</span><span class="sc-val">' + fmtDollar(slCall.bid) + ' / ' + fmtDollar(slCall.ask) + '</span></div>' +
+      '<div class="sc-row"><span class="sc-key">Mid</span><span class="sc-val">' + fmtDollar(slCall.mid) + '</span></div>' +
+      '<div class="sc-row"><span class="sc-key">Delta</span><span class="sc-val">' + fmt(slCall.delta,2) + '</span></div>' +
+      '<div class="sc-row"><span class="sc-key">OI</span><span class="sc-val">' + fmtK(slCall.oi) + '</span></div>' +
+      '<div class="sc-row"><span class="sc-key">Spread</span><span class="sc-val ' + (callSpread && callSpread > 1 ? 'down' : 'up') + '">' + (callSpread !== null ? fmtDollar(callSpread) : '—') + '</span></div>' +
+    '</div>';
+    html += '<div class="scenario-card"><h4>SELL — Put Leg (near ATM)</h4>' +
+      '<div class="sc-row"><span class="sc-key">Strike</span><span class="sc-val">' + fmtDollar(slPut.strike) + '</span></div>' +
+      '<div class="sc-row"><span class="sc-key">Bid/Ask</span><span class="sc-val">' + fmtDollar(slPut.bid) + ' / ' + fmtDollar(slPut.ask) + '</span></div>' +
+      '<div class="sc-row"><span class="sc-key">Mid</span><span class="sc-val">' + fmtDollar(slPut.mid) + '</span></div>' +
+      '<div class="sc-row"><span class="sc-key">Delta</span><span class="sc-val">' + fmt(slPut.delta,2) + '</span></div>' +
+      '<div class="sc-row"><span class="sc-key">OI</span><span class="sc-val">' + fmtK(slPut.oi) + '</span></div>' +
+      '<div class="sc-row"><span class="sc-key">Spread</span><span class="sc-val ' + (putSpread && putSpread > 1 ? 'down' : 'up') + '">' + (putSpread !== null ? fmtDollar(putSpread) : '—') + '</span></div>' +
+    '</div></div>';
+
+    html += '<div class="scorecard"><h3>Bull Synthetic — Score</h3><div class="criteria-list">';
+    html += critRow(1,'RSI(10) < 30 · Daily (Oversold Entry)', c1, fmt(pd.rsi,1));
+    html += critRow(2,'RSI(10) < 40 · Daily (Not Extended)', c2, fmt(pd.rsi,1));
+    html += critRow(3,'Call ITM 5-10% Below Price (Δ0.55–0.85)', c3, fmt(slCall.delta,2));
+    html += critRow(4,'Duration ≥ 365 Days', c4, dte+' days');
+    html += critRow(5,'Net Debit ≤ 15% of Price', c5, netCostPct !== null ? fmt(netCostPct,2)+'%' : 'N/A');
+    html += critRow(6,'Both Legs OI ≥ 200', c6, 'Call: '+fmtK(slCall.oi)+' / Put: '+fmtK(slPut.oi));
+    html += critRow(7,'Both Spreads ≤ $1.00', c7, (callSpread !== null ? fmtDollar(callSpread) : '—')+' / '+(putSpread !== null ? fmtDollar(putSpread) : '—'));
+    html += '</div>' + scoreSummaryHtml(score,7) + '</div>';
+
+    // ── Contextual suggestions (warnings first, positives last) ──
+    var suggWarn = [], suggGood = [];
+    if (!c1 && pd.rsi < 40) {
+      suggWarn.push('💡 <strong>RSI approaching entry:</strong> RSI is ' + fmt(pd.rsi,1) + ' — not deeply oversold yet. Watch for a continued dip below 30 before entering.');
+    } else if (!c1) {
+      suggWarn.push('💡 <strong>RSI too high:</strong> RSI is ' + fmt(pd.rsi,1) + ' — wait for a pullback before entering. Entering on strength increases your breakeven distance.');
+    }
+    if (!c5 && netCostPct !== null) {
+      suggWarn.push('💡 <strong>Net debit elevated:</strong> Net debit is ' + fmt(netCostPct,2) + '% — above 15%. Target 5–15% of stock price for an efficient structure. Consider a shallower call strike or waiting for a lower entry point.');
+    }
+    if (!c6) {
+      suggWarn.push('💡 <strong>Liquidity concern:</strong> One or both legs have OI below 200. Use limit orders at the mid and be patient with fills.');
+    }
+    if (!c7) {
+      suggWarn.push('💡 <strong>Wide spreads:</strong> One or both spreads exceed $1.00. Leg in separately during high-liquidity hours (9:45–11am ET).');
+    }
+    if (netCostPct !== null && netCostPct <= 1) {
+      suggGood.push('✅ <strong>Minimal debit:</strong> Net debit under 1% — the put credit nearly fully funds the call. Excellent structure.');
+    } else if (netCostPct !== null && netCostPct < 0) {
+      suggGood.push('✅ <strong>Net credit entry:</strong> You collect a net credit of ' + fmt(Math.abs(netCostPct),2) + '% — the sold put fully funds the call with room to spare.');
+    }
+    if (beAboveCur !== null && beAboveCur <= 5) {
+      suggGood.push('✅ <strong>Tight breakeven:</strong> Stock only needs to move ' + fmt(beAboveCur,1) + '% to break even — very efficient entry.');
+    }
+    if (score === 7) {
+      suggGood.push('✅ <strong>All criteria met</strong> — ideal bull synthetic setup. Enter as a combo order to avoid leg risk.');
+    }
+    var suggestions = suggWarn.concat(suggGood);
+    if (suggestions.length > 0) {
+      html += '<div class="suggestions-box">' + suggestions.map(function(s){ return '<div class="suggestion-item">' + s + '</div>'; }).join('') + '</div>';
+    }
+
+    // Split-strike P&L scenarios:
+    // Below put strike: put gets assigned — Max loss zone
+    // Between put & call strike: both expire worthless, keep/pay net debit
+    // Above call strike: call gains intrinsic value
+    // P&L = Max(0, F - callStrike) - Max(0, putStrike - F) - netCost
+    var scenarioPcts = [-10, 0, 10, 20];
+    var scenarioLabels = ['-10% (Drawdown)', 'Flat (0%)', '+10% Rally', '+20% Strong Rally'];
+    html += '<div class="chain-section"><h3>Position Scenarios</h3><div class="scenarios">';
+    scenarioPcts.forEach(function(pct, si) {
+      var futurePrice   = pd.price * (1 + pct / 100);
+      var callValue     = Math.max(0, futurePrice - slCall.strike);
+      var putObligation = Math.max(0, slPut.strike - futurePrice);
+      var pnl           = callValue - putObligation - (netCost || 0);
+      var pnlPct        = pd.price ? (pnl / pd.price * 100) : null;
+      var zone = futurePrice > slCall.strike ? 'Above call → profit zone' :
+                 futurePrice >= slPut.strike  ? 'Dead zone — both expire worthless' :
+                 'Below put → assignment risk';
+      html += '<div class="scenario-card"><h4>' + scenarioLabels[si] + '</h4>' +
+        '<div class="sc-row"><span class="sc-key">Price Target</span><span class="sc-val">' + fmtDollar(futurePrice) + '</span></div>' +
+        '<div class="sc-row"><span class="sc-key">Zone</span><span class="sc-val" style="font-size:10px;color:var(--text-muted)">' + zone + '</span></div>' +
+        '<div class="sc-row"><span class="sc-key">Call Value</span><span class="sc-val ' + (callValue > 0 ? 'up' : '') + '">' + fmtDollar(callValue) + '</span></div>' +
+        '<div class="sc-row"><span class="sc-key">Put Obligation</span><span class="sc-val ' + (putObligation > 0 ? 'down' : '') + '">' + (putObligation > 0 ? '-' : '') + fmtDollar(putObligation) + '</span></div>' +
+        '<div class="sc-row"><span class="sc-key">Net P&L</span><span class="sc-val ' + (pnl >= 0 ? 'up' : 'down') + '">' + fmtDollar(pnl) + '</span></div>' +
+        '<div class="sc-row"><span class="sc-key">P&L %</span><span class="sc-val ' + (pnlPct !== null && pnlPct >= 0 ? 'up' : 'down') + '">' + (pnlPct !== null ? fmt(pnlPct,2)+'%' : '—') + '</span></div>' +
+      '</div>';
+    });
+    html += '</div></div>';
+
+    document.getElementById('synth-results').innerHTML = html;
+  } catch(e) {
+    setStatus('synth-status', '✗ ' + e.message, 'error');
+    document.getElementById('synth-results').innerHTML = '<div class="notice">'+e.message+'</div>';
+  } finally { if (btn) btn.disabled = false; }
+}
+
+// ═══════════════════════════════════════════════════════
+// TICKER STRIP
+// ═══════════════════════════════════════════════════════
+var activeStripTicker = null;
+
+function renderTickerStrip() {
+  var strip = document.getElementById('ticker-strip');
+  var activeTab = document.querySelector('.tab.active');
+  var onDashboard = !activeTab || activeTab.dataset.tab === 'dashboard';
+  var html  = '<span class="strip-label">Watchlist:</span>';
+  tickers.forEach(function(t) {
+    var d     = cardData[t];
+    var grade = '';
+    if (d && d.phase >= 2 && onDashboard) {
+      // Best grade across all 4 strategies
+      var scores = [
+        d.putScore   || 0,
+        d.ccScore    || 0,
+        d.leapsScore || 0,
+        d.synthScore || 0
+      ];
+      var bestScore = Math.max.apply(null, scores);
+      grade = scoreToGrade(bestScore, 2);
+    }
+    var gradeColor = grade ? 'color:var(--grade-' + grade.toLowerCase() + ')' : '';
+    var isActive   = t === activeStripTicker;
+    html += '<div class="ticker-chip' + (isActive ? ' active' : '') + '" onclick="stripSelect(\'' + t + '\')">'
+      + t
+      + '</div>';
+  });
+  strip.innerHTML = html;
+}
+
+function stripSelect(ticker) {
+  activeStripTicker = ticker;
+  renderTickerStrip();
+
+  // Determine which analyzer tab is currently active (skip dashboard)
+  var activeTab = document.querySelector('.tab.active');
+  var tabId     = activeTab ? activeTab.dataset.tab : 'put';
+  if (tabId === 'dashboard') tabId = 'put'; // default to put if on dashboard
+
+  // Set ticker value and run
+  var inputId = tabId + '-ticker';
+  var input   = document.getElementById(inputId);
+  if (input) input.value = ticker;
+
+  // Switch to that tab if on dashboard
+  if (activeTab && activeTab.dataset.tab === 'dashboard') {
+    // Use card's strategy to pick best tab
+    var d = cardData[ticker];
+    // Default to CSP when clicking from dashboard strip
+    navigateToAnalyzer(ticker, 'put');
+    return;
+  }
+
+  // Run the correct analyzer — pass ticker directly
+  if (tabId === 'put')   runPut(ticker);
+  else if (tabId === 'cc')    runCC(ticker);
+  else if (tabId === 'leaps') runLeaps(ticker);
+  else if (tabId === 'synth') runSynth(ticker);
+}
+
+// Re-render columns + strip whenever card data updates
+function updateCard(ticker) {
+  // In 4-column layout, just re-render all columns (fast enough with 14 tickers)
+  renderColumns();
+  renderTickerStrip();
+}
+
+// Re-render strip when dashboard refreshes
+var _origRefreshDashboard = refreshDashboard;
+var _lastRefreshTime = 0;
+var _refreshCooldown = 5 * 60 * 1000; // 5 minutes
+var _refreshTimer = null;
+
+refreshDashboard = function(forceRefresh) {
+  var now = Date.now();
+  var elapsed = now - _lastRefreshTime;
+  var btn = document.querySelector('.hbtn[onclick*="refreshDashboard"]');
+
+  // If manual refresh (forceRefresh=true) and within cooldown, block it
+  if (forceRefresh && _lastRefreshTime > 0 && elapsed < _refreshCooldown) {
+    var secsLeft = Math.ceil((_refreshCooldown - elapsed) / 1000);
+    var mins = Math.floor(secsLeft / 60);
+    var secs = secsLeft % 60;
+    if (btn) btn.textContent = '\u21BA ' + mins + ':' + (secs < 10 ? '0' : '') + secs;
+    return;
+  }
+
+  _lastRefreshTime = now;
+  _origRefreshDashboard(forceRefresh);
+  renderTickerStrip();
+
+  // Start cooldown countdown on the button
+  if (btn && forceRefresh) {
+    clearInterval(_refreshTimer);
+    _refreshTimer = setInterval(function() {
+      var remaining = _refreshCooldown - (Date.now() - _lastRefreshTime);
+      if (remaining <= 0) {
+        btn.textContent = '\u21BA REFRESH';
+        clearInterval(_refreshTimer);
+        return;
+      }
+      var s = Math.ceil(remaining / 1000);
+      var m = Math.floor(s / 60);
+      var ss = s % 60;
+      btn.textContent = '\u21BA ' + m + ':' + (ss < 10 ? '0' : '') + ss;
+    }, 1000);
+  }
+};
+
+renderTickerStrip();
+
+// ═══════════════════════════════════════════════════════
+// CARD CLICK — NAVIGATE TO ANALYZER
+// ═══════════════════════════════════════════════════════
+
+// ═══════════════════════════════════════════════════════
+// MINI RANKINGS — Top 6 under each analyzer
+// ═══════════════════════════════════════════════════════
+function buildMiniRankings(strategy, activeTicker) {
+  // strategy: 'put' | 'cc' | 'leaps' | 'synth'
+
+  // Get tickers with loaded data
+  var loaded = tickers.filter(function(t) {
+    return cardData[t] && !cardData[t].loading && cardData[t].phase >= 1;
+  });
+
+  if (loaded.length === 0) return ''; // data not ready yet
+
+  // Sort same logic as dashboard columns
+  var sorted = loaded.slice();
+  if (strategy === 'put') {
+    sorted.sort(function(a, b) {
+      var sa = cardData[a].putScore !== null ? cardData[a].putScore : -1;
+      var sb = cardData[b].putScore !== null ? cardData[b].putScore : -1;
+      if (sb !== sa) return sb - sa;
+      return (cardData[a].rsi || 999) - (cardData[b].rsi || 999);
+    });
+  } else if (strategy === 'cc') {
+    sorted.sort(function(a, b) {
+      var sa = cardData[a].ccScore !== null ? cardData[a].ccScore : -1;
+      var sb = cardData[b].ccScore !== null ? cardData[b].ccScore : -1;
+      if (sb !== sa) return sb - sa;
+      return (cardData[b].rsi || 0) - (cardData[a].rsi || 0);
+    });
+  } else if (strategy === 'leaps') {
+    sorted.sort(function(a, b) {
+      var sa = cardData[a].leapsScore !== null ? cardData[a].leapsScore : -1;
+      var sb = cardData[b].leapsScore !== null ? cardData[b].leapsScore : -1;
+      if (sb !== sa) return sb - sa;
+      return (cardData[a].rsi || 999) - (cardData[b].rsi || 999);
+    });
+  } else {
+    sorted.sort(function(a, b) {
+      var sa = cardData[a].synthScore !== null ? cardData[a].synthScore : -1;
+      var sb = cardData[b].synthScore !== null ? cardData[b].synthScore : -1;
+      if (sb !== sa) return sb - sa;
+      return (cardData[a].rsi || 999) - (cardData[b].rsi || 999);
+    });
+  }
+
+  var top3 = sorted.slice(0, 3);
+
+  // Build rich cards, marking active ticker with extra border
+  var cards = top3.map(function(t) {
+    var d = cardData[t];
+    var isActive = t === activeTicker;
+    var cardHtml = buildColCard(t, d, strategy);
+    // Wrap in a relative container so we can add active ring without touching buildColCard
+    if (isActive) {
+      cardHtml = cardHtml.replace('class="col-card"', 'class="col-card mini-card-active"');
+    }
+    return cardHtml;
+  }).join('');
+
+  var stratLabel = { put: 'Cash-Secured Put', cc: 'Covered Call', leaps: 'LEAPS', synth: 'Bull Synthetic' }[strategy];
+
+  return '<div class="mini-rankings-header">' +
+    '<span class="mini-rankings-title">Top 3 · ' + stratLabel + '</span>' +
+  '</div>' +
+  '<div class="mini-rankings-cards">' + cards + '</div>';
+}
+
+function renderMiniRankings(strategy, activeTicker) {
+  var el = document.getElementById('mini-rankings-' + strategy);
+  if (!el) return;
+  var html = buildMiniRankings(strategy, activeTicker);
+  el.innerHTML = html;
+}
+
+function navigateToAnalyzer(ticker, strategy) {
+  // strategy: 'put' | 'cc' | 'leaps' | 'synth' (lowercase from col cards)
+  //           or legacy 'PUT' | 'CC' from other callers
+  var s = strategy.toLowerCase();
+  var tabId, inputId;
+  if (s === 'cc') {
+    tabId   = 'cc';
+    inputId = 'cc-ticker';
+  } else if (s === 'leaps') {
+    tabId   = 'leaps';
+    inputId = 'leaps-ticker';
+  } else if (s === 'synth') {
+    tabId   = 'synth';
+    inputId = 'synth-ticker';
+  } else {
+    tabId   = 'put';
+    inputId = 'put-ticker';
+  }
+
+  // Switch tab
+  document.querySelectorAll('.tab').forEach(function(t) { t.classList.remove('active'); });
+  document.querySelectorAll('.panel').forEach(function(p) { p.classList.remove('active'); });
+  document.querySelector('.tab[data-tab="' + tabId + '"]').classList.add('active');
+  document.getElementById('panel-' + tabId).classList.add('active');
+
+  // Pre-fill ticker
+  document.getElementById(inputId).value = ticker;
+
+  // Auto-run analysis
+  if (tabId === 'put')   runPut(ticker);
+  else if (tabId === 'cc')    runCC(ticker);
+  else if (tabId === 'leaps') runLeaps(ticker);
+  else if (tabId === 'synth') runSynth(ticker);
+
+  // Update mini rankings with this ticker highlighted
+  renderMiniRankings(tabId, ticker);
+
+  // Scroll to top
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+// ═══════════════════════════════════════════════════════
+// ENTER KEY SUPPORT
+// ═══════════════════════════════════════════════════════
+['put-ticker','cc-ticker','leaps-ticker','synth-ticker'].forEach(function(id) {
+  var el = document.getElementById(id);
+  if (el) el.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') {
+      if (id === 'put-ticker')   runPut();
+      if (id === 'cc-ticker')    runCC();
+      if (id === 'leaps-ticker') runLeaps();
+      if (id === 'synth-ticker') runSynth();
+    }
+  });
+});
+
+// ═══════════════════════════════════════════════════════
+// RESTORE LAST TAB ON LOAD
+// ═══════════════════════════════════════════════════════
+(function() {
+  var tab = localStorage.getItem('owp-tab') || 'dashboard';
+  document.querySelectorAll('.tab').forEach(function(t) { t.classList.remove('active'); });
+  document.querySelectorAll('.panel').forEach(function(p) { p.classList.remove('active'); });
+  var tabEl = document.querySelector('.tab[data-tab="' + tab + '"]');
+  var panelEl = document.getElementById('panel-' + tab);
+  if (tabEl && panelEl) {
+    tabEl.classList.add('active');
+    panelEl.classList.add('active');
+  } else {
+    // fallback to dashboard
+    document.querySelector('.tab[data-tab="dashboard"]').classList.add('active');
+    document.getElementById('panel-dashboard').classList.add('active');
+  }
+  renderTickerStrip();
+})();
+
+</script>
+</body>
+</html>

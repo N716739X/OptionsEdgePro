@@ -66,6 +66,10 @@ async function initDB(db) {
   // Add columns if missing (existing tables)
   await db.prepare("ALTER TABLE users ADD COLUMN session_id TEXT").run().catch(() => {});
   await db.prepare("ALTER TABLE users ADD COLUMN tier TEXT DEFAULT 'trial'").run().catch(() => {});
+  // Cache table for last-known chain data (survives weekends/market closed)
+  await db.prepare(
+    "CREATE TABLE IF NOT EXISTS chain_cache (ticker TEXT PRIMARY KEY, iv_rank REAL, best_strike REAL, best_premium REAL, best_delta REAL, prem_pct REAL, earnings_risk INTEGER, updated_at INTEGER)"
+  ).run();
 }
 
 function json(data, status = 200) {
@@ -461,7 +465,7 @@ function badgeInfo(score, total, isScored) {
   return { cls: 'badge-notready', txt: (isScored ? 'NO TRADE' : 'WAIT') + ' \u00b7 ' + score + '/' + total };
 }
 
-async function scoreTicker(ticker) {
+async function scoreTicker(ticker, env) {
   // Use internal cache for upstream API calls
   async function cachedFetch(url) {
     const cacheKey = url;
@@ -540,6 +544,34 @@ async function scoreTicker(ticker) {
         }
       }
     } catch (e) { /* options unavailable */ }
+  }
+
+  // If chain returned valid data, persist to D1 for weekend/off-hours fallback
+  if (ivRank !== null && env?.DB) {
+    try {
+      await env.DB.prepare(
+        "INSERT OR REPLACE INTO chain_cache (ticker, iv_rank, best_strike, best_premium, best_delta, prem_pct, earnings_risk, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+      ).bind(ticker, ivRank, bestStrike, bestPremium, bestDelta,
+        (bestPremium && price) ? (bestPremium / price * 100) : null,
+        earningsRisk === null ? null : (earningsRisk ? 1 : 0),
+        Date.now()
+      ).run();
+    } catch (e) { /* cache write failed — non-critical */ }
+  }
+
+  // If chain returned no IV data, fall back to last-known cached values from D1
+  if (ivRank === null && env?.DB) {
+    try {
+      const cached = await env.DB.prepare(
+        "SELECT iv_rank, best_strike, best_premium, best_delta, prem_pct, earnings_risk FROM chain_cache WHERE ticker = ?"
+      ).bind(ticker).first();
+      if (cached && cached.iv_rank !== null) {
+        ivRank = cached.iv_rank;
+        if (bestStrike === null) bestStrike = cached.best_strike;
+        if (bestPremium === null) bestPremium = cached.best_premium;
+        if (bestDelta === null) bestDelta = cached.best_delta;
+      }
+    } catch (e) { /* cache read failed — non-critical */ }
   }
 
   const premPct = (bestPremium && price) ? (bestPremium / price * 100) : null;
@@ -630,7 +662,7 @@ async function handleScores(req, env) {
   const results = await Promise.all(
     allowedTickers.map(async (t) => {
       try {
-        return await scoreTicker(t);
+        return await scoreTicker(t, env);
       } catch (e) {
         return { ticker: t, error: e.message };
       }
