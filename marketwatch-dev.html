@@ -2433,15 +2433,16 @@ function buildColCard(ticker, d, strategy) {
       mb('DELTA', cx.c6, ccDeltaDisp) +
       mb('DTE',   cx.c7, dteDisp);
   } else if (strategy === 'leaps') {
-    // LEAPS: 7 criteria — RSI, IV, Strike, Duration, OI, Spread, CAGR
+    // LEAPS: 7 criteria — IV, I/E Ratio, Strike, Duration, RSI, OI, Spread
+    var ieDisp = d.leaps_c2 === null ? '—' : (d.leaps_c2 ? '✓' : '✗');
     criteriaHtml =
-      mb('RSI',   d.leaps_c1, (d.leapsRSI !== undefined && !isNaN(d.leapsRSI) ? fmt(d.leapsRSI,1) : rsiDisp) + 'w') +
-      mb('IV',    d.leaps_c2, ivDisp) +
+      mb('IV',    d.leaps_c1, ivDisp) +
+      mb('I/E',   d.leaps_c2, ieDisp) +
       mb('STRK',  d.leaps_c3, d.leaps_c3 === null ? '—' : (d.leaps_c3 ? '✓' : '✗')) +
       mb('DUR',   d.leaps_c4, d.leaps_c4 === true ? '✓' : d.leaps_c4 === false ? '✗' : '—') +
-      mb('OI',    d.leaps_c5, d.leaps_c5 === null ? '—' : (d.leaps_c5 ? '✓' : '✗')) +
-      mb('BID/A', d.leaps_c6, d.leaps_c6 === null ? '—' : (d.leaps_c6 ? '✓' : '✗')) +
-      mb('CAGR',  d.leaps_c7, d.leaps_c7 === null ? '—' : (d.leaps_c7 ? (d.leapsCAGR !== null && d.leapsCAGR !== undefined ? Math.round(d.leapsCAGR)+'%' : '✓') : (d.leapsCAGR !== null && d.leapsCAGR !== undefined ? Math.round(d.leapsCAGR)+'%' : '✗')));
+      mb('RSI',   d.leaps_c5, (d.leapsRSI !== undefined && !isNaN(d.leapsRSI) ? fmt(d.leapsRSI,1) : rsiDisp) + 'w') +
+      mb('OI',    d.leaps_c6, d.leaps_c6 === null ? '—' : (d.leaps_c6 ? '✓' : '✗')) +
+      mb('BID/A', d.leaps_c7, d.leaps_c7 === null ? '—' : (d.leaps_c7 ? '✓' : '✗'));
   } else {
     // Bull Synthetic: 7 criteria — RSI<30, RSI<40, CallΔ, Duration, Debit, OI, Spread
     criteriaHtml =
@@ -2667,15 +2668,15 @@ async function fetchTickerData(ticker) {
     var ccScore = [cc_c1,cc_c2,cc_c3,cc_c4,cc_c5,cc_c6,cc_c7].filter(function(x){return x===true;}).length;
 
     // Score LEAPS criteria (proxy — from available data, no extra fetches)
-    // LEAPS 7 criteria: RSI<30, IV<55%, Strike Deep ITM, Duration 18+mo, OI≥300, Bid/Ask≤10%, CAGR≤35%
+    // LEAPS 7 criteria: IV<55%, Intrinsic/Extrinsic~50/50, Strike ITM, Duration 18+mo, RSI<30, OI≥300, Bid/Ask≤10%
     var hasLeapsExp = expirations.some(function(e) { return dteFromStr(e) >= 540; });
-    var leaps_c1 = pd.rsi < 30;                                     // RSI < 30
-    var leaps_c2 = ivRank !== null ? ivRank < 55 : null;             // IV < 55%
+    var leaps_c1 = ivRank !== null ? ivRank < 55 : null;             // IV < 55% (Buy Low IV)
+    var leaps_c2 = null;                                             // Intrinsic/Extrinsic ~50/50 (need chain)
     var leaps_c3 = null;                                             // Strike Deep ITM (need chain)
     var leaps_c4 = hasLeapsExp;                                      // Duration 18+ months
-    var leaps_c5 = null;                                             // OI ≥ 300 (need chain)
-    var leaps_c6 = null;                                             // Bid/Ask ≤ 10% (need chain)
-    var leaps_c7 = null;                                             // CAGR ≤ 35% (need chain)
+    var leaps_c5 = pd.rsi < 30;                                      // RSI < 30 Weekly (Entry Timing)
+    var leaps_c6 = null;                                             // OI ≥ 300 (need chain)
+    var leaps_c7 = null;                                             // Bid/Ask ≤ 10% (need chain)
     var leapsScore = [leaps_c1,leaps_c2,leaps_c3,leaps_c4,leaps_c5,leaps_c6,leaps_c7].filter(function(x){return x===true;}).length;
 
     // Score Bull Synthetic criteria (proxy)
@@ -2792,15 +2793,21 @@ async function runLeapsPhase3(ticker) {
       (Math.pow(breakeven / pd.price, 1 / repYears) - 1) * 100 : null;
     var deltaOk = bestDelta !== null && bestDelta >= 0.70 && bestDelta <= 0.90;
 
-    d.leaps_c1 = pd.rsi < 30;
-    d.leaps_c2 = currentIV !== null ? currentIV < 55 : null;
+    // Intrinsic/Extrinsic ratio for selected strike
+    var bestIntrinsic = (bestStrike && pd.price) ? Math.max(0, pd.price - bestStrike) : null;
+    var bestExtrinsic = (bestPremium && bestIntrinsic !== null) ? Math.max(0, bestPremium - bestIntrinsic) : null;
+    var extPct = (bestExtrinsic !== null && bestPremium > 0) ? (bestExtrinsic / bestPremium * 100) : null;
+    var ieOk = extPct !== null ? (extPct >= 40 && extPct <= 60) : null;
+
+    d.leaps_c1 = currentIV !== null ? currentIV < 55 : null;
+    d.leaps_c2 = ieOk;
     d.leaps_c3 = deltaOk;
     d.leaps_c4 = repDTE >= 540;
-    d.leaps_c5 = bestOI !== null ? bestOI >= 300 : null;
-    d.leaps_c6 = bestSpread !== null ? bestSpread <= 10 : null;
-    d.leaps_c7 = breakevenCAGR !== null ? breakevenCAGR <= 35 : null;
+    d.leaps_c5 = pd.rsi < 30;
+    d.leaps_c6 = bestOI !== null ? bestOI >= 300 : null;
+    d.leaps_c7 = bestSpread !== null ? bestSpread <= 10 : null;
     d.currentIV  = currentIV;    // store actual IV% for card display
-    d.leapsCAGR  = breakevenCAGR; // store for card display
+    d.leapsIEPct = extPct;       // store extrinsic % for card display
     d.leapsRSI   = weeklyRSI;    // store weekly RSI used for LEAPS scoring
     d.leapsScore = [d.leaps_c1,d.leaps_c2,d.leaps_c3,d.leaps_c4,d.leaps_c5,d.leaps_c6,d.leaps_c7]
       .filter(function(x){return x===true;}).length;
@@ -3483,13 +3490,20 @@ async function runLeaps(forceTicker) {
       (Math.pow(breakeven / pd.price, 1 / repYears) - 1) * 100 : null;
 
     var deltaOk = bestDelta !== null && bestDelta >= 0.70 && bestDelta <= 0.90;
-    var c1 = pd.rsi < 30;
-    var c2 = currentIV !== null ? currentIV < 55 : null;
+
+    // Intrinsic/Extrinsic ratio for selected strike
+    var bestIntrinsic = (bestStrike && pd.price) ? Math.max(0, pd.price - bestStrike) : null;
+    var bestExtrinsic = (bestPremium && bestIntrinsic !== null) ? Math.max(0, bestPremium - bestIntrinsic) : null;
+    var extPct = (bestExtrinsic !== null && bestPremium > 0) ? (bestExtrinsic / bestPremium * 100) : null;
+    var ieOk = extPct !== null ? (extPct >= 40 && extPct <= 60) : null;
+
+    var c1 = currentIV !== null ? currentIV < 55 : null;
+    var c2 = ieOk;
     var c3 = deltaOk;
     var c4 = repDTE >= 540;
-    var c5 = bestOI !== null ? bestOI >= 300 : null;
-    var c6 = bestSpread !== null ? bestSpread <= 10 : null;
-    var c7 = breakevenCAGR !== null ? breakevenCAGR <= 35 : null;
+    var c5 = pd.rsi < 30;
+    var c6 = bestOI !== null ? bestOI >= 300 : null;
+    var c7 = bestSpread !== null ? bestSpread <= 10 : null;
     var score = [c1,c2,c3,c4,c5,c6,c7].filter(function(x){return x===true;}).length;
 
     setStatus('leaps-status', 'Done', 'ok');
@@ -3501,16 +3515,18 @@ async function runLeaps(forceTicker) {
       '<div class="info-item"><div class="info-label">Target Δ</div><div class="info-val">0.75</div></div>' +
       '<div class="info-item"><div class="info-label">Best Strike</div><div class="info-val">' + (bestStrike ? fmtDollar(bestStrike) : '—') + '</div></div>' +
       '<div class="info-item"><div class="info-label">Breakeven</div><div class="info-val">' + (breakeven ? fmtDollar(breakeven) : '—') + '</div></div>' +
-      '<div class="info-item"><div class="info-label">BE CAGR/yr</div><div class="info-val">' + (breakevenCAGR !== null ? fmt(breakevenCAGR,1)+'%' : '—') + '</div></div>' +
+      '<div class="info-item"><div class="info-label">Intrinsic</div><div class="info-val">' + (bestIntrinsic !== null ? fmtDollar(bestIntrinsic) : '—') + '</div></div>' +
+      '<div class="info-item"><div class="info-label">Extrinsic</div><div class="info-val">' + (bestExtrinsic !== null ? fmtDollar(bestExtrinsic) : '—') + '</div></div>' +
+      '<div class="info-item"><div class="info-label">Ext %</div><div class="info-val">' + (extPct !== null ? fmt(extPct,1)+'%' : '—') + '</div></div>' +
     '</div>';
     html += '<div class="scorecard"><h3>LEAPS Deep ITM Call — Score</h3><div class="criteria-list">';
-    html += critRow(1,'RSI(10) < 30 · Weekly (Entry Timing)', c1, fmt(pd.rsi,1));
-    html += critRow(2,'IV < 55% (Buy Low IV)', c2, currentIV !== null ? fmt(currentIV,1)+'%' : 'N/A');
+    html += critRow(1,'IV < 55% (Buy Low IV)', c1, currentIV !== null ? fmt(currentIV,1)+'%' : 'N/A');
+    html += critRow(2,'Intrinsic/Extrinsic ~50/50 (40–60%)', c2, extPct !== null ? fmt(extPct,1)+'% ext' : 'N/A');
     html += critRow(3,'Strike Deep ITM Δ 0.70–0.90', c3, bestDelta !== null ? fmt(bestDelta,2) : 'N/A');
     html += critRow(4,'Duration 18+ months (540+ DTE)', c4, repDTE+' days');
-    html += critRow(5,'Liquidity OI ≥ 300', c5, bestOI !== null ? fmtK(bestOI) : 'N/A');
-    html += critRow(6,'Bid/Ask Spread ≤ 10%', c6, bestSpread !== null ? fmt(bestSpread,1)+'%' : 'N/A');
-    html += critRow(7,'Breakeven CAGR ≤ 35%/yr', c7, breakevenCAGR !== null ? fmt(breakevenCAGR,1)+'%' : 'N/A');
+    html += critRow(5,'RSI(10) < 30 · Weekly (Entry Timing)', c5, fmt(pd.rsi,1));
+    html += critRow(6,'Liquidity OI ≥ 300', c6, bestOI !== null ? fmtK(bestOI) : 'N/A');
+    html += critRow(7,'Bid/Ask Spread ≤ 10%', c7, bestSpread !== null ? fmt(bestSpread,1)+'%' : 'N/A');
     html += '</div>' + scoreSummaryHtml(score,7) + '</div>';
 
     // ── Pre-calculate best expiry index (used by both CAGR table and chain section) ──
@@ -3537,22 +3553,25 @@ async function runLeaps(forceTicker) {
 
     // ── Contextual suggestions ──
     var suggestions = [];
-    if (!c1 && pd.rsi < 40) {
-      suggestions.push('💡 <strong>RSI approaching entry:</strong> RSI is ' + fmt(pd.rsi,1) + ' — not deeply oversold but acceptable for a long-duration LEAPS entry. Watch for a continued dip below 30 for a stronger signal.');
-    } else if (!c1) {
-      suggestions.push('💡 <strong>RSI too high:</strong> RSI is ' + fmt(pd.rsi,1) + ' — wait for a pullback before buying a deep ITM call. Entering on strength increases your breakeven CAGR.');
-    }
-    if (!c2 && currentIV !== null) {
+    if (!c1 && currentIV !== null) {
       suggestions.push('💡 <strong>IV elevated:</strong> Current IV is ' + fmt(currentIV,1) + '% — you are paying a premium for this option. Wait for a volatility cooldown to get a cheaper entry on the same strike.');
     }
-    if (!c5 && bestOI !== null) {
+    if (!c2 && extPct !== null) {
+      var ieMsg = extPct < 40
+        ? 'Extrinsic is only ' + fmt(extPct,1) + '% — strike may be too deep ITM. Consider a slightly higher strike to get closer to 50/50.'
+        : 'Extrinsic is ' + fmt(extPct,1) + '% — too much time value. Consider a deeper ITM strike to bring the ratio closer to 50/50.';
+      suggestions.push('💡 <strong>I/E ratio off target:</strong> ' + ieMsg);
+    }
+    if (!c5 && pd.rsi < 40) {
+      suggestions.push('💡 <strong>RSI approaching entry:</strong> RSI is ' + fmt(pd.rsi,1) + ' — not deeply oversold but acceptable for a long-duration LEAPS entry. Watch for a continued dip below 30 for a stronger signal.');
+    } else if (!c5) {
+      suggestions.push('💡 <strong>RSI too high:</strong> RSI is ' + fmt(pd.rsi,1) + ' — wait for a pullback before buying a deep ITM call. Entering on strength increases your cost basis.');
+    }
+    if (!c6 && bestOI !== null) {
       suggestions.push('💡 <strong>Low liquidity:</strong> Open interest is ' + fmtK(bestOI) + ' — below the 300 threshold. Wide spreads and difficulty exiting are risks. Check a different expiry or a more liquid underlying.');
     }
-    if (!c6 && bestSpread !== null) {
+    if (!c7 && bestSpread !== null) {
       suggestions.push('💡 <strong>Wide spread:</strong> Bid/ask spread is ' + fmt(bestSpread,1) + '% — this eats directly into your return. Use a limit order at the mid price and be patient filling it.');
-    }
-    if (!c7 && breakevenCAGR !== null) {
-      suggestions.push('💡 <strong>Demanding breakeven:</strong> Stock needs to grow ' + fmt(breakevenCAGR,1) + '%/yr just to break even. Consider a higher (less deep) strike to reduce cost, or wait for a lower IV environment.');
     }
     if (score === 7) {
       suggestions.push('✅ <strong>All criteria met</strong> — strong LEAPS setup. Consider entering at the ★ strike in the best expiry table below.');

@@ -597,13 +597,13 @@ async function scoreTicker(ticker, env) {
   const ccScore = [cc_c1, cc_c2, cc_c3, cc_c4, cc_c5, cc_c6, cc_c7].filter(x => x === true).length;
 
   const hasLeapsExp = expirations.some(e => dteFromStr(e) >= 540);
-  const leaps_c1 = rsi < 30;
-  const leaps_c2 = ivRank !== null ? ivRank < 55 : null;
-  const leaps_c3 = null;
-  const leaps_c4 = hasLeapsExp;
-  const leaps_c5 = null;
-  const leaps_c6 = null;
-  const leaps_c7 = null;
+  const leaps_c1 = ivRank !== null ? ivRank < 55 : null;           // IV < 55% (Buy Low IV)
+  const leaps_c2 = null;                                            // Intrinsic/Extrinsic ~50/50 (need chain)
+  const leaps_c3 = null;                                            // Strike Deep ITM Δ 0.70-0.90 (need chain)
+  const leaps_c4 = hasLeapsExp;                                     // Duration 18+ months
+  const leaps_c5 = rsi < 30;                                        // RSI < 30 Weekly (Entry Timing)
+  const leaps_c6 = null;                                            // OI >= 300 (need chain)
+  const leaps_c7 = null;                                            // Bid/Ask Spread <= 10% (need chain)
   const leapsScore = [leaps_c1, leaps_c2, leaps_c3, leaps_c4, leaps_c5, leaps_c6, leaps_c7].filter(x => x === true).length;
 
   const hasSynthExp = expirations.some(e => dteFromStr(e) >= 365);
