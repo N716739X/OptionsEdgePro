@@ -65,6 +65,62 @@ body.matrix {
   --fail:      #FF3333;
   --na:        #2A4A2A;
 }
+body.dark {
+  --bg:        #121212;
+  --bg2:       #161616;
+  --surface:   #1E1E1E;
+  --surface2:  #2A2A2A;
+  --border:    #333333;
+  --border2:   #444444;
+  --text:      #E0E0E0;
+  --text-muted:#888888;
+  --accent:    #5B9CF5;
+  --neg:       #EF5350;
+  --green:     #4CAF50;
+  --red:       #EF5350;
+  --yellow:    #FFC107;
+  --purple:    #AB8FE8;
+  --grade-a:   #4CAF50;
+  --grade-b:   #5B9CF5;
+  --grade-c:   #FFC107;
+  --grade-d:   #FF9800;
+  --grade-f:   #EF5350;
+  --card-bg:   #1A1A1A;
+  --card-border:#303030;
+  --glow:      none;
+  --glow2:     0 2px 12px rgba(0,0,0,0.4);
+  --pass:      #4CAF50;
+  --fail:      #EF5350;
+  --na:        #444444;
+}
+body.light {
+  --bg:        #F5F5F5;
+  --bg2:       #EBEBEB;
+  --surface:   #FFFFFF;
+  --surface2:  #F0F0F0;
+  --border:    #D8D8D8;
+  --border2:   #C0C0C0;
+  --text:      #1A1A1A;
+  --text-muted:#666666;
+  --accent:    #2563EB;
+  --neg:       #DC2626;
+  --green:     #16A34A;
+  --red:       #DC2626;
+  --yellow:    #CA8A04;
+  --purple:    #7C3AED;
+  --grade-a:   #16A34A;
+  --grade-b:   #2563EB;
+  --grade-c:   #CA8A04;
+  --grade-d:   #EA580C;
+  --grade-f:   #DC2626;
+  --card-bg:   #FFFFFF;
+  --card-border:#E0E0E0;
+  --glow:      none;
+  --glow2:     0 2px 8px rgba(0,0,0,0.08);
+  --pass:      #16A34A;
+  --fail:      #DC2626;
+  --na:        #CCCCCC;
+}
 
 /* ═══════════════════════════════════════════════════════
    RESET & BASE
@@ -1150,6 +1206,94 @@ body.matrix::after {
   z-index: 9997;
 }
 
+/* ═══════════════════════════════════════════════════════
+   DARK THEME OVERRIDES
+═══════════════════════════════════════════════════════ */
+body.dark .card-ideal {
+  border-color: var(--green) !important;
+  box-shadow: 0 0 6px rgba(76,175,80,0.15), 0 0 0 1px rgba(76,175,80,0.1);
+}
+body.dark .card-ideal:hover {
+  box-shadow: 0 0 12px rgba(76,175,80,0.3), 0 0 0 1px rgba(76,175,80,0.2);
+}
+body.dark .badge-ideal {
+  animation: none;
+}
+body.dark .col-card:hover {
+  border-color: var(--accent);
+  box-shadow: 0 2px 12px rgba(0,0,0,0.4);
+}
+body.dark .card:hover {
+  border-color: var(--accent);
+  box-shadow: 0 2px 12px rgba(0,0,0,0.4);
+}
+body.dark .logo-text span {
+  color: var(--accent);
+  text-shadow: none;
+}
+body.dark .grade-A { color: var(--grade-a); background: rgba(76,175,80,0.12); }
+body.dark .grade-B { color: var(--grade-b); background: rgba(91,156,245,0.12); }
+body.dark .grade-C { color: var(--grade-c); background: rgba(255,193,7,0.12); }
+body.dark .grade-D { color: var(--grade-d); background: rgba(255,152,0,0.12); }
+body.dark .grade-F { color: var(--grade-f); background: rgba(239,83,80,0.12); }
+body.dark .tab.active { text-shadow: none; }
+body.dark .pb-ticker { text-shadow: none; }
+body.dark .star { text-shadow: none; }
+body.dark tbody tr:hover { background: rgba(91,156,245,0.06); }
+
+/* ═══════════════════════════════════════════════════════
+   LIGHT THEME OVERRIDES
+═══════════════════════════════════════════════════════ */
+body.light .card-ideal {
+  border-color: var(--green) !important;
+  box-shadow: 0 1px 4px rgba(22,163,74,0.12), 0 0 0 1px rgba(22,163,74,0.1);
+}
+body.light .card-ideal:hover {
+  box-shadow: 0 2px 10px rgba(22,163,74,0.2), 0 0 0 1px rgba(22,163,74,0.15);
+}
+body.light .card-notrade {
+  border-color: rgba(220,38,38,0.25) !important;
+}
+body.light .card-notrade:hover {
+  box-shadow: 0 2px 8px rgba(220,38,38,0.1);
+}
+body.light .badge-ideal {
+  animation: none;
+}
+body.light .col-card:hover {
+  border-color: var(--accent);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+}
+body.light .card:hover {
+  border-color: var(--accent);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+}
+body.light .logo-text span {
+  color: var(--accent);
+  text-shadow: none;
+}
+body.light .grade-A { color: var(--grade-a); background: rgba(22,163,74,0.1); }
+body.light .grade-B { color: var(--grade-b); background: rgba(37,99,235,0.1); }
+body.light .grade-C { color: var(--grade-c); background: rgba(202,138,4,0.1); }
+body.light .grade-D { color: var(--grade-d); background: rgba(234,88,12,0.1); }
+body.light .grade-F { color: var(--grade-f); background: rgba(220,38,38,0.1); }
+body.light .tab.active { text-shadow: none; }
+body.light .pb-ticker { text-shadow: none; }
+body.light .star { text-shadow: none; }
+body.light tbody tr:hover { background: rgba(37,99,235,0.04); }
+/* Light scrollbar */
+body.light ::-webkit-scrollbar { width: 8px; }
+body.light ::-webkit-scrollbar-track { background: #EBEBEB; }
+body.light ::-webkit-scrollbar-thumb { background: #C0C0C0; border-radius: 4px; }
+body.light ::-webkit-scrollbar-thumb:hover { background: #999; }
+/* Light auth overlay */
+body.light #auth-overlay { background: rgba(0,0,0,0.3); }
+body.light .auth-box {
+  background: #FFFFFF;
+  border-color: #D8D8D8;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.12);
+}
+
 /* ── Anti-copy protections ── */
 body {
   -webkit-user-select: none;
@@ -1662,7 +1806,7 @@ const EARNINGS = {
 // STATE
 // ═══════════════════════════════════════════════════════
 var _storedTheme = localStorage.getItem('owp-theme') || 'cyberpunk';
-var currentTheme    = (['cyberpunk','matrix'].indexOf(_storedTheme) >= 0) ? _storedTheme : 'cyberpunk';
+var currentTheme    = (['cyberpunk','matrix','dark','light'].indexOf(_storedTheme) >= 0) ? _storedTheme : 'cyberpunk';
 var currentTF       = '1day'; // fixed — dashboard uses per-strategy TFs, analyzer uses this
 var currentSort     = localStorage.getItem('owp-sort')     || 'score';
 var currentTab      = localStorage.getItem('owp-tab')      || 'dashboard';
@@ -1673,11 +1817,11 @@ var refreshTimer    = null;
 // ═══════════════════════════════════════════════════════
 // THEME
 // ═══════════════════════════════════════════════════════
-var THEMES = ['cyberpunk', 'matrix'];
+var THEMES = ['cyberpunk', 'matrix', 'dark', 'light'];
 function applyTheme() {
-  document.body.classList.remove('matrix');
-  if (currentTheme === 'matrix') {
-    document.body.classList.add('matrix');
+  document.body.classList.remove('matrix', 'dark', 'light');
+  if (currentTheme !== 'cyberpunk') {
+    document.body.classList.add(currentTheme);
   }
 }
 function toggleTheme() {
