@@ -586,13 +586,14 @@ async function scoreTicker(ticker, env) {
   const put_c6 = dte !== null ? (dte >= 30 && dte <= 45) : null;
   const putScore = [put_c1, put_c2, put_c3, put_c4, put_c5, put_c6].filter(x => x === true).length;
 
-  const cc_c1 = ivRank !== null ? ivRank >= 50 : null;
+  const cc_c1 = ivRank !== null ? ivRank > 80 : null;
   const cc_c2 = rsi > 65;
-  const cc_c3 = earningsRisk === null ? null : !earningsRisk;
-  const cc_c4 = premPct !== null ? premPct >= 2 : null;
-  const cc_c5 = deltaOk;
-  const cc_c6 = dte !== null ? (dte >= 30 && dte <= 45) : null;
-  const ccScore = [cc_c1, cc_c2, cc_c3, cc_c4, cc_c5, cc_c6].filter(x => x === true).length;
+  const cc_c3 = !isNaN(sma200) ? price > sma200 : null;  // Price above 200 SMA (confirmed uptrend)
+  const cc_c4 = earningsRisk === null ? null : !earningsRisk;
+  const cc_c5 = premPct !== null ? premPct >= 2 : null;
+  const cc_c6 = deltaOk;
+  const cc_c7 = dte !== null ? (dte >= 30 && dte <= 45) : null;
+  const ccScore = [cc_c1, cc_c2, cc_c3, cc_c4, cc_c5, cc_c6, cc_c7].filter(x => x === true).length;
 
   const hasLeapsExp = expirations.some(e => dteFromStr(e) >= 540);
   const leaps_c1 = rsi < 30;
@@ -616,7 +617,7 @@ async function scoreTicker(ticker, env) {
 
   // Build response — grades + badge info + display data (no raw scoring logic exposed)
   const putBadge = badgeInfo(putScore, 6, true);
-  const ccBadge = badgeInfo(ccScore, 6, true);
+  const ccBadge = badgeInfo(ccScore, 7, true);
   const leapsBadge = badgeInfo(leapsScore, 7, false);
   const synthBadge = badgeInfo(synthScore, 7, false);
 
@@ -626,7 +627,7 @@ async function scoreTicker(ticker, env) {
     ivRank, expiry: bestExpiry, dte, bestStrike, bestPremium, premPct, earningsRisk,
     atrSeries,
     put:   { score: putScore, total: 6, grade: scoreToGrade(putScore, 6), badge: putBadge, c1: put_c1, c2: put_c2, c3: put_c3, c4: put_c4, c5: put_c5, c6: put_c6 },
-    cc:    { score: ccScore, total: 6, grade: scoreToGrade(ccScore, 6), badge: ccBadge, c1: cc_c1, c2: cc_c2, c3: cc_c3, c4: cc_c4, c5: cc_c5, c6: cc_c6 },
+    cc:    { score: ccScore, total: 7, grade: scoreToGrade(ccScore, 7), badge: ccBadge, c1: cc_c1, c2: cc_c2, c3: cc_c3, c4: cc_c4, c5: cc_c5, c6: cc_c6, c7: cc_c7 },
     leaps: { score: leapsScore, total: 7, grade: scoreToGrade(leapsScore, 7), badge: leapsBadge, c1: leaps_c1, c2: leaps_c2, c3: leaps_c3, c4: leaps_c4, c5: leaps_c5, c6: leaps_c6, c7: leaps_c7 },
     synth: { score: synthScore, total: 7, grade: scoreToGrade(synthScore, 7), badge: synthBadge, c1: synth_c1, c2: synth_c2, c3: synth_c3, c4: synth_c4, c5: synth_c5, c6: synth_c6, c7: synth_c7 },
   };

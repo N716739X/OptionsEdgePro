@@ -2313,19 +2313,23 @@ function buildSkeletonRow(ticker) {
 
 // Build a full rich card for a dashboard column
 function buildColCard(ticker, d, strategy) {
-  var isScored = (strategy === 'put' || strategy === 'cc');
+  var isScored = (strategy === 'put');
   var score;
   if (strategy === 'put')        score = d.putScore || 0;
   else if (strategy === 'cc')    score = d.ccScore || 0;
   else if (strategy === 'leaps') score = d.leapsScore || 0;
   else                           score = d.synthScore || 0;
 
-  var totalCriteria = isScored ? 6 : 7;
+  var totalCriteria = (strategy === 'put') ? 6 : 7;
 
   // Grade — only meaningful once phase 2 data is loaded
   var grade = '';
   if (d.phase >= 2) {
     if (isScored) {
+      // Put: 6 criteria
+      grade = score >= 6 ? 'A' : score >= 5 ? 'B' : score >= 4 ? 'C' : score >= 3 ? 'D' : 'F';
+    } else if (strategy === 'cc') {
+      // CC: 7 criteria — same grading as phase 3
       grade = score >= 6 ? 'A' : score >= 5 ? 'B' : score >= 4 ? 'C' : score >= 3 ? 'D' : 'F';
     } else {
       if (d.phase >= 3) {
@@ -2382,7 +2386,7 @@ function buildColCard(ticker, d, strategy) {
   if (strategy === 'put') {
     cx = { c1: d.put_c1, c2: d.put_c2, c3: d.put_c3, c4: d.put_c4, c5: d.put_c5, c6: d.put_c6 };
   } else if (strategy === 'cc') {
-    cx = { c1: d.cc_c1, c2: d.cc_c2, c3: d.cc_c3, c4: d.cc_c4, c5: d.cc_c5, c6: d.cc_c6 };
+    cx = { c1: d.cc_c1, c2: d.cc_c2, c3: d.cc_c3, c4: d.cc_c4, c5: d.cc_c5, c6: d.cc_c6, c7: d.cc_c7 };
   }
 
   // For LEAPS phase 3 cards, show actual IV%; for others show IV rank
@@ -2392,10 +2396,8 @@ function buildColCard(ticker, d, strategy) {
   } else {
     ivDisp = d.ivRank !== null && d.ivRank !== undefined ? Math.round(d.ivRank) + '%' : (d.phase < 2 ? '…' : '—');
   }
-  var earnDisp = cx.c3 === true ? 'OK' : cx.c3 === false ? 'RISK' : (d.phase < 2 ? '…' : '—');
   var premDisp = d.premPct !== null && d.premPct !== undefined ? fmt(d.premPct, 1) + '%' : (d.phase < 2 ? '…' : '—');
   var dteDisp  = d.dte !== null && d.dte !== undefined ? d.dte + 'd' : (d.phase < 2 ? '…' : '—');
-  var strkDisp = d.phase < 2 ? '…' : (cx.c5 === true ? '✓' : cx.c5 === false ? '✗' : '—');
 
   function mb(label, pass, val) {
     var cls = pass === true ? 'mini-pass' : pass === false ? 'mini-fail' : 'mini-na';
@@ -2404,13 +2406,29 @@ function buildColCard(ticker, d, strategy) {
 
   var criteriaHtml;
   if (isScored) {
+    // Put: 6 criteria
+    var putEarnDisp = cx.c3 === true ? 'OK' : cx.c3 === false ? 'RISK' : (d.phase < 2 ? '…' : '—');
+    var putDeltaDisp = d.phase < 2 ? '…' : (cx.c5 === true ? '✓' : cx.c5 === false ? '✗' : '—');
     criteriaHtml =
       mb('IV',    cx.c1, ivDisp) +
       mb('RSI',   cx.c2, rsiDisp) +
-      mb('EARN',  cx.c3, earnDisp) +
+      mb('EARN',  cx.c3, putEarnDisp) +
       mb('PREM',  cx.c4, premDisp) +
-      mb('DELTA', cx.c5, strkDisp) +
+      mb('DELTA', cx.c5, putDeltaDisp) +
       mb('DTE',   cx.c6, dteDisp);
+  } else if (strategy === 'cc') {
+    // CC: 7 criteria — IV>80, RSI>65, SMA200, Earnings, Premium, Delta, DTE
+    var ccSmaDisp = cx.c3 === true ? '▲' : cx.c3 === false ? '▼' : '—';
+    var ccEarnDisp = cx.c4 === true ? 'OK' : cx.c4 === false ? 'RISK' : (d.phase < 2 ? '…' : '—');
+    var ccDeltaDisp = d.phase < 2 ? '…' : (cx.c6 === true ? '✓' : cx.c6 === false ? '✗' : '—');
+    criteriaHtml =
+      mb('IV',    cx.c1, ivDisp) +
+      mb('RSI',   cx.c2, rsiDisp) +
+      mb('SMA',   cx.c3, ccSmaDisp) +
+      mb('EARN',  cx.c4, ccEarnDisp) +
+      mb('PREM',  cx.c5, premDisp) +
+      mb('DELTA', cx.c6, ccDeltaDisp) +
+      mb('DTE',   cx.c7, dteDisp);
   } else if (strategy === 'leaps') {
     // LEAPS: 7 criteria — RSI, IV, Strike, Duration, OI, Spread, CAGR
     criteriaHtml =
@@ -2635,13 +2653,14 @@ async function fetchTickerData(ticker) {
     var putScore = [put_c1,put_c2,put_c3,put_c4,put_c5,put_c6].filter(function(x){return x===true;}).length;
 
     // Score CC criteria
-    var cc_c1 = ivRank !== null ? ivRank >= 50 : null;
+    var cc_c1 = ivRank !== null ? ivRank > 80 : null;
     var cc_c2 = pd.rsi > 65;
-    var cc_c3 = earningsRisk === null ? null : !earningsRisk;
-    var cc_c4 = premPct !== null ? premPct >= 2 : null;
-    var cc_c5 = deltaOk;
-    var cc_c6 = dte !== null ? (dte >= 30 && dte <= 45) : null;
-    var ccScore = [cc_c1,cc_c2,cc_c3,cc_c4,cc_c5,cc_c6].filter(function(x){return x===true;}).length;
+    var cc_c3 = !isNaN(pd.sma200) ? pd.price > pd.sma200 : null;
+    var cc_c4 = earningsRisk === null ? null : !earningsRisk;
+    var cc_c5 = premPct !== null ? premPct >= 2 : null;
+    var cc_c6 = deltaOk;
+    var cc_c7 = dte !== null ? (dte >= 30 && dte <= 45) : null;
+    var ccScore = [cc_c1,cc_c2,cc_c3,cc_c4,cc_c5,cc_c6,cc_c7].filter(function(x){return x===true;}).length;
 
     // Score LEAPS criteria (proxy — from available data, no extra fetches)
     // LEAPS 7 criteria: RSI<30, IV<55%, Strike Deep ITM, Duration 18+mo, OI≥300, Bid/Ask≤10%, CAGR≤35%
@@ -2677,7 +2696,7 @@ async function fetchTickerData(ticker) {
     d.put_c1 = put_c1; d.put_c2 = put_c2; d.put_c3 = put_c3;
     d.put_c4 = put_c4; d.put_c5 = put_c5; d.put_c6 = put_c6;
     d.cc_c1  = cc_c1;  d.cc_c2  = cc_c2;  d.cc_c3  = cc_c3;
-    d.cc_c4  = cc_c4;  d.cc_c5  = cc_c5;  d.cc_c6  = cc_c6;
+    d.cc_c4  = cc_c4;  d.cc_c5  = cc_c5;  d.cc_c6  = cc_c6;  d.cc_c7 = cc_c7;
     d.leaps_c1 = leaps_c1; d.leaps_c2 = leaps_c2; d.leaps_c3 = leaps_c3;
     d.leaps_c4 = leaps_c4; d.leaps_c5 = leaps_c5; d.leaps_c6 = leaps_c6; d.leaps_c7 = leaps_c7;
     d.synth_c1 = synth_c1; d.synth_c2 = synth_c2; d.synth_c3 = synth_c3;
@@ -2963,7 +2982,7 @@ function applyServerScores(s) {
     put_c1: s.put.c1, put_c2: s.put.c2, put_c3: s.put.c3,
     put_c4: s.put.c4, put_c5: s.put.c5, put_c6: s.put.c6,
     cc_c1:  s.cc.c1,  cc_c2:  s.cc.c2,  cc_c3:  s.cc.c3,
-    cc_c4:  s.cc.c4,  cc_c5:  s.cc.c5,  cc_c6:  s.cc.c6,
+    cc_c4:  s.cc.c4,  cc_c5:  s.cc.c5,  cc_c6:  s.cc.c6,  cc_c7: s.cc.c7,
     leaps_c1: s.leaps.c1, leaps_c2: s.leaps.c2, leaps_c3: s.leaps.c3,
     leaps_c4: s.leaps.c4, leaps_c5: s.leaps.c5, leaps_c6: s.leaps.c6, leaps_c7: s.leaps.c7,
     synth_c1: s.synth.c1, synth_c2: s.synth.c2, synth_c3: s.synth.c3,
@@ -3297,13 +3316,14 @@ async function runCC(forceTicker) {
     var otmOk     = upsidePct !== null ? (upsidePct >= 5 && upsidePct <= 15) : null;
     var totalRet  = (upsidePct !== null && premPct !== null) ? (upsidePct + premPct) : null;
 
-    var c1 = ivRank !== null ? ivRank >= 50 : null;
+    var c1 = ivRank !== null ? ivRank > 80 : null;
     var c2 = pd.rsi > 65;
-    var c3 = !earningsRisk;
-    var c4 = premPct !== null ? premPct >= 2 : null;
-    var c5 = otmOk;
-    var c6 = dte >= 30 && dte <= 45;
-    var score = [c1,c2,c3,c4,c5,c6].filter(function(x){return x===true;}).length;
+    var c3 = !isNaN(pd.sma200) ? pd.price > pd.sma200 : null;
+    var c4 = !earningsRisk;
+    var c5 = premPct !== null ? premPct >= 2 : null;
+    var c6 = otmOk;
+    var c7 = dte >= 30 && dte <= 45;
+    var score = [c1,c2,c3,c4,c5,c6,c7].filter(function(x){return x===true;}).length;
 
     setStatus('cc-status', 'Done', 'ok');
 
@@ -3316,6 +3336,7 @@ async function runCC(forceTicker) {
       '<div class="info-item"><div class="info-label">Target Strike</div><div class="info-val">' + (bestStrike ? fmtDollar(bestStrike) : '—') + '</div></div>' +
       '<div class="info-item"><div class="info-label">Premium (Mid)</div><div class="info-val">' + (bestPremium ? fmtDollar(bestPremium) : '—') + '</div></div>' +
       '<div class="info-item"><div class="info-label">IV Rank</div><div class="info-val">' + (ivRank !== null ? fmt(ivRank,1)+'%' : '—') + '</div></div>' +
+      '<div class="info-item"><div class="info-label">200 SMA</div><div class="info-val">' + (pd.sma200 ? fmtDollar(pd.sma200) : '—') + '</div></div>' +
     '</div>';
     // Trade Summary calculations for CC
     var ccMaxGain  = (bestStrike && bestPremium && pd.price) ? ((bestStrike - pd.price) + bestPremium) * 100 : null;
@@ -3339,33 +3360,37 @@ async function runCC(forceTicker) {
     '</div></div>';
 
     html += '<div class="scorecard"><h3>Covered Call — Score</h3><div class="criteria-list">';
-    html += critRow(1,'IV Elevated > 50%', c1, ivRank !== null ? fmt(ivRank,1)+'%' : 'N/A');
+    html += critRow(1,'IV Rank > 80% (Elevated Premium)', c1, ivRank !== null ? fmt(ivRank,1)+'%' : 'N/A');
     html += critRow(2,'RSI(10) > 65 · Daily (Overbought)', c2, fmt(pd.rsi,1));
-    html += critRow(3,'No Earnings Before Expiry', c3, earningsRisk ? 'Earnings: '+EARNINGS[ticker] : 'Clear');
-    html += critRow(4,'Premium ≥ 2% of Price', c4, premPct !== null ? fmt(premPct,2)+'%' : 'N/A');
-    html += critRow(5,'Strike 5–10% OTM (Δ 0.15–0.25)', c5, (upsidePct !== null ? fmt(upsidePct,1)+'% OTM' : (bestDelta !== null ? 'Δ'+fmt(bestDelta,2) : 'N/A')));
-    html += critRow(6,'Duration 30–45 DTE', c6, dte+' days');
-    html += '</div>' + scoreSummaryHtml(score,6) + '</div>';
+    html += critRow(3,'Price Above 200 SMA (Confirmed Uptrend)', c3, pd.sma200 ? fmtDollar(pd.price) + ' vs ' + fmtDollar(pd.sma200) : 'N/A');
+    html += critRow(4,'No Earnings Before Expiry', c4, earningsRisk ? 'Earnings: '+EARNINGS[ticker] : 'Clear');
+    html += critRow(5,'Premium ≥ 2% of Price', c5, premPct !== null ? fmt(premPct,2)+'%' : 'N/A');
+    html += critRow(6,'Strike 5–10% OTM (Δ 0.15–0.25)', c6, (upsidePct !== null ? fmt(upsidePct,1)+'% OTM' : (bestDelta !== null ? 'Δ'+fmt(bestDelta,2) : 'N/A')));
+    html += critRow(7,'Duration 30–45 DTE', c7, dte+' days');
+    html += '</div>' + scoreSummaryHtml(score,7) + '</div>';
 
     // ── Contextual suggestions (warnings first, positives last) ──
     var suggWarnC = [], suggGoodC = [];
-    if (earningsRisk && c2 && c4) {
+    if (earningsRisk && c2 && c5) {
       var eDate = EARNINGS[ticker];
       suggWarnC.push('💡 <strong>Earnings workaround:</strong> ' + ticker + ' has earnings on ' + eDate + ' inside your expiry window. Consider a shorter DTE expiring <strong>before ' + eDate + '</strong> to avoid the IV crush and gap risk.');
     }
     if (!c2 && pd.rsi < 65 && pd.rsi > 55) {
       suggWarnC.push('💡 <strong>RSI almost there:</strong> RSI is ' + fmt(pd.rsi,1) + ' — approaching overbought. Watch for a continued rally above 65 before selling the call.');
     }
-    if (!c1 && ivRank !== null && ivRank >= 35) {
-      suggWarnC.push('💡 <strong>IV warming up:</strong> IV is ' + fmt(ivRank,1) + '% — wait for a volatility spike to get richer premium before capping your upside.');
+    if (!c1 && ivRank !== null && ivRank >= 60) {
+      suggWarnC.push('💡 <strong>IV warming up:</strong> IV is ' + fmt(ivRank,1) + '% — approaching the 80% threshold. Wait for a volatility spike to get richer premium before capping your upside.');
     }
-    if (!c4 && premPct !== null && premPct >= 1.5) {
+    if (!c3 && pd.sma200 && pd.price) {
+      suggWarnC.push('💡 <strong>Below 200 SMA:</strong> Price is ' + fmtDollar(pd.price) + ' vs SMA ' + fmtDollar(pd.sma200) + ' — stock is in a downtrend. Wait for price to reclaim the 200-day moving average before selling calls.');
+    }
+    if (!c5 && premPct !== null && premPct >= 1.5) {
       suggWarnC.push('💡 <strong>Premium close:</strong> Premium is ' + fmt(premPct,2) + '% — just below 2%. Try a slightly lower (closer) strike to collect more premium.');
     }
-    if (!c5 && upsidePct !== null) {
+    if (!c6 && upsidePct !== null) {
       suggWarnC.push('💡 <strong>Strike too far OTM:</strong> ' + fmt(upsidePct,1) + '% OTM is outside the 5–10% target. The app selected the closest available strike — consider checking if a strike closer to 8% OTM is available.');
     }
-    if (score === 6) {
+    if (score === 7) {
       suggGoodC.push('✅ <strong>All criteria met</strong> — this is an ideal setup. Consider entering today with the recommended strike above.');
     }
     var suggestionsC = suggWarnC.concat(suggGoodC);
