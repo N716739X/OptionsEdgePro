@@ -2825,7 +2825,7 @@ function scoreSummaryHtml(score, total) {
   '</div>';
 }
 
-function buildChainTable(chain, targetDeltaOrStrike, price, isPut, matchByStrike) {
+function buildChainTable(chain, targetDeltaOrStrike, price, isPut, matchByStrike, showIntrinsic) {
   if (!chain || !chain.optionSymbol) return '<p style="color:var(--text-muted);font-size:12px">No chain data.</p>';
   var rows = [];
   for (var i = 0; i < chain.optionSymbol.length; i++) {
@@ -2863,16 +2863,23 @@ function buildChainTable(chain, targetDeltaOrStrike, price, isPut, matchByStrike
 
   var html = '<div class="chain-table-wrap"><table>' +
     '<thead><tr><th>Strike</th><th>Bid</th><th>Ask</th><th>Mid</th>' +
+    (showIntrinsic ? '<th>Intrinsic</th><th>Extrinsic</th>' : '') +
     '<th>Delta</th><th>IV</th><th>OI</th><th>Vol</th><th>Prem%</th></tr></thead><tbody>';
 
   slice.forEach(function(row, idx) {
     var isRec   = idx === bestInSlice;
     var premPct = (row.mid && price) ? (row.mid / price * 100) : null;
+    var intrinsic = 0, extrinsic = 0;
+    if (showIntrinsic && row.mid !== null && row.strike !== null && price) {
+      intrinsic = isPut ? Math.max(0, row.strike - price) : Math.max(0, price - row.strike);
+      extrinsic = Math.max(0, row.mid - intrinsic);
+    }
     html += '<tr class="' + (isRec ? 'recommended' : '') + '">' +
       '<td class="strike-cell">' + (isRec ? '<span class="star">★</span>' : '') + fmtDollar(row.strike) + '</td>' +
       '<td>' + fmtDollar(row.bid) + '</td>' +
       '<td>' + fmtDollar(row.ask) + '</td>' +
       '<td><strong>' + fmtDollar(row.mid) + '</strong></td>' +
+      (showIntrinsic ? '<td>' + fmtDollar(intrinsic) + '</td><td>' + fmtDollar(extrinsic) + '</td>' : '') +
       '<td>' + fmt(row.delta, 2) + '</td>' +
       '<td>' + (row.iv ? fmt(row.iv * 100, 1) + '%' : '—') + '</td>' +
       '<td>' + fmtK(row.oi) + '</td>' +
@@ -3366,15 +3373,19 @@ async function runLeaps(forceTicker) {
       var visRows    = rows.slice(sliceStart, sliceEnd);
       var visBestR   = bestR - sliceStart;
       html += '<div class="leaps-table-wrap"><table><thead><tr>' +
-        '<th>Strike</th><th>Bid</th><th>Ask</th><th>Mid</th><th>Delta</th><th>OI</th><th>Sprd%</th><th>CAGR%</th>' +
+        '<th>Strike</th><th>Bid</th><th>Ask</th><th>Mid</th><th>Intrinsic</th><th>Extrinsic</th><th>Delta</th><th>OI</th><th>Sprd%</th><th>CAGR%</th>' +
         '</tr></thead><tbody>';
       visRows.forEach(function(row, ri) {
         var isR = ri === visBestR;
+        var intrL = Math.max(0, pd.price - row.strike);
+        var extrL = row.mid !== null ? Math.max(0, row.mid - intrL) : 0;
         html += '<tr class="' + (isR ? 'recommended' : '') + '">' +
           '<td class="strike-cell">' + (isR ? '<span class="star">★</span>' : '') + fmtDollar(row.strike) + '</td>' +
           '<td>' + fmtDollar(row.bid) + '</td>' +
           '<td>' + fmtDollar(row.ask) + '</td>' +
           '<td><strong>' + fmtDollar(row.mid) + '</strong></td>' +
+          '<td>' + fmtDollar(intrL) + '</td>' +
+          '<td>' + fmtDollar(extrL) + '</td>' +
           '<td>' + fmt(row.delta,2) + '</td>' +
           '<td>' + fmtK(row.oi) + '</td>' +
           '<td ' + (row.spread > 10 ? 'style="color:var(--red)"' : '') + '>' + (row.spread !== null ? fmt(row.spread,1)+'%' : '—') + '</td>' +
@@ -3618,9 +3629,9 @@ async function runSynth(forceTicker) {
 
     // ── Chain tables — show why these strikes were selected ──
     html += '<div class="chain-section" style="margin-top:14px"><h3>Call Chain — ' + bestExpiry + ' (' + dte + ' DTE)</h3>';
-    html += buildChainTable(callChain, slCall.strike, pd.price, false, true) + '</div>';
+    html += buildChainTable(callChain, slCall.strike, pd.price, false, true, true) + '</div>';
     html += '<div class="chain-section" style="margin-top:14px"><h3>Put Chain — ' + bestExpiry + ' (' + dte + ' DTE)</h3>';
-    html += buildChainTable(putChain, slPut.strike, pd.price, true, true) + '</div>';
+    html += buildChainTable(putChain, slPut.strike, pd.price, true, true, true) + '</div>';
 
     document.getElementById('synth-results').innerHTML = html;
   } catch(e) {
