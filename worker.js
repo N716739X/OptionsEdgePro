@@ -580,7 +580,7 @@ async function scoreTicker(ticker, env) {
   // ── Score all 4 strategies ──
   const put_c1 = ivRank !== null ? ivRank > 80 : null;
   const put_c2 = rsi < 30;
-  const put_c3 = !isNaN(sma200) ? price < sma200 : null;  // Price below 200 SMA (pullback/discount)
+  const put_c3 = !isNaN(sma200) ? price > sma200 : null;  // Price above 200 SMA (confirmed uptrend)
   const put_c4 = earningsRisk === null ? null : !earningsRisk;
   const put_c5 = premPct !== null ? premPct > 2 : null;
   const put_c6 = deltaOk;
