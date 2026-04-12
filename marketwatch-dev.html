@@ -3487,6 +3487,13 @@ async function runLeaps(forceTicker) {
     setStatus('leaps-status', spinner() + 'Price & indicators…', 'loading');
     var pd = await fetchPriceData(ticker);
 
+    // LEAPS uses Weekly RSI — override daily RSI with weekly
+    try {
+      var wRsiData = await fetchTD('rsi', { symbol: ticker, interval: '1week', time_period: 10, outputsize: 1 });
+      var wVals = wRsiData.values || [];
+      if (wVals.length > 0) pd.rsi = parseFloat(wVals[0].rsi);
+    } catch(e) { /* keep daily RSI as fallback */ }
+
     setStatus('leaps-status', spinner() + 'Expirations…', 'loading');
     var expirations   = await fetchExpirations(ticker);
     var leapsExpiries = expirations.filter(function(e) { return dteFromStr(e) >= 540; }).slice(0,4);
