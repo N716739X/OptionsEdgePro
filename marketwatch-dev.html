@@ -3616,6 +3616,12 @@ async function runSynth(forceTicker) {
     });
     html += '</div></div>';
 
+    // ── Chain tables — show why these strikes were selected ──
+    html += '<div class="chain-section" style="margin-top:14px"><h3>Call Chain — ' + bestExpiry + ' (' + dte + ' DTE)</h3>';
+    html += buildChainTable(callChain, slCall.strike, pd.price, false, true) + '</div>';
+    html += '<div class="chain-section" style="margin-top:14px"><h3>Put Chain — ' + bestExpiry + ' (' + dte + ' DTE)</h3>';
+    html += buildChainTable(putChain, slPut.strike, pd.price, true, true) + '</div>';
+
     document.getElementById('synth-results').innerHTML = html;
   } catch(e) {
     setStatus('synth-status', '✗ ' + e.message, 'error');
