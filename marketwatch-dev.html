@@ -2946,16 +2946,14 @@ async function runSynthPhase3(ticker) {
     ]);
     var callChain = results[0], putChain = results[1];
 
-    // Find call with ~50/50 intrinsic/extrinsic (ITM only, max 15% below price, extrinsic 40-60% passes)
+    // Find call with ~50/50 intrinsic/extrinsic (ITM only, extrinsic 40-60% passes)
     var slCall = null;
     var slCallExtPct = null;
-    var callFloor = pd.price * 0.85; // don't go deeper than 15% ITM
     if (callChain && callChain.strike) {
       var bestIEDiff = Infinity;
       for (var i = 0; i < callChain.strike.length; i++) {
         var sC = callChain.strike[i];
         if (sC >= pd.price) continue; // must be ITM
-        if (sC < callFloor) continue; // skip strikes too deep ITM
         var cMid = callChain.mid ? callChain.mid[i] : null;
         if (!cMid || cMid <= 0) continue;
         var intrinsic = pd.price - sC;
@@ -3857,16 +3855,14 @@ async function runSynth(forceTicker) {
     // SELL put: near ATM (OTM, strike ≤ price), ABOVE call strike
     // Net debit ~5-15% of price is acceptable
 
-    // --- STEP 1: BUY call with ~50/50 I/E (ITM only, max 15% below price) ---
+    // --- STEP 1: BUY call with ~50/50 I/E (ITM only) ---
     var slCall = null;
     var slCallExtPct = null;
-    var callFloor = pd.price * 0.85; // don't go deeper than 15% ITM
     if (callChain && callChain.strike) {
       var bestIEDiff = Infinity;
       for (var i = 0; i < callChain.strike.length; i++) {
         var sC = callChain.strike[i];
         if (sC >= pd.price) continue; // must be ITM
-        if (sC < callFloor) continue; // skip strikes too deep ITM
         var cMid = callChain.mid ? callChain.mid[i] : null;
         if (!cMid || cMid <= 0) continue;
         var intrinsic = pd.price - sC;
