@@ -315,23 +315,7 @@ header {
   color: var(--text-muted);
   font-weight: 500;
 }
-.ie-toggle {
-  background: var(--surface2);
-  border: 1px solid var(--accent);
-  color: var(--accent);
-  font-size: 9px;
-  font-weight: 700;
-  padding: 2px 7px;
-  border-radius: 3px;
-  cursor: pointer;
-  letter-spacing: 0.3px;
-  font-family: inherit;
-  transition: background 0.2s, color 0.2s;
-}
-.ie-toggle:hover {
-  background: var(--accent);
-  color: #000;
-}
+
 .dash-col-body {
   padding: 6px 8px;
   display: flex;
@@ -1454,12 +1438,7 @@ input, textarea, select { -webkit-user-select: text; user-select: text; }
     <div class="dash-col">
       <div class="dash-col-header">
         <span class="dash-col-title">LEAPS</span>
-        <div style="display:flex;align-items:center;gap:8px;">
-          <button id="ie-toggle" class="ie-toggle" onclick="toggleIERatio()" title="Switch Intrinsic/Extrinsic target">
-            <span id="ie-toggle-label">75/25</span>
-          </button>
-          <span class="dash-col-sub">Ranked by RSI ↑</span>
-        </div>
+        <span class="dash-col-sub">Ranked by RSI ↑</span>
       </div>
       <div class="dash-col-body" id="col-leaps"></div>
     </div>
@@ -1841,40 +1820,7 @@ var currentTab      = localStorage.getItem('owp-tab')      || 'dashboard';
 var tickers         = JSON.parse(localStorage.getItem('owp-tickers') || 'null') || DEFAULT_TICKERS.slice();
 var cardData        = {}; // ticker -> data object
 var refreshTimer    = null;
-var ieMode          = localStorage.getItem('owp-ie-mode') || '75'; // '75' or '50'
 
-function getIEThreshold() { return ieMode === '50' ? 60 : 30; }
-function getIELabel()     { return ieMode === '50' ? '50/50' : '75/25'; }
-
-function toggleIERatio() {
-  ieMode = (ieMode === '75') ? '50' : '75';
-  localStorage.setItem('owp-ie-mode', ieMode);
-  var lbl = document.getElementById('ie-toggle-label');
-  if (lbl) lbl.textContent = getIELabel();
-  // Re-score all LEAPS cards with new I/E threshold
-  var allTickers = Object.keys(cardData);
-  for (var i = 0; i < allTickers.length; i++) {
-    var d = cardData[allTickers[i]];
-    if (d && d.leapsIEPct !== null && d.leapsIEPct !== undefined && !isNaN(d.leapsIEPct)) {
-      var ext = d.leapsIEPct;
-      if (ieMode === '50') {
-        d.leaps_c2 = (ext >= 40 && ext <= 60);
-      } else {
-        d.leaps_c2 = (ext <= 30);
-      }
-      var passed = 0;
-      if (d.leaps_c1 === true) passed++;
-      if (d.leaps_c2 === true) passed++;
-      if (d.leaps_c3 === true) passed++;
-      if (d.leaps_c4 === true) passed++;
-      if (d.leaps_c5 === true) passed++;
-      if (d.leaps_c6 === true) passed++;
-      if (d.leaps_c7 === true) passed++;
-      d.leapsScore = passed;
-    }
-  }
-  renderColumns();
-}
 
 // ═══════════════════════════════════════════════════════
 // THEME
@@ -2906,7 +2852,7 @@ async function runLeapsPhase3(ticker) {
     var bestIntrinsic = (bestStrike && pd.price) ? Math.max(0, pd.price - bestStrike) : null;
     var bestExtrinsic = (bestPremium && bestIntrinsic !== null) ? Math.max(0, bestPremium - bestIntrinsic) : null;
     var extPct = (bestExtrinsic !== null && bestPremium > 0) ? (bestExtrinsic / bestPremium * 100) : null;
-    var ieOk = extPct !== null ? (ieMode === '50' ? (extPct >= 40 && extPct <= 60) : extPct <= 30) : null;
+    var ieOk = extPct !== null ? (extPct <= 30 || (extPct >= 40 && extPct <= 60)) : null;
 
     d.leaps_c1 = currentIV !== null ? currentIV < 55 : null;
     d.leaps_c2 = ieOk;
@@ -3107,9 +3053,6 @@ function applyServerScores(s) {
 }
 
 function refreshDashboard(forceRefresh) {
-  // Sync I/E toggle label with persisted state
-  var ieLbl = document.getElementById('ie-toggle-label');
-  if (ieLbl) ieLbl.textContent = getIELabel();
   if (forceRefresh) clearMDCache(); // manual refresh clears cache
   cardData = {};
   _phase3Triggered = false;
@@ -3605,7 +3548,29 @@ async function runLeaps(forceTicker) {
     var bestIntrinsic = (bestStrike && pd.price) ? Math.max(0, pd.price - bestStrike) : null;
     var bestExtrinsic = (bestPremium && bestIntrinsic !== null) ? Math.max(0, bestPremium - bestIntrinsic) : null;
     var extPct = (bestExtrinsic !== null && bestPremium > 0) ? (bestExtrinsic / bestPremium * 100) : null;
-    var ieOk = extPct !== null ? (ieMode === '50' ? (extPct >= 40 && extPct <= 60) : extPct <= 30) : null;
+    var ieOk = extPct !== null ? (extPct <= 30 || (extPct >= 40 && extPct <= 60)) : null;
+
+    // Find the 50/50 I/E strike (closest ext% to 50%, ITM only) for display
+    var strike5050 = null, ext5050 = null, delta5050 = null, mid5050 = null;
+    if (repChain && repChain.strike) {
+      var bestIEDiff = Infinity;
+      for (var ie5 = 0; ie5 < repChain.strike.length; ie5++) {
+        var s5 = repChain.strike[ie5];
+        if (s5 >= pd.price) continue; // ITM only
+        var m5i = repChain.mid ? repChain.mid[ie5] : null;
+        if (!m5i || m5i <= 0) continue;
+        var intr5 = pd.price - s5;
+        var extr5 = Math.max(0, m5i - intr5);
+        var ePct5 = (extr5 / m5i) * 100;
+        var diff5 = Math.abs(ePct5 - 50);
+        if (diff5 < bestIEDiff) {
+          bestIEDiff = diff5;
+          strike5050 = s5; ext5050 = ePct5; mid5050 = m5i;
+          delta5050 = repChain.delta ? repChain.delta[ie5] : null;
+        }
+      }
+    }
+    var be5050 = (strike5050 && mid5050) ? strike5050 + mid5050 : null;
 
     var c1 = currentIV !== null ? currentIV < 55 : null;
     var c2 = ieOk;
@@ -3622,12 +3587,12 @@ async function runLeaps(forceTicker) {
     html += '<div class="info-box">' +
       '<div class="info-item"><div class="info-label">Current IV</div><div class="info-val">' + (currentIV !== null ? fmt(currentIV,1)+'%' : '—') + '</div></div>' +
       '<div class="info-item"><div class="info-label">IV Rank</div><div class="info-val">' + (ivRank !== null ? fmt(ivRank,1)+'%' : '—') + '</div></div>' +
-      '<div class="info-item"><div class="info-label">Target Δ</div><div class="info-val">0.75</div></div>' +
-      '<div class="info-item"><div class="info-label">Best Strike</div><div class="info-val">' + (bestStrike ? fmtDollar(bestStrike) : '—') + '</div></div>' +
-      '<div class="info-item"><div class="info-label">Breakeven</div><div class="info-val">' + (breakeven ? fmtDollar(breakeven) : '—') + '</div></div>' +
-      '<div class="info-item"><div class="info-label">Intrinsic</div><div class="info-val">' + (bestIntrinsic !== null ? fmtDollar(bestIntrinsic) : '—') + '</div></div>' +
-      '<div class="info-item"><div class="info-label">Extrinsic</div><div class="info-val">' + (bestExtrinsic !== null ? fmtDollar(bestExtrinsic) : '—') + '</div></div>' +
-      '<div class="info-item"><div class="info-label">Ext %</div><div class="info-val">' + (extPct !== null ? fmt(extPct,1)+'%' : '—') + '</div></div>' +
+      '<div class="info-item"><div class="info-label" style="color:var(--accent)">★ 75/25 Strike</div><div class="info-val">' + (bestStrike ? fmtDollar(bestStrike) + ' (Δ' + fmt(bestDelta,2) + ')' : '—') + '</div></div>' +
+      '<div class="info-item"><div class="info-label">  Breakeven</div><div class="info-val">' + (breakeven ? fmtDollar(breakeven) : '—') + '</div></div>' +
+      '<div class="info-item"><div class="info-label">  Ext %</div><div class="info-val">' + (extPct !== null ? fmt(extPct,1)+'%' : '—') + '</div></div>' +
+      '<div class="info-item"><div class="info-label" style="color:var(--green)">★ 50/50 Strike</div><div class="info-val">' + (strike5050 ? fmtDollar(strike5050) + ' (Δ' + fmt(delta5050,2) + ')' : '—') + '</div></div>' +
+      '<div class="info-item"><div class="info-label">  Breakeven</div><div class="info-val">' + (be5050 ? fmtDollar(be5050) : '—') + '</div></div>' +
+      '<div class="info-item"><div class="info-label">  Ext %</div><div class="info-val">' + (ext5050 !== null ? fmt(ext5050,1)+'%' : '—') + '</div></div>' +
     '</div>';
 
     // ── Trade Summary ──
@@ -3654,7 +3619,7 @@ async function runLeaps(forceTicker) {
 
     html += '<div class="scorecard"><h3>LEAPS Deep ITM Call — Score</h3><div class="criteria-list">';
     html += critRow(1,'IV < 55% (Buy Low IV)', c1, currentIV !== null ? fmt(currentIV,1)+'%' : 'N/A');
-    html += critRow(2, ieMode === '50' ? 'Intrinsic/Extrinsic ~50/50 (40–60%)' : 'Intrinsic/Extrinsic ~75/25 (Ext ≤ 30%)', c2, extPct !== null ? fmt(extPct,1)+'% ext' : 'N/A');
+    html += critRow(2, 'Intrinsic/Extrinsic ~75/25 (Ext ≤ 30%) or ~50/50 (40–60%)', c2, extPct !== null ? fmt(extPct,1)+'% ext' : 'N/A');
     html += critRow(3,'Strike Deep ITM Δ 0.70–0.90', c3, bestDelta !== null ? fmt(bestDelta,2) : 'N/A');
     html += critRow(4,'Duration 18+ months (540+ DTE)', c4, repDTE+' days');
     html += critRow(5,'RSI(10) < 30 · Weekly (Entry Timing)', c5, fmt(pd.rsi,1));
@@ -3690,11 +3655,7 @@ async function runLeaps(forceTicker) {
       suggestions.push('💡 <strong>IV elevated:</strong> Current IV is ' + fmt(currentIV,1) + '% — you are paying a premium for this option. Wait for a volatility cooldown to get a cheaper entry on the same strike.');
     }
     if (!c2 && extPct !== null) {
-      if (ieMode === '50') {
-        suggestions.push('💡 <strong>I/E ratio off target:</strong> Extrinsic is ' + fmt(extPct,1) + '% of the premium — outside the 40–60% range. Adjust strike depth to bring extrinsic closer to 50% for a balanced intrinsic/extrinsic split.');
-      } else {
-        suggestions.push('💡 <strong>Too much extrinsic:</strong> Extrinsic is ' + fmt(extPct,1) + '% of the premium — above the 30% cap. Go deeper ITM to reduce time value and get closer to the 75/25 intrinsic/extrinsic target.');
-      }
+      suggestions.push('💡 <strong>I/E ratio off target:</strong> Extrinsic is ' + fmt(extPct,1) + '% of the premium — outside both the 75/25 (≤30%) and 50/50 (40–60%) zones. Check the chain table below for strikes that fall within either target range.');
     }
     if (!c5 && pd.rsi < 40) {
       suggestions.push('💡 <strong>RSI approaching entry:</strong> RSI is ' + fmt(pd.rsi,1) + ' — not deeply oversold but acceptable for a long-duration LEAPS entry. Watch for a continued dip below 30 for a stronger signal.');
@@ -3782,25 +3743,46 @@ async function runLeaps(forceTicker) {
         }
       }
       rows.sort(function(a, b) { return a.strike - b.strike; });
-      var bestR = -1, bestRD = Infinity;
+      // Find 75/25 strike (closest delta to 0.75)
+      var best75 = -1, best75D = Infinity;
       rows.forEach(function(r, ri) {
         var dif = Math.abs(r.delta - 0.75);
-        if (dif < bestRD) { bestRD = dif; bestR = ri; }
+        if (dif < best75D) { best75D = dif; best75 = ri; }
       });
-      // Slice to ±5 rows around the recommended strike
-      var sliceStart = Math.max(0, bestR - 5);
-      var sliceEnd   = Math.min(rows.length, bestR + 6);
+      // Find 50/50 strike (closest ext% to 50%, ITM only)
+      var best50 = -1, best50D = Infinity;
+      rows.forEach(function(r, ri) {
+        var intr = Math.max(0, pd.price - r.strike);
+        var extr = r.mid !== null ? Math.max(0, r.mid - intr) : 0;
+        var ePct = (r.mid && r.mid > 0) ? (extr / r.mid * 100) : null;
+        if (ePct !== null && r.strike < pd.price) {
+          var dif = Math.abs(ePct - 50);
+          if (dif < best50D) { best50D = dif; best50 = ri; }
+        }
+      });
+      // Expand visible window to include both recommended strikes
+      var loIdx = Math.min(best75, best50 >= 0 ? best50 : best75);
+      var hiIdx = Math.max(best75, best50 >= 0 ? best50 : best75);
+      var sliceStart = Math.max(0, loIdx - 3);
+      var sliceEnd   = Math.min(rows.length, hiIdx + 4);
       var visRows    = rows.slice(sliceStart, sliceEnd);
-      var visBestR   = bestR - sliceStart;
+      var vis75      = best75 - sliceStart;
+      var vis50      = best50 >= 0 ? best50 - sliceStart : -1;
       html += '<div class="leaps-table-wrap"><table><thead><tr>' +
         '<th>Strike</th><th>Bid</th><th>Ask</th><th>Mid</th><th>Intrinsic</th><th>Extrinsic</th><th>Delta</th><th>OI</th><th>Sprd%</th><th>CAGR%</th>' +
         '</tr></thead><tbody>';
       visRows.forEach(function(row, ri) {
-        var isR = ri === visBestR;
+        var is75 = ri === vis75;
+        var is50 = ri === vis50;
+        var isRec = is75 || is50;
         var intrL = Math.max(0, pd.price - row.strike);
         var extrL = row.mid !== null ? Math.max(0, row.mid - intrL) : 0;
-        html += '<tr class="' + (isR ? 'recommended' : '') + '">' +
-          '<td class="strike-cell">' + (isR ? '<span class="star">★</span>' : '') + fmtDollar(row.strike) + '</td>' +
+        var starLabel = '';
+        if (is75 && is50) starLabel = '<span class="star" style="color:var(--accent)">★ 75/25 & 50/50</span>';
+        else if (is75) starLabel = '<span class="star" style="color:var(--accent)">★ 75/25</span>';
+        else if (is50) starLabel = '<span class="star" style="color:var(--green)">★ 50/50</span>';
+        html += '<tr class="' + (isRec ? 'recommended' : '') + '">' +
+          '<td class="strike-cell">' + starLabel + fmtDollar(row.strike) + '</td>' +
           '<td>' + fmtDollar(row.bid) + '</td>' +
           '<td>' + fmtDollar(row.ask) + '</td>' +
           '<td><strong>' + fmtDollar(row.mid) + '</strong></td>' +
