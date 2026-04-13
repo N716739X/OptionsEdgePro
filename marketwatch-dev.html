@@ -2472,11 +2472,11 @@ function buildColCard(ticker, d, strategy, rank, isBestTrade) {
     var deltaDisp = d.leapsDelta !== null && d.leapsDelta !== undefined ? fmt(d.leapsDelta,2) : (d.leaps_c1 === null ? '—' : (d.leaps_c1 ? '✓' : '✗'));
     var cagrDisp  = d.leapsCAGR !== null && d.leapsCAGR !== undefined ? fmt(d.leapsCAGR,1)+'%' : (d.leaps_c2 === null ? '—' : (d.leaps_c2 ? '✓' : '✗'));
     criteriaHtml =
-      mb('DELTA', d.leaps_c1, deltaDisp) +
-      mb('CAGR',  d.leaps_c2, cagrDisp) +
-      mb('DUR',   d.leaps_c3, d.leaps_c3 === true ? '✓' : d.leaps_c3 === false ? '✗' : '—') +
       mb('RSI',   d.leaps_c4, (d.leapsRSI !== undefined && !isNaN(d.leapsRSI) ? fmt(d.leapsRSI,1) : rsiDisp) + 'w') +
       mb('IV',    d.leaps_c5, ivDisp) +
+      mb('DUR',   d.leaps_c3, d.leaps_c3 === true ? '✓' : d.leaps_c3 === false ? '✗' : '—') +
+      mb('DELTA', d.leaps_c1, deltaDisp) +
+      mb('CAGR',  d.leaps_c2, cagrDisp) +
       mb('OI',    d.leaps_c6, d.leaps_c6 === null ? '—' : (d.leaps_c6 ? '✓' : '✗')) +
       mb('BID/A', d.leaps_c7, d.leaps_c7 === null ? '—' : (d.leaps_c7 ? '✓' : '✗'));
   } else {
