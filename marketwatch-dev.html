@@ -2468,14 +2468,15 @@ function buildColCard(ticker, d, strategy, rank, isBestTrade) {
       mb('DELTA', cx.c6, ccDeltaDisp) +
       mb('DTE',   cx.c7, dteDisp);
   } else if (strategy === 'leaps') {
-    // LEAPS: 7 criteria — IV, I/E Ratio, Strike, Duration, RSI, OI, Spread
-    var ieDisp = d.leaps_c2 === null ? '—' : (d.leaps_c2 ? '✓' : '✗');
+    // LEAPS James: 7 criteria — Delta, BE CAGR, Duration, RSI, IV, OI, Spread
+    var deltaDisp = d.leapsDelta !== null && d.leapsDelta !== undefined ? fmt(d.leapsDelta,2) : (d.leaps_c1 === null ? '—' : (d.leaps_c1 ? '✓' : '✗'));
+    var cagrDisp  = d.leapsCAGR !== null && d.leapsCAGR !== undefined ? fmt(d.leapsCAGR,1)+'%' : (d.leaps_c2 === null ? '—' : (d.leaps_c2 ? '✓' : '✗'));
     criteriaHtml =
-      mb('IV',    d.leaps_c1, ivDisp) +
-      mb('I/E',   d.leaps_c2, ieDisp) +
-      mb('STRK',  d.leaps_c3, d.leaps_c3 === null ? '—' : (d.leaps_c3 ? '✓' : '✗')) +
-      mb('DUR',   d.leaps_c4, d.leaps_c4 === true ? '✓' : d.leaps_c4 === false ? '✗' : '—') +
-      mb('RSI',   d.leaps_c5, (d.leapsRSI !== undefined && !isNaN(d.leapsRSI) ? fmt(d.leapsRSI,1) : rsiDisp) + 'w') +
+      mb('DELTA', d.leaps_c1, deltaDisp) +
+      mb('CAGR',  d.leaps_c2, cagrDisp) +
+      mb('DUR',   d.leaps_c3, d.leaps_c3 === true ? '✓' : d.leaps_c3 === false ? '✗' : '—') +
+      mb('RSI',   d.leaps_c4, (d.leapsRSI !== undefined && !isNaN(d.leapsRSI) ? fmt(d.leapsRSI,1) : rsiDisp) + 'w') +
+      mb('IV',    d.leaps_c5, ivDisp) +
       mb('OI',    d.leaps_c6, d.leaps_c6 === null ? '—' : (d.leaps_c6 ? '✓' : '✗')) +
       mb('BID/A', d.leaps_c7, d.leaps_c7 === null ? '—' : (d.leaps_c7 ? '✓' : '✗'));
   } else {
@@ -2723,13 +2724,13 @@ async function fetchTickerData(ticker) {
     var ccScore = [cc_c1,cc_c2,cc_c3,cc_c4,cc_c5,cc_c6,cc_c7].filter(function(x){return x===true;}).length;
 
     // Score LEAPS criteria (proxy — from available data, no extra fetches)
-    // LEAPS 7 criteria: IV<55%, Intrinsic/Extrinsic~75/25, Strike ITM, Duration 18+mo, RSI<30, OI≥300, Bid/Ask≤10%
+    // James/InvestAnswers 7: Delta≥0.80, BE CAGR≤15%, Duration 540+, RSI<30w, IV<55%, OI≥300, Spread≤10%
     var hasLeapsExp = expirations.some(function(e) { return dteFromStr(e) >= 540; });
-    var leaps_c1 = ivRank !== null ? ivRank < 55 : null;             // IV < 55% (Buy Low IV)
-    var leaps_c2 = null;                                             // Intrinsic/Extrinsic ~75/25 (need chain)
-    var leaps_c3 = null;                                             // Strike Deep ITM (need chain)
-    var leaps_c4 = hasLeapsExp;                                      // Duration 18+ months
-    var leaps_c5 = null;                                              // RSI < 30 Weekly (needs weekly RSI from phase 3)
+    var leaps_c1 = null;                                             // Delta ≥ 0.80 (need chain)
+    var leaps_c2 = null;                                             // BE CAGR ≤ 15% (need chain)
+    var leaps_c3 = hasLeapsExp;                                      // Duration 540+ DTE
+    var leaps_c4 = null;                                             // RSI < 30 Weekly (needs weekly RSI from phase 3)
+    var leaps_c5 = ivRank !== null ? ivRank < 55 : null;             // IV < 55% (Buy Low IV)
     var leaps_c6 = null;                                             // OI ≥ 300 (need chain)
     var leaps_c7 = null;                                             // Bid/Ask ≤ 10% (need chain)
     var leapsScore = [leaps_c1,leaps_c2,leaps_c3,leaps_c4,leaps_c5,leaps_c6,leaps_c7].filter(function(x){return x===true;}).length;
@@ -2813,21 +2814,22 @@ async function runLeapsPhase3(ticker) {
       leapsExpiries = expirations.filter(function(e) { return dteFromStr(e) >= 365; });
     if (leapsExpiries.length === 0) return;
 
-    // Fetch only the single best LEAPS expiry — not up to 4
-    var bestLeapsExp = leapsExpiries[0];
-    var repChain = await fetchChain(ticker, bestLeapsExp, 'call').catch(function() { return null; });
-    var repDTE   = dteFromStr(bestLeapsExp);
+    // James method: use FARTHEST expiry (last in list, sorted ascending)
+    var farthestExp = leapsExpiries[leapsExpiries.length - 1];
+    var repChain = await fetchChain(ticker, farthestExp, 'call').catch(function() { return null; });
+    var repDTE   = dteFromStr(farthestExp);
 
     // Reuse IV rank already fetched in phase 2 — no extra fetchIVData call
     var currentIV = d.ivRank !== null && d.ivRank !== undefined ? d.ivRank : null;
     var bestStrike = null, bestDelta = null, bestPremium = null, bestOI = null, bestSpread = null;
 
+    // Find strike closest to delta 0.90 (James target)
     if (repChain && repChain.strike) {
       var bd = Infinity;
       for (var i = 0; i < repChain.strike.length; i++) {
         var dv = repChain.delta ? repChain.delta[i] : null;
         if (dv === null) continue;
-        var dif = Math.abs(dv - 0.75);
+        var dif = Math.abs(dv - 0.90);
         if (dif < bd) {
           bd = dif;
           bestStrike  = repChain.strike[i];
@@ -2846,44 +2848,19 @@ async function runLeapsPhase3(ticker) {
     var breakeven = (bestStrike && bestPremium) ? bestStrike + bestPremium : null;
     var breakevenCAGR = (breakeven && pd.price && repYears > 0) ?
       (Math.pow(breakeven / pd.price, 1 / repYears) - 1) * 100 : null;
-    var deltaOk = bestDelta !== null && bestDelta >= 0.70 && bestDelta <= 0.90;
 
-    // Intrinsic/Extrinsic ratio for 75/25 strike
-    var bestIntrinsic = (bestStrike && pd.price) ? Math.max(0, pd.price - bestStrike) : null;
-    var bestExtrinsic = (bestPremium && bestIntrinsic !== null) ? Math.max(0, bestPremium - bestIntrinsic) : null;
-    var extPct = (bestExtrinsic !== null && bestPremium > 0) ? (bestExtrinsic / bestPremium * 100) : null;
-
-    // Find 50/50 I/E strike (closest ext% to 50%, ITM only)
-    var ext5050 = null;
-    if (repChain && repChain.strike) {
-      var bestIEDiff = Infinity;
-      for (var ie5 = 0; ie5 < repChain.strike.length; ie5++) {
-        var s5 = repChain.strike[ie5];
-        if (s5 >= pd.price) continue;
-        var m5i = repChain.mid ? repChain.mid[ie5] : null;
-        if (!m5i || m5i <= 0) continue;
-        var intr5 = pd.price - s5;
-        var extr5 = Math.max(0, m5i - intr5);
-        var ePct5 = (extr5 / m5i) * 100;
-        var diff5 = Math.abs(ePct5 - 50);
-        if (diff5 < bestIEDiff) { bestIEDiff = diff5; ext5050 = ePct5; }
-      }
-    }
-    // I/E passes if 75/25 strike ext ≤30% OR 50/50 strike ext 40-60%
-    var ie75ok = extPct !== null && extPct <= 30;
-    var ie50ok = ext5050 !== null && ext5050 >= 40 && ext5050 <= 60;
-    var ieOk = (extPct !== null || ext5050 !== null) ? (ie75ok || ie50ok) : null;
-
-    d.leaps_c1 = currentIV !== null ? currentIV < 55 : null;
-    d.leaps_c2 = ieOk;
-    d.leaps_c3 = deltaOk;
-    d.leaps_c4 = repDTE >= 540;
-    d.leaps_c5 = pd.rsi < 30;
+    // James criteria: Delta ≥ 0.80, BE CAGR ≤ 15%
+    d.leaps_c1 = bestDelta !== null ? bestDelta >= 0.80 : null;
+    d.leaps_c2 = breakevenCAGR !== null ? breakevenCAGR <= 15 : null;
+    d.leaps_c3 = repDTE >= 540;
+    d.leaps_c4 = pd.rsi < 30;
+    d.leaps_c5 = currentIV !== null ? currentIV < 55 : null;
     d.leaps_c6 = bestOI !== null ? bestOI >= 300 : null;
     d.leaps_c7 = bestSpread !== null ? bestSpread <= 10 : null;
-    d.currentIV  = currentIV;    // store actual IV% for card display
-    d.leapsIEPct = extPct;       // store extrinsic % for card display
-    d.leapsRSI   = weeklyRSI;    // store weekly RSI used for LEAPS scoring
+    d.currentIV     = currentIV;
+    d.leapsDelta    = bestDelta;
+    d.leapsCAGR     = breakevenCAGR;
+    d.leapsRSI      = weeklyRSI;
     d.leapsScore = [d.leaps_c1,d.leaps_c2,d.leaps_c3,d.leaps_c4,d.leaps_c5,d.leaps_c6,d.leaps_c7]
       .filter(function(x){return x===true;}).length;
     d.phase = 3;
@@ -3532,29 +3509,34 @@ async function runLeaps(forceTicker) {
     var ivRank     = ivResult ? ivResult.ivRank : null;
     var currentIV  = ivResult ? ivResult.atmIV  : null;
 
-    // Find best expiry (lowest breakeven CAGR at Δ0.75) — used for grading, info box, and chain table
-    var bestExpIdx = 0, bestExpCAGR = Infinity;
+    // James method: use FARTHEST expiry (last in list, sorted ascending)
+    var bestExpIdx = leapsExpiries.length - 1;
+
+    // Also compute CAGR for each expiry at Δ0.90 for the CAGR table
+    var cagrRows = [];
     leapsExpiries.forEach(function(exp, eIdx) {
       var ch  = chains[eIdx];
       var dte = dteFromStr(exp);
       if (!ch || !ch.strike) return;
       var yr  = dte / 365;
-      var bD  = Infinity, bC = null;
+      var bD  = Infinity, bStrike = null, bCAGR = null, bDelta = null, bMid = null;
       for (var i = 0; i < ch.strike.length; i++) {
         var d = ch.delta ? ch.delta[i] : null;
-        if (d === null || d < 0.60 || d > 0.95) continue;
-        var dif = Math.abs(d - 0.75);
+        if (d === null || d < 0.60 || d > 0.98) continue;
+        var dif = Math.abs(d - 0.90);
         if (dif < bD) {
           bD = dif;
-          var m = ch.mid ? ch.mid[i] : null;
-          var be = ch.strike[i] + (m || 0);
-          bC = (be && pd.price && yr > 0) ? (Math.pow(be / pd.price, 1 / yr) - 1) * 100 : null;
+          bStrike = ch.strike[i];
+          bDelta  = d;
+          bMid    = ch.mid ? ch.mid[i] : null;
+          var be  = bStrike + (bMid || 0);
+          bCAGR   = (be && pd.price && yr > 0) ? (Math.pow(be / pd.price, 1 / yr) - 1) * 100 : null;
         }
       }
-      if (bC !== null && bC < bestExpCAGR) { bestExpCAGR = bC; bestExpIdx = eIdx; }
+      if (bStrike !== null) cagrRows.push({ exp: exp, dte: dte, strike: bStrike, delta: bDelta, mid: bMid, cagr: bCAGR });
     });
 
-    // Grade from best expiry
+    // Grade from farthest expiry at Δ0.90
     var repChain = chains[bestExpIdx];
     var repDTE   = dteFromStr(leapsExpiries[bestExpIdx]);
     var bestStrike = null, bestDelta = null, bestPremium = null, bestOI = null, bestSpread = null;
@@ -3564,7 +3546,7 @@ async function runLeaps(forceTicker) {
       for (var i = 0; i < repChain.strike.length; i++) {
         var d3 = repChain.delta ? repChain.delta[i] : null;
         if (d3 === null) continue;
-        var dif3 = Math.abs(d3 - 0.75);
+        var dif3 = Math.abs(d3 - 0.90);
         if (dif3 < bd3) {
           bd3 = dif3;
           bestStrike  = repChain.strike[i];
@@ -3584,55 +3566,18 @@ async function runLeaps(forceTicker) {
     var breakevenCAGR = (breakeven && pd.price && repYears > 0) ?
       (Math.pow(breakeven / pd.price, 1 / repYears) - 1) * 100 : null;
 
-    var deltaOk = bestDelta !== null && bestDelta >= 0.70 && bestDelta <= 0.90;
-
-    // Intrinsic/Extrinsic ratio for selected strike
+    // Intrinsic/Extrinsic for display
     var bestIntrinsic = (bestStrike && pd.price) ? Math.max(0, pd.price - bestStrike) : null;
     var bestExtrinsic = (bestPremium && bestIntrinsic !== null) ? Math.max(0, bestPremium - bestIntrinsic) : null;
     var extPct = (bestExtrinsic !== null && bestPremium > 0) ? (bestExtrinsic / bestPremium * 100) : null;
-    // Find the 50/50 I/E strike (closest ext% to 50%, ITM only) for display
-    var pick50 = { strike: null, mid: null, delta: null, ext: null, oi: null, spread: null, intrinsic: null, extrinsic: null };
-    if (repChain && repChain.strike) {
-      var bestIEDiff = Infinity;
-      for (var ie5 = 0; ie5 < repChain.strike.length; ie5++) {
-        var s5 = repChain.strike[ie5];
-        if (s5 >= pd.price) continue; // ITM only
-        var m5i = repChain.mid ? repChain.mid[ie5] : null;
-        if (!m5i || m5i <= 0) continue;
-        var intr5 = pd.price - s5;
-        var extr5 = Math.max(0, m5i - intr5);
-        var ePct5 = (extr5 / m5i) * 100;
-        var diff5 = Math.abs(ePct5 - 50);
-        if (diff5 < bestIEDiff) {
-          bestIEDiff = diff5;
-          var b5i = repChain.bid ? repChain.bid[ie5] : null;
-          var a5i = repChain.ask ? repChain.ask[ie5] : null;
-          pick50 = {
-            strike: s5, mid: m5i, delta: repChain.delta ? repChain.delta[ie5] : null,
-            ext: ePct5, intrinsic: intr5, extrinsic: extr5,
-            oi: repChain.openInterest ? repChain.openInterest[ie5] : null,
-            spread: (b5i && a5i && m5i) ? ((a5i - b5i) / m5i * 100) : null
-          };
-        }
-      }
-    }
-    var strike5050 = pick50.strike; var ext5050 = pick50.ext; var delta5050 = pick50.delta; var mid5050 = pick50.mid;
-    var be5050 = (strike5050 && mid5050) ? strike5050 + mid5050 : null;
-    var cagr5050 = (be5050 && pd.price && repYears > 0) ? (Math.pow(be5050 / pd.price, 1 / repYears) - 1) * 100 : null;
+    var shareEquiv = bestDelta !== null ? Math.round(bestDelta * 100) : null;
 
-    // I/E passes if 75/25 strike has ext ≤30% OR 50/50 strike has ext 40-60%
-    var ie75ok = extPct !== null && extPct <= 30;
-    var ie50ok = ext5050 !== null && ext5050 >= 40 && ext5050 <= 60;
-    var ieOk = (extPct !== null || ext5050 !== null) ? (ie75ok || ie50ok) : null;
-    var ieDisplay = ie75ok ? fmt(extPct,1) + '% ext (75/25 ✓)' :
-                    ie50ok ? fmt(ext5050,1) + '% ext (50/50 ✓)' :
-                    (extPct !== null ? fmt(extPct,1) + '% ext' : 'N/A');
-
-    var c1 = currentIV !== null ? currentIV < 55 : null;
-    var c2 = ieOk;
-    var c3 = deltaOk;
-    var c4 = repDTE >= 540;
-    var c5 = pd.rsi < 30;
+    // James 7 criteria
+    var c1 = bestDelta !== null ? bestDelta >= 0.80 : null;
+    var c2 = breakevenCAGR !== null ? breakevenCAGR <= 15 : null;
+    var c3 = repDTE >= 540;
+    var c4 = pd.rsi < 30;
+    var c5 = currentIV !== null ? currentIV < 55 : null;
     var c6 = bestOI !== null ? bestOI >= 300 : null;
     var c7 = bestSpread !== null ? bestSpread <= 10 : null;
     var score = [c1,c2,c3,c4,c5,c6,c7].filter(function(x){return x===true;}).length;
@@ -3641,122 +3586,83 @@ async function runLeaps(forceTicker) {
 
     var html = priceBarHtml(ticker, pd, 'Weekly');
 
-    // ── IV summary bar ──
+    // ── Summary bar ──
     html += '<div class="info-box">' +
       '<div class="info-item"><div class="info-label">Current IV</div><div class="info-val">' + (currentIV !== null ? fmt(currentIV,1)+'%' : '—') + '</div></div>' +
       '<div class="info-item"><div class="info-label">IV Rank</div><div class="info-val">' + (ivRank !== null ? fmt(ivRank,1)+'%' : '—') + '</div></div>' +
-      '<div class="info-item"><div class="info-label">Expiry</div><div class="info-val">' + leapsExpiries[bestExpIdx] + '</div></div>' +
+      '<div class="info-item"><div class="info-label">Expiry (Farthest)</div><div class="info-val">' + leapsExpiries[bestExpIdx] + '</div></div>' +
       '<div class="info-item"><div class="info-label">DTE</div><div class="info-val">' + repDTE + '</div></div>' +
     '</div>';
 
-    // ── Side-by-side I/E pick cards ──
-    var cost75  = bestPremium ? bestPremium * 100 : null;
-    var cost50  = mid5050 ? mid5050 * 100 : null;
-    var lev75   = (pd.price && bestPremium && bestPremium > 0) ? (pd.price / bestPremium) : null;
-    var lev50   = (pd.price && mid5050 && mid5050 > 0) ? (pd.price / mid5050) : null;
-    var intr50_100 = pick50.intrinsic !== null ? pick50.intrinsic * 100 : null;
-    var extr50_100 = pick50.extrinsic !== null ? pick50.extrinsic * 100 : null;
-    var intrVal100 = bestIntrinsic !== null ? bestIntrinsic * 100 : null;
-    var extrVal100 = bestExtrinsic !== null ? bestExtrinsic * 100 : null;
+    // ── Single Δ0.90 Pick Card ──
+    var cost1ct = bestPremium ? bestPremium * 100 : null;
+    var leverage = (pd.price && bestPremium && bestPremium > 0) ? (pd.price / bestPremium) : null;
 
-    html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">';
-    html += '<div class="scenario-card"><h4 style="color:var(--accent)">★ 75/25 Pick</h4>' +
+    html += '<div class="scenario-card" style="margin-bottom:16px"><h4 style="color:var(--accent)">★ Δ0.90 Deep ITM Pick</h4>' +
       '<div class="sc-row"><span class="sc-key">Strike</span><span class="sc-val">' + (bestStrike ? fmtDollar(bestStrike) : '—') + '</span></div>' +
       '<div class="sc-row"><span class="sc-key">Delta</span><span class="sc-val">' + (bestDelta !== null ? fmt(bestDelta,2) : '—') + '</span></div>' +
+      '<div class="sc-row"><span class="sc-key">Share Equiv</span><span class="sc-val">' + (shareEquiv !== null ? '~' + shareEquiv + ' shares/ct' : '—') + '</span></div>' +
       '<div class="sc-row"><span class="sc-key">Mid</span><span class="sc-val">' + (bestPremium !== null ? fmtDollar(bestPremium) : '—') + '</span></div>' +
       '<div class="sc-row"><span class="sc-key">Intrinsic</span><span class="sc-val">' + (bestIntrinsic !== null ? fmtDollar(bestIntrinsic) : '—') + '</span></div>' +
       '<div class="sc-row"><span class="sc-key">Extrinsic</span><span class="sc-val">' + (bestExtrinsic !== null ? fmtDollar(bestExtrinsic) : '—') + '</span></div>' +
-      '<div class="sc-row"><span class="sc-key">Ext %</span><span class="sc-val ' + (extPct !== null && extPct <= 30 ? 'up' : 'down') + '">' + (extPct !== null ? fmt(extPct,1)+'%' : '—') + '</span></div>' +
-      '<div class="sc-row" style="border-top:1px solid var(--border);margin-top:6px;padding-top:6px"><span class="sc-key">Cost (1 ct)</span><span class="sc-val">' + (cost75 ? '$'+fmt(cost75,2) : '—') + '</span></div>' +
-      '<div class="sc-row"><span class="sc-key">Max Loss</span><span class="sc-val down">' + (cost75 ? '$'+fmt(cost75,2) : '—') + '</span></div>' +
+      '<div class="sc-row"><span class="sc-key">Ext %</span><span class="sc-val">' + (extPct !== null ? fmt(extPct,1)+'%' : '—') + '</span></div>' +
+      '<div class="sc-row" style="border-top:1px solid var(--border);margin-top:6px;padding-top:6px"><span class="sc-key">Cost (1 ct)</span><span class="sc-val">' + (cost1ct ? '$'+fmt(cost1ct,2) : '—') + '</span></div>' +
+      '<div class="sc-row"><span class="sc-key">Max Loss</span><span class="sc-val down">' + (cost1ct ? '$'+fmt(cost1ct,2) : '—') + '</span></div>' +
       '<div class="sc-row"><span class="sc-key">Max Gain</span><span class="sc-val up">∞</span></div>' +
       '<div class="sc-row"><span class="sc-key">Breakeven</span><span class="sc-val">' + (breakeven ? fmtDollar(breakeven) : '—') + '</span></div>' +
-      '<div class="sc-row"><span class="sc-key">BE CAGR</span><span class="sc-val ' + (breakevenCAGR !== null && breakevenCAGR <= 15 ? 'up' : '') + '">' + (breakevenCAGR !== null ? fmt(breakevenCAGR,1)+'%' : '—') + '</span></div>' +
-      '<div class="sc-row"><span class="sc-key">Leverage</span><span class="sc-val">' + (lev75 ? fmt(lev75,1)+'x' : '—') + '</span></div>' +
+      '<div class="sc-row"><span class="sc-key">BE CAGR</span><span class="sc-val ' + (breakevenCAGR !== null && breakevenCAGR <= 15 ? 'up' : breakevenCAGR !== null && breakevenCAGR > 20 ? 'down' : '') + '">' + (breakevenCAGR !== null ? fmt(breakevenCAGR,1)+'%' : '—') + '</span></div>' +
+      '<div class="sc-row"><span class="sc-key">Leverage</span><span class="sc-val">' + (leverage ? fmt(leverage,1)+'x' : '—') + '</span></div>' +
       '<div class="sc-row"><span class="sc-key">OI</span><span class="sc-val">' + (bestOI !== null ? fmtK(bestOI) : '—') + '</span></div>' +
       '<div class="sc-row"><span class="sc-key">Spread</span><span class="sc-val ' + (bestSpread !== null && bestSpread > 10 ? 'down' : '') + '">' + (bestSpread !== null ? fmt(bestSpread,1)+'%' : '—') + '</span></div>' +
     '</div>';
-    html += '<div class="scenario-card"><h4 style="color:var(--green)">★ 50/50 Pick</h4>' +
-      '<div class="sc-row"><span class="sc-key">Strike</span><span class="sc-val">' + (strike5050 ? fmtDollar(strike5050) : '—') + '</span></div>' +
-      '<div class="sc-row"><span class="sc-key">Delta</span><span class="sc-val">' + (delta5050 !== null ? fmt(delta5050,2) : '—') + '</span></div>' +
-      '<div class="sc-row"><span class="sc-key">Mid</span><span class="sc-val">' + (mid5050 !== null ? fmtDollar(mid5050) : '—') + '</span></div>' +
-      '<div class="sc-row"><span class="sc-key">Intrinsic</span><span class="sc-val">' + (pick50.intrinsic !== null ? fmtDollar(pick50.intrinsic) : '—') + '</span></div>' +
-      '<div class="sc-row"><span class="sc-key">Extrinsic</span><span class="sc-val">' + (pick50.extrinsic !== null ? fmtDollar(pick50.extrinsic) : '—') + '</span></div>' +
-      '<div class="sc-row"><span class="sc-key">Ext %</span><span class="sc-val ' + (ext5050 !== null && ext5050 >= 40 && ext5050 <= 60 ? 'up' : 'down') + '">' + (ext5050 !== null ? fmt(ext5050,1)+'%' : '—') + '</span></div>' +
-      '<div class="sc-row" style="border-top:1px solid var(--border);margin-top:6px;padding-top:6px"><span class="sc-key">Cost (1 ct)</span><span class="sc-val">' + (cost50 ? '$'+fmt(cost50,2) : '—') + '</span></div>' +
-      '<div class="sc-row"><span class="sc-key">Max Loss</span><span class="sc-val down">' + (cost50 ? '$'+fmt(cost50,2) : '—') + '</span></div>' +
-      '<div class="sc-row"><span class="sc-key">Max Gain</span><span class="sc-val up">∞</span></div>' +
-      '<div class="sc-row"><span class="sc-key">Breakeven</span><span class="sc-val">' + (be5050 ? fmtDollar(be5050) : '—') + '</span></div>' +
-      '<div class="sc-row"><span class="sc-key">BE CAGR</span><span class="sc-val ' + (cagr5050 !== null && cagr5050 <= 15 ? 'up' : '') + '">' + (cagr5050 !== null ? fmt(cagr5050,1)+'%' : '—') + '</span></div>' +
-      '<div class="sc-row"><span class="sc-key">Leverage</span><span class="sc-val">' + (lev50 ? fmt(lev50,1)+'x' : '—') + '</span></div>' +
-      '<div class="sc-row"><span class="sc-key">OI</span><span class="sc-val">' + (pick50.oi !== null ? fmtK(pick50.oi) : '—') + '</span></div>' +
-      '<div class="sc-row"><span class="sc-key">Spread</span><span class="sc-val ' + (pick50.spread !== null && pick50.spread > 10 ? 'down' : '') + '">' + (pick50.spread !== null ? fmt(pick50.spread,1)+'%' : '—') + '</span></div>' +
-    '</div></div>';
 
     html += '<div class="scorecard"><h3>LEAPS Deep ITM Call — Score</h3><div class="criteria-list">';
-    html += critRow(1,'IV < 55% (Buy Low IV)', c1, currentIV !== null ? fmt(currentIV,1)+'%' : 'N/A');
-    html += critRow(2, 'Intrinsic/Extrinsic ~75/25 (Ext ≤ 30%) or ~50/50 (40–60%)', c2, ieDisplay);
-    html += critRow(3,'Strike Deep ITM Δ 0.70–0.90', c3, bestDelta !== null ? fmt(bestDelta,2) : 'N/A');
-    html += critRow(4,'Duration 18+ months (540+ DTE)', c4, repDTE+' days');
-    html += critRow(5,'RSI(10) < 30 · Weekly (Entry Timing)', c5, fmt(pd.rsi,1));
+    html += critRow(1,'Delta ≥ 0.80 (Deep ITM, ~stock exposure)', c1, bestDelta !== null ? fmt(bestDelta,2) + (shareEquiv ? ' (~' + shareEquiv + ' sh)' : '') : 'N/A');
+    html += critRow(2,'BE CAGR ≤ 15% (Achievable breakeven)', c2, breakevenCAGR !== null ? fmt(breakevenCAGR,1)+'%' : 'N/A');
+    html += critRow(3,'Duration 18+ months (540+ DTE)', c3, repDTE + ' days');
+    html += critRow(4,'RSI(10) < 30 · Weekly (Buy the dip)', c4, fmt(pd.rsi,1));
+    html += critRow(5,'IV < 55% (Don\'t overpay time value)', c5, currentIV !== null ? fmt(currentIV,1)+'%' : 'N/A');
     html += critRow(6,'Liquidity OI ≥ 300', c6, bestOI !== null ? fmtK(bestOI) : 'N/A');
     html += critRow(7,'Bid/Ask Spread ≤ 10%', c7, bestSpread !== null ? fmt(bestSpread,1)+'%' : 'N/A');
     html += '</div>' + scoreSummaryHtml(score,7) + '</div>';
 
-
-    // ── Contextual suggestions ──
+    // ── Contextual suggestions (James-aligned) ──
     var suggestions = [];
-    if (!c1 && currentIV !== null) {
-      suggestions.push('💡 <strong>IV elevated:</strong> Current IV is ' + fmt(currentIV,1) + '% — you are paying a premium for this option. Wait for a volatility cooldown to get a cheaper entry on the same strike.');
+    if (!c1 && bestDelta !== null) {
+      suggestions.push('💡 <strong>Delta too low:</strong> Delta is ' + fmt(bestDelta,2) + ' — James targets ~0.90 for maximum stock-like exposure. A deeper ITM strike behaves more like owning shares with less time value at risk.');
     }
-    if (!c2 && extPct !== null) {
-      suggestions.push('💡 <strong>I/E ratio off target:</strong> Extrinsic is ' + fmt(extPct,1) + '% of the premium — outside both the 75/25 (≤30%) and 50/50 (40–60%) zones. Check the chain table below for strikes that fall within either target range.');
+    if (!c2 && breakevenCAGR !== null) {
+      if (breakevenCAGR > 20) {
+        suggestions.push('💡 <strong>BE CAGR too high:</strong> ' + fmt(breakevenCAGR,1) + '% CAGR needed just to break even — James says the delta between 11% and 20% CAGR "is huge, absolutely massive." This strike carries significant risk.');
+      } else {
+        suggestions.push('💡 <strong>BE CAGR elevated:</strong> ' + fmt(breakevenCAGR,1) + '% CAGR to break even. Under 15% is ideal. Consider a deeper ITM strike or longer expiry to reduce this.');
+      }
     }
-    if (!c5 && pd.rsi < 40) {
-      suggestions.push('💡 <strong>RSI approaching entry:</strong> RSI is ' + fmt(pd.rsi,1) + ' — not deeply oversold but acceptable for a long-duration LEAPS entry. Watch for a continued dip below 30 for a stronger signal.');
-    } else if (!c5) {
-      suggestions.push('💡 <strong>RSI too high:</strong> RSI is ' + fmt(pd.rsi,1) + ' — wait for a pullback before buying a deep ITM call. Entering on strength increases your cost basis.');
+    if (!c4 && pd.rsi < 40) {
+      suggestions.push('💡 <strong>RSI approaching entry:</strong> RSI is ' + fmt(pd.rsi,1) + ' — not deeply oversold yet. James says "buy options when prices are crazy low." Watch for a continued dip below 30.');
+    } else if (!c4) {
+      suggestions.push('💡 <strong>RSI too high:</strong> RSI is ' + fmt(pd.rsi,1) + ' — James\'s rule: "You do not buy the tops." Wait for a pullback to get a cheaper entry.');
+    }
+    if (!c5 && currentIV !== null) {
+      suggestions.push('💡 <strong>IV elevated:</strong> Current IV is ' + fmt(currentIV,1) + '% — you are overpaying for time value. Wait for a volatility cooldown to get a cheaper entry on the same strike.');
     }
     if (!c6 && bestOI !== null) {
-      suggestions.push('💡 <strong>Low liquidity:</strong> Open interest is ' + fmtK(bestOI) + ' — below the 300 threshold. Wide spreads and difficulty exiting are risks. Check a different expiry or a more liquid underlying.');
+      suggestions.push('💡 <strong>Low liquidity:</strong> Open interest is ' + fmtK(bestOI) + ' — below 300. Wide spreads and difficulty exiting are risks. Check a different expiry or a more liquid underlying.');
     }
     if (!c7 && bestSpread !== null) {
-      suggestions.push('💡 <strong>Wide spread:</strong> Bid/ask spread is ' + fmt(bestSpread,1) + '% — this eats directly into your return. Use a limit order at the mid price and be patient filling it.');
+      suggestions.push('💡 <strong>Wide spread:</strong> Bid/ask spread is ' + fmt(bestSpread,1) + '% — this eats directly into your return. Use a limit order at the mid price.');
     }
     if (score === 7) {
-      suggestions.push('✅ <strong>All criteria met</strong> — strong LEAPS setup. Consider entering at the ★ strike in the best expiry table below.');
+      suggestions.push('✅ <strong>All criteria met</strong> — strong LEAPS setup per James\'s method. Consider entering at the ★ strike on the farthest expiry.');
     }
     if (suggestions.length > 0) {
       html += '<div class="suggestions-box">' + suggestions.map(function(s){ return '<div class="suggestion-item">' + s + '</div>'; }).join('') + '</div>';
     }
 
     // ── CAGR across expiries mini-table ──
-    var cagrRows = [];
-    leapsExpiries.forEach(function(exp, eIdx) {
-      var ch  = chains[eIdx];
-      var dte = dteFromStr(exp);
-      if (!ch || !ch.strike) return;
-      var yr  = dte / 365;
-      var bD  = Infinity, bStrike = null, bCAGR = null, bDelta = null, bMid = null;
-      for (var i = 0; i < ch.strike.length; i++) {
-        var d = ch.delta ? ch.delta[i] : null;
-        if (d === null || d < 0.60 || d > 0.95) continue;
-        var dif = Math.abs(d - 0.75);
-        if (dif < bD) {
-          bD = dif;
-          bStrike = ch.strike[i];
-          bDelta  = d;
-          bMid    = ch.mid ? ch.mid[i] : null;
-          var be  = bStrike + (bMid || 0);
-          bCAGR   = (be && pd.price && yr > 0) ? (Math.pow(be / pd.price, 1 / yr) - 1) * 100 : null;
-        }
-      }
-      if (bStrike !== null) cagrRows.push({ exp: exp, dte: dte, strike: bStrike, delta: bDelta, mid: bMid, cagr: bCAGR });
-    });
-
     if (cagrRows.length > 0) {
       html += '<div class="scorecard" style="margin-top:10px">' +
-        '<h3>CAGR by Expiry <span style="color:var(--text-muted);font-weight:400;font-size:11px">— Δ0.75 strike, longer = cheaper</span></h3>' +
+        '<h3>CAGR by Expiry <span style="color:var(--text-muted);font-weight:400;font-size:11px">— Δ0.90 strike, farthest = preferred</span></h3>' +
         '<div class="leaps-table-wrap"><table><thead><tr>' +
         '<th>Expiry</th><th>DTE</th><th>Strike</th><th>Mid</th><th>Delta</th><th>CAGR%</th>' +
         '</tr></thead><tbody>';
@@ -3768,7 +3674,7 @@ async function runLeaps(forceTicker) {
           '<td>' + fmtDollar(r.strike) + '</td>' +
           '<td>' + (r.mid !== null ? fmtDollar(r.mid) : '—') + '</td>' +
           '<td>' + fmt(r.delta,2) + '</td>' +
-          '<td ' + (r.cagr !== null ? (r.cagr > 35 ? 'style="color:var(--red)"' : 'style="color:var(--green)"') : '') + '>' +
+          '<td ' + (r.cagr !== null ? (r.cagr > 20 ? 'style="color:var(--red)"' : r.cagr <= 15 ? 'style="color:var(--green)"' : '') : '') + '>' +
           (r.cagr !== null ? fmt(r.cagr,1)+'%' : '—') + '</td>' +
         '</tr>';
       });
@@ -3778,14 +3684,14 @@ async function runLeaps(forceTicker) {
     var selExp = leapsExpiries[bestExpIdx];
     var selCh  = chains[bestExpIdx];
     var selDte = dteFromStr(selExp);
-    html += '<div class="chain-section"><h3>Best LEAPS Expiry <span style="color:var(--accent);font-weight:400;font-size:11px">' + selExp + ' (' + selDte + ' DTE) — lowest breakeven CAGR</span></h3>';
+    html += '<div class="chain-section"><h3>Farthest LEAPS Expiry <span style="color:var(--accent);font-weight:400;font-size:11px">' + selExp + ' (' + selDte + ' DTE)</span></h3>';
     if (!selCh || !selCh.strike) {
       html += '<p style="color:var(--text-muted);font-size:11px">No data.</p>';
     } else {
       var rows = [];
       for (var i = 0; i < selCh.strike.length; i++) {
         var d5 = selCh.delta ? selCh.delta[i] : null;
-        if (d5 !== null && d5 >= 0.60 && d5 <= 0.95) {
+        if (d5 !== null && d5 >= 0.60 && d5 <= 0.98) {
           var b5  = selCh.bid ? selCh.bid[i] : null;
           var a5  = selCh.ask ? selCh.ask[i] : null;
           var m5  = selCh.mid ? selCh.mid[i] : null;
@@ -3798,44 +3704,24 @@ async function runLeaps(forceTicker) {
         }
       }
       rows.sort(function(a, b) { return a.strike - b.strike; });
-      // Find 75/25 strike (closest delta to 0.75)
-      var best75 = -1, best75D = Infinity;
+      // Find Δ0.90 strike (James target)
+      var best90 = -1, best90D = Infinity;
       rows.forEach(function(r, ri) {
-        var dif = Math.abs(r.delta - 0.75);
-        if (dif < best75D) { best75D = dif; best75 = ri; }
+        var dif = Math.abs(r.delta - 0.90);
+        if (dif < best90D) { best90D = dif; best90 = ri; }
       });
-      // Find 50/50 strike (closest ext% to 50%, ITM only)
-      var best50 = -1, best50D = Infinity;
-      rows.forEach(function(r, ri) {
-        var intr = Math.max(0, pd.price - r.strike);
-        var extr = r.mid !== null ? Math.max(0, r.mid - intr) : 0;
-        var ePct = (r.mid && r.mid > 0) ? (extr / r.mid * 100) : null;
-        if (ePct !== null && r.strike < pd.price) {
-          var dif = Math.abs(ePct - 50);
-          if (dif < best50D) { best50D = dif; best50 = ri; }
-        }
-      });
-      // Expand visible window to include both recommended strikes
-      var loIdx = Math.min(best75, best50 >= 0 ? best50 : best75);
-      var hiIdx = Math.max(best75, best50 >= 0 ? best50 : best75);
-      var sliceStart = Math.max(0, loIdx - 3);
-      var sliceEnd   = Math.min(rows.length, hiIdx + 4);
+      var sliceStart = Math.max(0, best90 - 4);
+      var sliceEnd   = Math.min(rows.length, best90 + 5);
       var visRows    = rows.slice(sliceStart, sliceEnd);
-      var vis75      = best75 - sliceStart;
-      var vis50      = best50 >= 0 ? best50 - sliceStart : -1;
+      var vis90      = best90 - sliceStart;
       html += '<div class="leaps-table-wrap"><table><thead><tr>' +
         '<th>Strike</th><th>Bid</th><th>Ask</th><th>Mid</th><th>Intrinsic</th><th>Extrinsic</th><th>Delta</th><th>OI</th><th>Sprd%</th><th>CAGR%</th>' +
         '</tr></thead><tbody>';
       visRows.forEach(function(row, ri) {
-        var is75 = ri === vis75;
-        var is50 = ri === vis50;
-        var isRec = is75 || is50;
+        var isRec = ri === vis90;
         var intrL = Math.max(0, pd.price - row.strike);
         var extrL = row.mid !== null ? Math.max(0, row.mid - intrL) : 0;
-        var starLabel = '';
-        if (is75 && is50) starLabel = '<span class="star" style="color:var(--accent)">★ 75/25 & 50/50</span>';
-        else if (is75) starLabel = '<span class="star" style="color:var(--accent)">★ 75/25</span>';
-        else if (is50) starLabel = '<span class="star" style="color:var(--green)">★ 50/50</span>';
+        var starLabel = isRec ? '<span class="star" style="color:var(--accent)">★ Δ0.90</span>' : '';
         html += '<tr class="' + (isRec ? 'recommended' : '') + '">' +
           '<td class="strike-cell">' + starLabel + fmtDollar(row.strike) + '</td>' +
           '<td>' + fmtDollar(row.bid) + '</td>' +
@@ -3846,7 +3732,7 @@ async function runLeaps(forceTicker) {
           '<td>' + fmt(row.delta,2) + '</td>' +
           '<td>' + fmtK(row.oi) + '</td>' +
           '<td ' + (row.spread > 10 ? 'style="color:var(--red)"' : '') + '>' + (row.spread !== null ? fmt(row.spread,1)+'%' : '—') + '</td>' +
-          '<td ' + (row.cagr !== null ? (row.cagr > 35 ? 'style="color:var(--red)"' : 'style="color:var(--green)"') : '') + '>' + (row.cagr !== null ? fmt(row.cagr,1)+'%' : '—') + '</td>' +
+          '<td ' + (row.cagr !== null ? (row.cagr > 20 ? 'style="color:var(--red)"' : row.cagr <= 15 ? 'style="color:var(--green)"' : '') : '') + '>' + (row.cagr !== null ? fmt(row.cagr,1)+'%' : '—') + '</td>' +
         '</tr>';
       });
       html += '</tbody></table></div>';
