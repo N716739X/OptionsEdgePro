@@ -2609,23 +2609,23 @@ function renderColumns() {
   var colSynth = document.getElementById('col-synth');
 
   // Find the single best trade across all columns (highest score, min 6/7)
-  var bestTrade = { ticker: null, strategy: null, score: 0 };
-  var candidates = [
+  // Collect every visible card with its score, then pick the absolute best
+  var allTop = [];
+  var colMap = [
     { list: putSorted,   strat: 'put',   key: 'putScore' },
     { list: ccSorted,    strat: 'cc',    key: 'ccScore' },
     { list: leapsSorted, strat: 'leaps', key: 'leapsScore' },
     { list: synthSorted, strat: 'synth', key: 'synthScore' }
   ];
-  for (var ci = 0; ci < candidates.length; ci++) {
-    var c = candidates[ci];
-    if (c.list.length > 0) {
-      var topT = c.list[0];
-      var topS = cardData[topT][c.key] || 0;
-      if (topS > bestTrade.score) {
-        bestTrade = { ticker: topT, strategy: c.strat, score: topS };
-      }
+  for (var ci = 0; ci < colMap.length; ci++) {
+    var cList = colMap[ci].list.slice(0, 4);
+    for (var cj = 0; cj < cList.length; cj++) {
+      var cTk = cList[cj];
+      allTop.push({ ticker: cTk, strategy: colMap[ci].strat, score: cardData[cTk][colMap[ci].key] || 0 });
     }
   }
+  allTop.sort(function(a, b) { return b.score - a.score; });
+  var bestTrade = allTop.length > 0 ? allTop[0] : { ticker: null, strategy: null, score: 0 };
   var starMin = 6; // minimum score to earn the star
 
   colPut.innerHTML   = putSorted.slice(0,4).map(function(t,i)   { return buildColCard(t, cardData[t], 'put',   i, bestTrade.score >= starMin && bestTrade.ticker === t && bestTrade.strategy === 'put'); }).join('');
