@@ -3739,6 +3739,29 @@ async function runLeaps(forceTicker) {
     }
     html += '</div>';
 
+    // ── Position Scenarios at Expiry ──
+    if (bestStrike !== null && bestPremium !== null) {
+      var scenarioPcts = [-30, -20, -10, 0, 10, 20, 50, 100];
+      var scenarioLabels = ['-30% Crash', '-20% Drop', '-10% Dip', 'Flat', '+10% Rally', '+20% Rally', '+50% Rip', '+100% Moon'];
+      html += '<div class="chain-section"><h3>Position Scenarios at Expiry</h3><div class="scenarios">';
+      scenarioPcts.forEach(function(pct, si) {
+        var futurePrice = pd.price * (1 + pct / 100);
+        var callValue   = Math.max(0, futurePrice - bestStrike);
+        var pnl         = callValue - bestPremium;
+        var pnlPer      = pnl * 100; // per contract
+        var zone = futurePrice > bestStrike ? 'Call ITM — profit above breakeven' :
+                   futurePrice === bestStrike ? 'At strike — call expires worthless' :
+                   'Below strike — call expires worthless';
+        html += '<div class="scenario-card"><h4>' + scenarioLabels[si] + '</h4>' +
+          '<div class="sc-row"><span class="sc-key">Price</span><span class="sc-val">' + fmtDollar(futurePrice) + '</span></div>' +
+          '<div class="sc-row"><span class="sc-key">Zone</span><span class="sc-val" style="font-size:10px;color:var(--text-muted)">' + zone + '</span></div>' +
+          '<div class="sc-row"><span class="sc-key">P&L/share</span><span class="sc-val ' + (pnl >= 0 ? 'up' : 'down') + '">' + (pnl >= 0 ? '+' : '') + fmtDollar(pnl) + '</span></div>' +
+          '<div class="sc-row"><span class="sc-key">P&L/contract</span><span class="sc-val ' + (pnlPer >= 0 ? 'up' : 'down') + '">' + (pnlPer >= 0 ? '+$' : '-$') + fmt(Math.abs(pnlPer),2) + '</span></div>' +
+        '</div>';
+      });
+      html += '</div></div>';
+    }
+
     document.getElementById('leaps-results').innerHTML = html;
   } catch(e) {
     setStatus('leaps-status', '✗ ' + e.message, 'error');
