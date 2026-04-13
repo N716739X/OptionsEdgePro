@@ -2388,7 +2388,7 @@ function buildSkeletonRow(ticker) {
 
 // Build a full rich card for a dashboard column
 function buildColCard(ticker, d, strategy, rank) {
-  var isTop3 = (typeof rank === 'number' && rank === 0);
+  var isTop1 = (typeof rank === 'number' && rank === 0);
   var isScored = (strategy === 'put');
   var score;
   if (strategy === 'put')        score = d.putScore || 0;
@@ -2534,7 +2534,7 @@ function buildColCard(ticker, d, strategy, rank) {
   return '<div class="col-card' + cardGlowCls + '" id="colrow-' + ticker + '-' + strategy + '" onclick="navigateToAnalyzer(\'' + ticker + '\',\'' + strategy + '\')">' +
     '<div class="card-header">' +
       '<div>' +
-        '<div class="card-ticker">' + (isTop3 ? '<span class="top3-star">★</span>' : '') + ticker + '</div>' +
+        '<div class="card-ticker">' + (isTop1 && score >= 6 ? '<span class="top3-star">★</span>' : '') + ticker + '</div>' +
         '<div class="card-name" style="font-size:9px;color:var(--text-muted)">' + (strategy.toUpperCase()) + (d.expiry ? ' · ' + d.expiry : '') + '</div>' +
       '</div>' +
       '<div class="grade-box grade-' + grade + '">' + (grade || '—') + '</div>' +
