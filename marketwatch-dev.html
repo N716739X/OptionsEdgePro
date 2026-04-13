@@ -3598,17 +3598,7 @@ async function runLeaps(forceTicker) {
     var cost1ct = bestPremium ? bestPremium * 100 : null;
     var leverage = (pd.price && bestPremium && bestPremium > 0) ? (pd.price / bestPremium) : null;
 
-    html += '<div class="scenario-card" style="margin-bottom:12px"><h4 style="color:var(--accent)">★ Δ0.90 Deep ITM Pick</h4>' +
-      '<div class="sc-row"><span class="sc-key">Strike</span><span class="sc-val">' + (bestStrike ? fmtDollar(bestStrike) : '—') + '</span></div>' +
-      '<div class="sc-row"><span class="sc-key">Delta</span><span class="sc-val">' + (bestDelta !== null ? fmt(bestDelta,2) : '—') + '</span></div>' +
-      '<div class="sc-row"><span class="sc-key">Share Equiv</span><span class="sc-val">' + (shareEquiv !== null ? '~' + shareEquiv + ' shares/ct' : '—') + '</span></div>' +
-      '<div class="sc-row"><span class="sc-key">Mid</span><span class="sc-val">' + (bestPremium !== null ? fmtDollar(bestPremium) : '—') + '</span></div>' +
-      '<div class="sc-row"><span class="sc-key">Intrinsic</span><span class="sc-val">' + (bestIntrinsic !== null ? fmtDollar(bestIntrinsic) : '—') + '</span></div>' +
-      '<div class="sc-row"><span class="sc-key">Extrinsic</span><span class="sc-val">' + (bestExtrinsic !== null ? fmtDollar(bestExtrinsic) : '—') + '</span></div>' +
-      '<div class="sc-row"><span class="sc-key">Ext %</span><span class="sc-val">' + (extPct !== null ? fmt(extPct,1)+'%' : '—') + '</span></div>' +
-      '<div class="sc-row"><span class="sc-key">OI</span><span class="sc-val">' + (bestOI !== null ? fmtK(bestOI) : '—') + '</span></div>' +
-      '<div class="sc-row"><span class="sc-key">Spread</span><span class="sc-val ' + (bestSpread !== null && bestSpread > 10 ? 'down' : '') + '">' + (bestSpread !== null ? fmt(bestSpread,1)+'%' : '—') + '</span></div>' +
-    '</div>';
+
 
     // ── Standalone Trade Summary (horizontal grid) ──
     var beAwayPct = (breakeven && pd.price) ? ((breakeven / pd.price - 1) * 100) : null;
@@ -3617,7 +3607,8 @@ async function runLeaps(forceTicker) {
         '<div class="ts-val ' + cls + '">' + val + '</div>' +
         (note ? '<div class="ts-note">' + note + '</div>' : '') + '</div>';
     }
-    html += '<div class="trade-summary"><h4>Trade Summary — 1 Contract (100 shares)</h4><div class="trade-summary-grid">' +
+    html += '<div class="trade-summary"><h4>★ Δ0.90 Deep ITM Pick — 1 Contract (100 shares)</h4><div class="trade-summary-grid">' +
+      tsItem('Strike',      bestStrike ? fmtDollar(bestStrike) : '—', 'ts-neutral', 'Δ' + (bestDelta !== null ? fmt(bestDelta,2) : '') + ' ~' + (shareEquiv || '?') + ' shares/ct') +
       tsItem('Cost (1 ct)', cost1ct ? '$' + fmt(cost1ct,2) : '—', 'ts-loss', 'Premium paid for LEAPS call') +
       tsItem('Max Loss',    cost1ct ? '$' + fmt(cost1ct,2) : '—', 'ts-loss', 'Total premium at risk') +
       tsItem('Max Gain',    '∞', 'ts-gain', 'Unlimited upside above breakeven') +
