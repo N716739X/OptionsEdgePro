@@ -1471,7 +1471,7 @@ input, textarea, select { -webkit-user-select: text; user-select: text; }
       <div class="dash-col-header">
         <div class="dash-col-header-top">
           <span class="dash-col-title">LEAPS</span>
-          <span class="dash-col-sub">Ranked by RSI ↑</span>
+          <span class="dash-col-sub">Ranked by MR ↑</span>
         </div>
         <span class="dash-col-desc">Leveraged long-term exposure for less capital</span>
       </div>
@@ -1482,7 +1482,7 @@ input, textarea, select { -webkit-user-select: text; user-select: text; }
       <div class="dash-col-header">
         <div class="dash-col-header-top">
           <span class="dash-col-title">Synthetic Long</span>
-          <span class="dash-col-sub">Ranked by RSI ↑</span>
+          <span class="dash-col-sub">Ranked by MR ↑</span>
         </div>
         <span class="dash-col-desc">Replicate stock ownership with options</span>
       </div>
@@ -2136,6 +2136,46 @@ function fmtK(n) {
 function spinner() {
   return '<span class="spinner"></span>';
 }
+// ── Mean Reversion: Wilder RSI(16) → EMA(12) smooth → (val-50)/16 ──
+function calcMeanRev(closes) {
+  if (!closes || closes.length < 30) return NaN;
+  var period = 16, emaP = 12, scale = 16;
+  // Wilder RSI series
+  var gains = [], losses = [];
+  for (var i = 1; i < closes.length; i++) {
+    var diff = closes[i] - closes[i - 1];
+    gains.push(Math.max(0, diff));
+    losses.push(Math.max(0, -diff));
+  }
+  var avgG = 0, avgL = 0;
+  for (var j = 0; j < period; j++) { avgG += gains[j]; avgL += losses[j]; }
+  avgG /= period; avgL /= period;
+  var rsiSeries = [];
+  for (var k = period; k < gains.length; k++) {
+    avgG = (avgG * (period - 1) + gains[k]) / period;
+    avgL = (avgL * (period - 1) + losses[k]) / period;
+    rsiSeries.push(avgL === 0 ? 100 : 100 - (100 / (1 + avgG / avgL)));
+  }
+  if (rsiSeries.length < emaP) return NaN;
+  // EMA smooth
+  var mult = 2 / (emaP + 1);
+  var ema = rsiSeries[0];
+  for (var m = 1; m < rsiSeries.length; m++) {
+    ema = (rsiSeries[m] - ema) * mult + ema;
+  }
+  return (ema - 50) / scale;
+}
+
+// Fetch daily or weekly closes for mean reversion calc
+async function fetchMeanRev(ticker, interval) {
+  var intv = interval || '1day';
+  var data = await fetchTD('time_series', { symbol: ticker, interval: intv, outputsize: 60 });
+  var vals = data.values || [];
+  // TwelveData returns newest first — reverse to oldest-first
+  var closes = vals.map(function(v) { return parseFloat(v.close); }).reverse();
+  return calcMeanRev(closes);
+}
+
 function dteFromStr(dateStr) {
   if (!dateStr) return null;
   var parts = dateStr.split('-');
@@ -2250,21 +2290,19 @@ async function fetchMD(path, params) {
 
 async function fetchPriceData(ticker, tf) {
   var useTF = tf || currentTF; // callers can pin a timeframe; analyzer tabs use currentTF
-  var [quoteData, rsiData, smaData] = await Promise.all([
+  var [quoteData, smaData, meanRev] = await Promise.all([
     fetchTD('quote',  { symbol: ticker }),
-    fetchTD('rsi',    { symbol: ticker, interval: useTF, time_period: 10, outputsize: 1 }),
-    fetchTD('sma',    { symbol: ticker, interval: useTF, time_period: 200, outputsize: 1 })
+    fetchTD('sma',    { symbol: ticker, interval: useTF, time_period: 200, outputsize: 1 }),
+    fetchMeanRev(ticker, useTF)
   ]);
   var price    = parseFloat(quoteData.close || quoteData.price);
   var change   = parseFloat(quoteData.change);
   var changePct= parseFloat(quoteData.percent_change);
   var week52H  = parseFloat(quoteData.fifty_two_week && quoteData.fifty_two_week.high  ? quoteData.fifty_two_week.high  : quoteData.high);
   var week52L  = parseFloat(quoteData.fifty_two_week && quoteData.fifty_two_week.low   ? quoteData.fifty_two_week.low   : quoteData.low);
-  var rsiVals  = rsiData.values || [];
-  var rsi      = parseFloat(rsiVals.length > 0 ? rsiVals[0].rsi : (rsiData.rsi || NaN));
   var smaVals  = smaData.values || [];
   var sma200   = parseFloat(smaVals.length > 0 ? smaVals[0].sma : (smaData.sma || NaN));
-  return { price, change, changePct, week52H, week52L, rsi, sma200 };
+  return { price, change, changePct, week52H, week52L, meanRev, sma200 };
 }
 
 // IV Rank derived from chain IV values (ATM IV vs chain min/max)
@@ -2359,7 +2397,7 @@ function earningsBeforeExpiry(ticker, expiryStr) {
 // ═══════════════════════════════════════════════════════
 // DASHBOARD — 4-COLUMN LAYOUT
 // Columns: CSP (live scored) | CC (live scored) |
-//          LEAPS (RSI proxy) | Synthetic Long (RSI proxy)
+//          LEAPS (MR proxy) | Synthetic Long (MR proxy)
 // ═══════════════════════════════════════════════════════
 
 function scoreToGrade(score, phase) {
@@ -2389,7 +2427,7 @@ function renderSkeletons() {
 }
 
 function buildSkeletonRow(ticker) {
-  var skMini = ['IV','RSI','EARN','PREM','DELTA','DTE'].map(function(l) {
+  var skMini = ['IV','MR','EARN','PREM','DELTA','DTE'].map(function(l) {
     return '<div class="mini-box mini-na"><span class="mini-label">' + l + '</span><span class="mini-val">—</span></div>';
   }).join('');
   return '<div class="col-card col-loading">' +
@@ -2435,9 +2473,9 @@ function buildColCard(ticker, d, strategy, rank, isBestTrade) {
     }
   }
 
-  var rsi      = d.rsi;
-  var rsiColor = !isNaN(rsi) ? (rsi < 30 ? 'down' : rsi > 65 ? 'up' : '') : '';
-  var rsiDisp  = !isNaN(rsi) ? fmt(rsi, 1) : '—';
+  var mr      = d.meanRev;
+  var mrColor = !isNaN(mr) ? (mr <= -2 ? 'down' : mr >= 2 ? 'up' : '') : '';
+  var mrDisp  = !isNaN(mr) ? (mr >= 0 ? '+' : '') + fmt(mr, 2) + 'σ' : '—';
 
   // Badge
   var badgeCls, badgeTxt;
@@ -2467,7 +2505,7 @@ function buildColCard(ticker, d, strategy, rank, isBestTrade) {
   }
   var priceColor = rangePos > 70 ? 'up' : rangePos < 30 ? 'down' : '';
 
-  // Criteria mini boxes — PUT/CC use scored criteria, LEAPS/Synth show RSI + price position
+  // Criteria mini boxes — PUT/CC use scored criteria, LEAPS/Synth show MR + price position
   // Pick the right criteria set based on strategy
   var cx = {};
   if (strategy === 'put') {
@@ -2493,37 +2531,38 @@ function buildColCard(ticker, d, strategy, rank, isBestTrade) {
 
   var criteriaHtml;
   if (isScored) {
-    // Put: 7 criteria — IV>80, RSI<30, SMA200, Earnings, Premium, Delta, DTE
+    // Put: 7 criteria — IV>80, MR≤-2, SMA200, Earnings, Premium, Delta, DTE
     var putSmaDisp = cx.c3 === true ? '▲' : cx.c3 === false ? '▼' : '—';
     var putEarnDisp = cx.c4 === true ? 'OK' : cx.c4 === false ? 'RISK' : (d.phase < 2 ? '…' : '—');
     var putDeltaDisp = d.phase < 2 ? '…' : (cx.c6 === true ? '✓' : cx.c6 === false ? '✗' : '—');
     criteriaHtml =
       mb('IV',    cx.c1, ivDisp) +
-      mb('RSI',   cx.c2, rsiDisp) +
+      mb('MR',    cx.c2, mrDisp) +
       mb('SMA',   cx.c3, putSmaDisp) +
       mb('EARN',  cx.c4, putEarnDisp) +
       mb('PREM',  cx.c5, premDisp) +
       mb('DELTA', cx.c6, putDeltaDisp) +
       mb('DTE',   cx.c7, dteDisp);
   } else if (strategy === 'cc') {
-    // CC: 7 criteria — IV>80, RSI>65, SMA200, Earnings, Premium, Delta, DTE
+    // CC: 7 criteria — IV>80, MR≥+2, SMA200, Earnings, Premium, Delta, DTE
     var ccSmaDisp = cx.c3 === true ? '▲' : cx.c3 === false ? '▼' : '—';
     var ccEarnDisp = cx.c4 === true ? 'OK' : cx.c4 === false ? 'RISK' : (d.phase < 2 ? '…' : '—');
     var ccDeltaDisp = d.phase < 2 ? '…' : (cx.c6 === true ? '✓' : cx.c6 === false ? '✗' : '—');
     criteriaHtml =
       mb('IV',    cx.c1, ivDisp) +
-      mb('RSI',   cx.c2, rsiDisp) +
+      mb('MR',    cx.c2, mrDisp) +
       mb('SMA',   cx.c3, ccSmaDisp) +
       mb('EARN',  cx.c4, ccEarnDisp) +
       mb('PREM',  cx.c5, premDisp) +
       mb('DELTA', cx.c6, ccDeltaDisp) +
       mb('DTE',   cx.c7, dteDisp);
   } else if (strategy === 'leaps') {
-    // LEAPS James: 7 criteria — Delta, BE CAGR, Duration, RSI, IV, OI, Spread
+    // LEAPS James: 7 criteria — MR, Delta, BE CAGR, Duration, IV, OI, Spread
     var deltaDisp = d.leapsDelta !== null && d.leapsDelta !== undefined ? fmt(d.leapsDelta,2) : (d.leaps_c1 === null ? '—' : (d.leaps_c1 ? '✓' : '✗'));
     var cagrDisp  = d.leapsCAGR !== null && d.leapsCAGR !== undefined ? fmt(d.leapsCAGR,1)+'%' : (d.leaps_c2 === null ? '—' : (d.leaps_c2 ? '✓' : '✗'));
+    var leapsMrDisp = d.leapsMR !== undefined && !isNaN(d.leapsMR) ? (d.leapsMR >= 0 ? '+' : '') + fmt(d.leapsMR,2) + 'σ' : mrDisp;
     criteriaHtml =
-      mb('RSI',   d.leaps_c4, (d.leapsRSI !== undefined && !isNaN(d.leapsRSI) ? fmt(d.leapsRSI,1) : rsiDisp) + 'w') +
+      mb('MR',    d.leaps_c4, leapsMrDisp) +
       mb('DELTA', d.leaps_c1, deltaDisp) +
       mb('CAGR',  d.leaps_c2, cagrDisp) +
       mb('DUR',   d.leaps_c3, d.leaps_c3 === true ? '✓' : d.leaps_c3 === false ? '✗' : '—') +
@@ -2531,9 +2570,10 @@ function buildColCard(ticker, d, strategy, rank, isBestTrade) {
       mb('OI',    d.leaps_c6, d.leaps_c6 === null ? '—' : (d.leaps_c6 ? '✓' : '✗')) +
       mb('BID/A', d.leaps_c7, d.leaps_c7 === null ? '—' : (d.leaps_c7 ? '✓' : '✗'));
   } else {
-    // Synthetic Long: 7 criteria — RSI<30 Wkly, IV>50%, DTE≥540, Debit≤5%, Call OI, Put OI, Spreads
+    // Synthetic Long: 7 criteria — MR≤-2 Wkly, IV>50%, DTE≥540, Debit≤5%, Call OI, Put OI, Spreads
+    var synthMrDisp = d.synthMR !== undefined && !isNaN(d.synthMR) ? (d.synthMR >= 0 ? '+' : '') + fmt(d.synthMR,2) + 'σ' : mrDisp;
     criteriaHtml =
-      mb('RSI',   d.synth_c1, rsiDisp) +
+      mb('MR',    d.synth_c1, synthMrDisp) +
       mb('IV',    d.synth_c2, d.synth_c2 === null ? '—' : (d.synth_c2 ? '✓' : '✗')) +
       mb('DUR',   d.synth_c3, d.synth_c3 === true ? '✓' : d.synth_c3 === false ? '✗' : '—') +
       mb('DEBIT', d.synth_c4, d.synth_c4 === null ? '—' : (d.synth_c4 ? '✓' : '✗')) +
@@ -2578,7 +2618,7 @@ function buildColCard(ticker, d, strategy, rank, isBestTrade) {
         ? 'VOL 30D ' + sparklineSVG(d.atrSeries, 60, 16)
         : 'VOL 30D <span style="color:var(--text-muted);opacity:0.4">—</span>') +
     '</div>' +
-    '<div class="card-footer">' + scoreHtml + '<span style="font-size:9px;color:var(--text-muted)">RSI ' + rsiDisp + '</span></div>' +
+    '<div class="card-footer">' + scoreHtml + '<span style="font-size:9px;color:var(--text-muted)">MR ' + mrDisp + '</span></div>' +
   '</div>';
 }
 
@@ -2589,36 +2629,36 @@ function renderColumns() {
   var leapsSorted = putSorted.slice();
   var synthSorted = putSorted.slice();
 
-  // CSP: sort by putScore desc, ties broken by RSI asc
+  // CSP: sort by putScore desc, ties broken by MR asc (most oversold first)
   putSorted.sort(function(a, b) {
     var sa = cardData[a].putScore !== null ? cardData[a].putScore : -1;
     var sb = cardData[b].putScore !== null ? cardData[b].putScore : -1;
     if (sb !== sa) return sb - sa;
-    return (cardData[a].rsi || 999) - (cardData[b].rsi || 999);
+    return (cardData[a].meanRev || 999) - (cardData[b].meanRev || 999);
   });
 
-  // CC: sort by ccScore desc, ties broken by RSI desc
+  // CC: sort by ccScore desc, ties broken by MR desc (most overbought first)
   ccSorted.sort(function(a, b) {
     var sa = cardData[a].ccScore !== null ? cardData[a].ccScore : -1;
     var sb = cardData[b].ccScore !== null ? cardData[b].ccScore : -1;
     if (sb !== sa) return sb - sa;
-    return (cardData[b].rsi || 0) - (cardData[a].rsi || 0);
+    return (cardData[b].meanRev || -999) - (cardData[a].meanRev || -999);
   });
 
-  // LEAPS: sort by leapsScore desc, ties broken by RSI asc
+  // LEAPS: sort by leapsScore desc, ties broken by MR asc (most oversold first)
   leapsSorted.sort(function(a, b) {
     var sa = cardData[a].leapsScore !== null ? cardData[a].leapsScore : -1;
     var sb = cardData[b].leapsScore !== null ? cardData[b].leapsScore : -1;
     if (sb !== sa) return sb - sa;
-    return (cardData[a].rsi || 999) - (cardData[b].rsi || 999);
+    return (cardData[a].meanRev || 999) - (cardData[b].meanRev || 999);
   });
 
-  // Synthetic Long: sort by synthScore desc, ties broken by RSI asc
+  // Synthetic Long: sort by synthScore desc, ties broken by MR asc (most oversold first)
   synthSorted.sort(function(a, b) {
     var sa = cardData[a].synthScore !== null ? cardData[a].synthScore : -1;
     var sb = cardData[b].synthScore !== null ? cardData[b].synthScore : -1;
     if (sb !== sa) return sb - sa;
-    return (cardData[a].rsi || 999) - (cardData[b].rsi || 999);
+    return (cardData[a].meanRev || 999) - (cardData[b].meanRev || 999);
   });
 
   // Render each column
@@ -2671,7 +2711,7 @@ function renderSorted() { renderColumns(); }
 // ═══════════════════════════════════════════════════════
 async function fetchTickerData(ticker) {
   try {
-    // Phase 1: price + RSI — always Daily for dashboard scoring
+    // Phase 1: price + Mean Reversion — always Daily for dashboard scoring
     var pd = await fetchPriceData(ticker, '1day');
 
     var d = {
@@ -2683,7 +2723,7 @@ async function fetchTickerData(ticker) {
       changePct: pd.changePct,
       week52H:   pd.week52H,
       week52L:   pd.week52L,
-      rsi:       pd.rsi,
+      meanRev:   pd.meanRev,
       sma200:    pd.sma200,
       ivRank:    null,
       expiry:    null,
@@ -2756,7 +2796,7 @@ async function fetchTickerData(ticker) {
 
     // Score PUT criteria — 7 total
     var put_c1 = ivRank !== null ? ivRank > 80 : null;
-    var put_c2 = pd.rsi < 30;
+    var put_c2 = !isNaN(pd.meanRev) ? pd.meanRev <= -2 : null;
     var put_c3 = !isNaN(pd.sma200) ? pd.price > pd.sma200 : null;  // Price above 200 SMA (confirmed uptrend)
     var put_c4 = earningsRisk === null ? null : !earningsRisk;
     var put_c5 = premPct !== null ? premPct > 2 : null;
@@ -2766,7 +2806,7 @@ async function fetchTickerData(ticker) {
 
     // Score CC criteria
     var cc_c1 = ivRank !== null ? ivRank > 80 : null;
-    var cc_c2 = pd.rsi > 65;
+    var cc_c2 = !isNaN(pd.meanRev) ? pd.meanRev >= 2 : null;
     var cc_c3 = !isNaN(pd.sma200) ? pd.price > pd.sma200 : null;
     var cc_c4 = earningsRisk === null ? null : !earningsRisk;
     var cc_c5 = premPct !== null ? premPct >= 2 : null;
@@ -2775,21 +2815,21 @@ async function fetchTickerData(ticker) {
     var ccScore = [cc_c1,cc_c2,cc_c3,cc_c4,cc_c5,cc_c6,cc_c7].filter(function(x){return x===true;}).length;
 
     // Score LEAPS criteria (proxy — from available data, no extra fetches)
-    // James/InvestAnswers 7: Delta≥0.80, BE CAGR≤15%, Duration 540+, RSI<30w, IV<55%, OI≥300, Spread≤10%
+    // James/InvestAnswers 7: Delta≥0.80, BE CAGR≤15%, Duration 540+, MR≤-2σw, IV<55%, OI≥300, Spread≤10%
     var hasLeapsExp = expirations.some(function(e) { return dteFromStr(e) >= 540; });
     var leaps_c1 = null;                                             // Delta ≥ 0.80 (need chain)
     var leaps_c2 = null;                                             // BE CAGR ≤ 15% (need chain)
     var leaps_c3 = hasLeapsExp;                                      // Duration 540+ DTE
-    var leaps_c4 = null;                                             // RSI < 30 Weekly (needs weekly RSI from phase 3)
+    var leaps_c4 = null;                                             // MR ≤ -2 Weekly (needs weekly MR from phase 3)
     var leaps_c5 = ivRank !== null ? ivRank < 55 : null;             // IV < 55% (Buy Low IV)
     var leaps_c6 = null;                                             // OI ≥ 300 (need chain)
     var leaps_c7 = null;                                             // Bid/Ask ≤ 10% (need chain)
     var leapsScore = [leaps_c1,leaps_c2,leaps_c3,leaps_c4,leaps_c5,leaps_c6,leaps_c7].filter(function(x){return x===true;}).length;
 
     // Score Synthetic Long criteria (proxy) — same-strike call+put
-    // Synth 7: RSI<30 Wkly, IV>50%, Duration≥540d, Net Debit≤5%, Call OI≥300, Put OI≥300, Spreads≤10%
+    // Synth 7: MR≤-2 Wkly, IV>50%, Duration≥540d, Net Debit≤5%, Call OI≥300, Put OI≥300, Spreads≤10%
     var hasSynthExp = expirations.some(function(e) { return dteFromStr(e) >= 540; });
-    var synth_c1 = pd.rsiWeekly !== undefined ? pd.rsiWeekly < 30 : (pd.rsi < 30); // RSI < 30 Weekly
+    var synth_c1 = null; // MR ≤ -2 Weekly (needs weekly MR from phase 3)
     var synth_c2 = null;              // IV > 50% — deferred to Phase 3 (needs LEAPS-expiry chain, not short-term)
     var synth_c3 = hasSynthExp;                                      // Duration ≥ 540 days
     var synth_c4 = null;                                             // Net Debit ≤ 5% (need chain)
@@ -2848,15 +2888,13 @@ async function runLeapsPhase3(ticker) {
     var d = cardData[ticker];
     if (!d) return;
 
-    // LEAPS uses Weekly RSI — fetch separately since dashboard uses Daily
-    var weeklyRSI = d.rsi; // fallback to daily if weekly fetch fails
+    // LEAPS uses Weekly Mean Reversion — fetch separately since dashboard uses Daily
+    var weeklyMR = d.meanRev; // fallback to daily if weekly fetch fails
     try {
-      var wRsiData = await fetchTD('rsi', { symbol: ticker, interval: '1week', time_period: 10, outputsize: 1 });
-      var wVals = wRsiData.values || [];
-      if (wVals.length > 0) weeklyRSI = parseFloat(wVals[0].rsi);
-    } catch(e) { /* use daily RSI as fallback */ }
+      weeklyMR = await fetchMeanRev(ticker, '1week');
+    } catch(e) { /* use daily MR as fallback */ }
 
-    var pd = { price: d.price, rsi: weeklyRSI };
+    var pd = { price: d.price, meanRev: weeklyMR };
 
     // Reuse cached expirations from phase 2 — no extra API call
     var expirations = d.expirations || await fetchExpirations(ticker);
@@ -2904,14 +2942,14 @@ async function runLeapsPhase3(ticker) {
     d.leaps_c1 = bestDelta !== null ? bestDelta >= 0.80 : null;
     d.leaps_c2 = breakevenCAGR !== null ? breakevenCAGR <= 15 : null;
     d.leaps_c3 = repDTE >= 540;
-    d.leaps_c4 = pd.rsi < 30;
+    d.leaps_c4 = !isNaN(pd.meanRev) ? pd.meanRev <= -2 : null;
     d.leaps_c5 = currentIV !== null ? currentIV < 55 : null;
     d.leaps_c6 = bestOI !== null ? bestOI >= 300 : null;
     d.leaps_c7 = bestSpread !== null ? bestSpread <= 10 : null;
     d.currentIV     = currentIV;
     d.leapsDelta    = bestDelta;
     d.leapsCAGR     = breakevenCAGR;
-    d.leapsRSI      = weeklyRSI;
+    d.leapsMR       = weeklyMR;
     d.leapsScore = [d.leaps_c1,d.leaps_c2,d.leaps_c3,d.leaps_c4,d.leaps_c5,d.leaps_c6,d.leaps_c7]
       .filter(function(x){return x===true;}).length;
     d.phase = 3;
@@ -2924,7 +2962,13 @@ async function runSynthPhase3(ticker) {
   try {
     var d = cardData[ticker];
     if (!d) return;
-    var pd = { price: d.price, rsi: d.rsi, ivRank: d.ivRank };
+    // Synth uses Weekly Mean Reversion — fetch separately since dashboard uses Daily
+    var weeklyMR = d.meanRev; // fallback to daily if weekly fetch fails
+    try {
+      weeklyMR = await fetchMeanRev(ticker, '1week');
+    } catch(e) { /* use daily MR as fallback */ }
+
+    var pd = { price: d.price, meanRev: weeklyMR, ivRank: d.ivRank };
 
     // Reuse cached expirations from phase 2 — no extra API call
     var expirations = d.expirations || await fetchExpirations(ticker);
@@ -3007,7 +3051,8 @@ async function runSynthPhase3(ticker) {
     d.ivRank = synthIVRank !== null ? synthIVRank : d.ivRank; // update card's ivRank to match synth expiry
 
     // James-aligned 7 criteria
-    d.synth_c1 = d.rsiWeekly !== undefined ? d.rsiWeekly < 30 : (pd.rsi < 30); // RSI < 30 Weekly
+    d.synth_c1 = !isNaN(pd.meanRev) ? pd.meanRev <= -2 : null; // MR ≤ -2σ Weekly
+    d.synthMR  = weeklyMR; // store for card rendering
     d.synth_c2 = synthIVRank !== null ? synthIVRank > 50 : null; // IV > 50% (from LEAPS-length chain)
     d.synth_c3 = dte >= 540;                                                     // Duration ≥ 540 DTE
     d.synth_c4 = netCostPct !== null ? Math.abs(netCostPct) <= 5 : null;         // Net Debit ≤ 5%
@@ -3035,7 +3080,7 @@ function triggerPhase3() {
     var sa = cardData[a].leapsScore !== null ? cardData[a].leapsScore : -1;
     var sb = cardData[b].leapsScore !== null ? cardData[b].leapsScore : -1;
     if (sb !== sa) return sb - sa;
-    return (cardData[a].rsi || 999) - (cardData[b].rsi || 999);
+    return (cardData[a].meanRev || 999) - (cardData[b].meanRev || 999);
   });
   var leapsTop3 = leapsSorted.slice(0, 3);
 
@@ -3044,7 +3089,7 @@ function triggerPhase3() {
     var sa = cardData[a].synthScore !== null ? cardData[a].synthScore : -1;
     var sb = cardData[b].synthScore !== null ? cardData[b].synthScore : -1;
     if (sb !== sa) return sb - sa;
-    return (cardData[a].rsi || 999) - (cardData[b].rsi || 999);
+    return (cardData[a].meanRev || 999) - (cardData[b].meanRev || 999);
   });
   var synthTop3 = synthSorted.slice(0, 3);
 
@@ -3068,7 +3113,7 @@ function applyServerScores(s) {
     changePct:   s.changePct,
     week52H:     s.week52H,
     week52L:     s.week52L,
-    rsi:         s.rsi,
+    meanRev:     s.meanRev,
     sma200:      s.sma200,
     ivRank:      s.ivRank,
     expiry:      s.expiry,
@@ -3141,14 +3186,16 @@ function priceBarHtml(ticker, pd, tfLabel) {
   var chgColor = pd.change >= 0 ? 'up' : 'down';
   var chgSign  = pd.change >= 0 ? '+' : '';
   var aboveSMA = pd.price > pd.sma200;
-  var rsiLabel = tfLabel ? 'RSI(10) · ' + tfLabel : 'RSI(10)';
+  var mrLabel = tfLabel ? 'MR · ' + tfLabel : 'MR';
+  var mrVal = pd.meanRev;
+  var mrClass = !isNaN(mrVal) ? (mrVal <= -2 ? 'down' : mrVal >= 2 ? 'up' : '') : '';
   return '<div class="price-bar">' +
     '<span class="pb-ticker">' + ticker + '</span>' +
     '<span class="pb-price ' + chgColor + '">' + fmtDollar(pd.price) +
       '<span style="font-size:13px;margin-left:8px">' + chgSign + fmt(pd.change) + ' (' + chgSign + fmt(pd.changePct,2) + '%)</span>' +
     '</span>' +
-    '<div class="stat-group"><span class="stat-label">' + rsiLabel + '</span>' +
-      '<span class="stat-value ' + (pd.rsi < 30 ? 'down' : pd.rsi > 65 ? 'up' : '') + '">' + fmt(pd.rsi,1) + '</span></div>' +
+    '<div class="stat-group"><span class="stat-label">' + mrLabel + '</span>' +
+      '<span class="stat-value ' + mrClass + '">' + (!isNaN(mrVal) ? fmt(mrVal,2) + 'σ' : '—') + '</span></div>' +
     '<div class="stat-group"><span class="stat-label">200 SMA</span>' +
       '<span class="stat-value">' + fmtDollar(pd.sma200) + '</span></div>' +
     '<div class="stat-group"><span class="stat-label">vs SMA</span>' +
@@ -3291,7 +3338,7 @@ async function runPut(forceTicker) {
     var assignCap= bestStrike ? bestStrike * 100 : null;
 
     var c1 = ivRank !== null ? ivRank > 80 : null;
-    var c2 = pd.rsi < 30;
+    var c2 = !isNaN(pd.meanRev) ? pd.meanRev <= -2 : null;
     var c3 = !isNaN(pd.sma200) ? pd.price > pd.sma200 : null;
     var c4 = !earningsRisk;
     var c5 = premPct !== null ? premPct > 2 : null;
@@ -3334,7 +3381,7 @@ async function runPut(forceTicker) {
 
     html += '<div class="scorecard"><h3>Cash-Secured Put — Score</h3><div class="criteria-list">';
     html += critRow(1,'IV Rank > 80% (Elevated Premium)', c1, ivRank !== null ? fmt(ivRank,1)+'%' : 'N/A');
-    html += critRow(2,'RSI(10) < 30 · Daily (Oversold)', c2, fmt(pd.rsi,1));
+    html += critRow(2,'MR ≤ -2.0σ · Daily (Oversold)', c2, !isNaN(pd.meanRev) ? fmt(pd.meanRev,2) + 'σ' : 'N/A');
     html += critRow(3,'Price Above 200 SMA (Confirmed Uptrend)', c3, pd.sma200 ? fmtDollar(pd.price) + ' vs ' + fmtDollar(pd.sma200) : 'N/A');
     html += critRow(4,'No Earnings Before Expiry', c4, earningsRisk ? 'Earnings: '+EARNINGS[ticker] : 'Clear');
     html += critRow(5,'Premium > 2% of Price', c5, premPct !== null ? fmt(premPct,2)+'%' : 'N/A');
@@ -3348,8 +3395,8 @@ async function runPut(forceTicker) {
       var eDate = EARNINGS[ticker];
       suggWarnP.push('💡 <strong>Earnings workaround:</strong> ' + ticker + ' has earnings on ' + eDate + ' inside your expiry window. Consider a shorter DTE expiring <strong>before ' + eDate + '</strong> to avoid earnings risk while still capturing the oversold setup.');
     }
-    if (!c2 && pd.rsi > 30 && pd.rsi < 45) {
-      suggWarnP.push('💡 <strong>RSI almost there:</strong> RSI is ' + fmt(pd.rsi,1) + ' — watch for a continued dip below 30 before entering. Set a price alert.');
+    if (!c2 && !isNaN(pd.meanRev) && pd.meanRev < -1 && pd.meanRev > -2) {
+      suggWarnP.push('💡 <strong>MR approaching:</strong> Mean Reversion is ' + fmt(pd.meanRev,2) + 'σ — approaching the -2.0σ oversold threshold. Watch for a continued dip before entering.');
     }
     if (!c1 && ivRank !== null && ivRank >= 60) {
       suggWarnP.push('💡 <strong>IV warming up:</strong> IV is ' + fmt(ivRank,1) + '% — approaching the 80% threshold. Wait for a volatility spike (news, market selloff) before selling the put for maximum premium.');
@@ -3453,7 +3500,7 @@ async function runCC(forceTicker) {
     var totalRet  = (upsidePct !== null && premPct !== null) ? (upsidePct + premPct) : null;
 
     var c1 = ivRank !== null ? ivRank > 80 : null;
-    var c2 = pd.rsi > 65;
+    var c2 = !isNaN(pd.meanRev) ? pd.meanRev >= 2 : null;
     var c3 = !isNaN(pd.sma200) ? pd.price > pd.sma200 : null;
     var c4 = !earningsRisk;
     var c5 = premPct !== null ? premPct >= 2 : null;
@@ -3497,7 +3544,7 @@ async function runCC(forceTicker) {
 
     html += '<div class="scorecard"><h3>Covered Call — Score</h3><div class="criteria-list">';
     html += critRow(1,'IV Rank > 80% (Elevated Premium)', c1, ivRank !== null ? fmt(ivRank,1)+'%' : 'N/A');
-    html += critRow(2,'RSI(10) > 65 · Daily (Overbought)', c2, fmt(pd.rsi,1));
+    html += critRow(2,'MR ≥ +2.0σ · Daily (Overbought)', c2, !isNaN(pd.meanRev) ? fmt(pd.meanRev,2) + 'σ' : 'N/A');
     html += critRow(3,'Price Above 200 SMA (Confirmed Uptrend)', c3, pd.sma200 ? fmtDollar(pd.price) + ' vs ' + fmtDollar(pd.sma200) : 'N/A');
     html += critRow(4,'No Earnings Before Expiry', c4, earningsRisk ? 'Earnings: '+EARNINGS[ticker] : 'Clear');
     html += critRow(5,'Premium ≥ 2% of Price', c5, premPct !== null ? fmt(premPct,2)+'%' : 'N/A');
@@ -3511,8 +3558,8 @@ async function runCC(forceTicker) {
       var eDate = EARNINGS[ticker];
       suggWarnC.push('💡 <strong>Earnings workaround:</strong> ' + ticker + ' has earnings on ' + eDate + ' inside your expiry window. Consider a shorter DTE expiring <strong>before ' + eDate + '</strong> to avoid the IV crush and gap risk.');
     }
-    if (!c2 && pd.rsi < 65 && pd.rsi > 55) {
-      suggWarnC.push('💡 <strong>RSI almost there:</strong> RSI is ' + fmt(pd.rsi,1) + ' — approaching overbought. Watch for a continued rally above 65 before selling the call.');
+    if (!c2 && !isNaN(pd.meanRev) && pd.meanRev > 1 && pd.meanRev < 2) {
+      suggWarnC.push('💡 <strong>MR approaching:</strong> Mean Reversion is ' + fmt(pd.meanRev,2) + 'σ — approaching the +2.0σ overbought threshold. Watch for a continued rally before selling the call.');
     }
     if (!c1 && ivRank !== null && ivRank >= 60) {
       suggWarnC.push('💡 <strong>IV warming up:</strong> IV is ' + fmt(ivRank,1) + '% — approaching the 80% threshold. Wait for a volatility spike to get richer premium before capping your upside.');
@@ -3585,12 +3632,10 @@ async function runLeaps(forceTicker) {
     setStatus('leaps-status', spinner() + 'Price & indicators…', 'loading');
     var pd = await fetchPriceData(ticker);
 
-    // LEAPS uses Weekly RSI — override daily RSI with weekly
+    // LEAPS uses Weekly Mean Reversion — override daily MR with weekly
     try {
-      var wRsiData = await fetchTD('rsi', { symbol: ticker, interval: '1week', time_period: 10, outputsize: 1 });
-      var wVals = wRsiData.values || [];
-      if (wVals.length > 0) pd.rsi = parseFloat(wVals[0].rsi);
-    } catch(e) { /* keep daily RSI as fallback */ }
+      pd.meanRev = await fetchMeanRev(ticker, '1week');
+    } catch(e) { /* keep daily MR as fallback */ }
 
     setStatus('leaps-status', spinner() + 'Expirations…', 'loading');
     var expirations   = await fetchExpirations(ticker);
@@ -3678,7 +3723,7 @@ async function runLeaps(forceTicker) {
     var c1 = bestDelta !== null ? bestDelta >= 0.80 : null;
     var c2 = breakevenCAGR !== null ? breakevenCAGR <= 15 : null;
     var c3 = repDTE >= 540;
-    var c4 = pd.rsi < 30;
+    var c4 = !isNaN(pd.meanRev) ? pd.meanRev <= -2 : null;
     var c5 = currentIV !== null ? currentIV < 55 : null;
     var c6 = bestOI !== null ? bestOI >= 300 : null;
     var c7 = bestSpread !== null ? bestSpread <= 10 : null;
@@ -3720,7 +3765,7 @@ async function runLeaps(forceTicker) {
     '</div></div>';
 
     html += '<div class="scorecard"><h3>LEAPS Deep ITM Call — Score</h3><div class="criteria-list">';
-    html += critRow(1,'RSI(10) < 30 · Weekly (Buy the dip)', c4, fmt(pd.rsi,1));
+    html += critRow(1,'MR ≤ -2.0σ · Weekly (Buy the dip)', c4, !isNaN(pd.meanRev) ? fmt(pd.meanRev,2) + 'σ' : 'N/A');
     html += critRow(2,'Delta ≥ 0.80 (Deep ITM, ~stock exposure)', c1, bestDelta !== null ? fmt(bestDelta,2) + (shareEquiv ? ' (~' + shareEquiv + ' sh)' : '') : 'N/A');
     html += critRow(3,'BE CAGR ≤ 15% (Achievable breakeven)', c2, breakevenCAGR !== null ? fmt(breakevenCAGR,1)+'%' : 'N/A');
     html += critRow(4,'Duration 18+ months (540+ DTE)', c3, repDTE + ' days');
@@ -3741,10 +3786,10 @@ async function runLeaps(forceTicker) {
         suggestions.push('💡 <strong>BE CAGR elevated:</strong> ' + fmt(breakevenCAGR,1) + '% CAGR to break even. Under 15% is ideal. Consider a deeper ITM strike or longer expiry to reduce this.');
       }
     }
-    if (!c4 && pd.rsi < 40) {
-      suggestions.push('💡 <strong>RSI approaching entry:</strong> RSI is ' + fmt(pd.rsi,1) + ' — not deeply oversold yet. James says "buy options when prices are crazy low." Watch for a continued dip below 30.');
+    if (!c4 && !isNaN(pd.meanRev) && pd.meanRev < -1 && pd.meanRev > -2) {
+      suggestions.push('💡 <strong>MR approaching entry:</strong> Mean Reversion is ' + fmt(pd.meanRev,2) + 'σ — not deeply oversold yet. James says "buy options when prices are crazy low." Watch for a continued dip below -2.0σ.');
     } else if (!c4) {
-      suggestions.push('💡 <strong>RSI too high:</strong> RSI is ' + fmt(pd.rsi,1) + ' — James\'s rule: "You do not buy the tops." Wait for a pullback to get a cheaper entry.');
+      suggestions.push('💡 <strong>Not oversold:</strong> Mean Reversion is ' + (!isNaN(pd.meanRev) ? fmt(pd.meanRev,2) + 'σ' : 'N/A') + ' — James\'s rule: "You do not buy the tops." Wait for a pullback to get a cheaper entry.');
     }
     if (!c5 && currentIV !== null) {
       suggestions.push('💡 <strong>IV elevated:</strong> Current IV is ' + fmt(currentIV,1) + '% — you are overpaying for time value. Wait for a volatility cooldown to get a cheaper entry on the same strike.');
@@ -3885,6 +3930,11 @@ async function runSynth(forceTicker) {
     setStatus('synth-status', spinner() + 'Price & indicators…', 'loading');
     var pd = await fetchPriceData(ticker);
 
+    // Synth uses Weekly Mean Reversion — override daily MR with weekly
+    try {
+      pd.meanRev = await fetchMeanRev(ticker, '1week');
+    } catch(e) { /* keep daily MR as fallback */ }
+
     setStatus('synth-status', spinner() + 'Expirations…', 'loading');
     var expirations = await fetchExpirations(ticker);
     // James: farthest expiry, LEAPS-length, prefer ≥540 DTE
@@ -3958,7 +4008,7 @@ async function runSynth(forceTicker) {
     var ivRank = await fetchIVRank(ticker, bestExpiry).catch(function(){ return null; });
 
     // James-aligned 7 criteria
-    var c1 = pd.rsiWeekly !== undefined ? pd.rsiWeekly < 30 : (pd.rsi < 30); // RSI < 30 Weekly
+    var c1 = !isNaN(pd.meanRev) ? pd.meanRev <= -2 : null; // MR ≤ -2σ Weekly
     var c2 = ivRank !== null ? ivRank > 50 : null;                             // IV > 50%
     var c3 = dte >= 540;                                                       // Duration ≥ 540 DTE
     var c4 = netCostPct !== null ? Math.abs(netCostPct) <= 5 : null;           // Net Debit ≤ 5%
@@ -4058,7 +4108,7 @@ async function runSynth(forceTicker) {
     }
 
     html += '<div class="scorecard"><h3>Synthetic Long — Score</h3><div class="criteria-list">';
-    html += critRow(1,'RSI < 30 · Weekly (Oversold — Buy the Dip)', c1, pd.rsiWeekly !== undefined ? fmt(pd.rsiWeekly,1) : fmt(pd.rsi,1));
+    html += critRow(1,'MR ≤ -2.0σ · Weekly (Oversold — Buy the Dip)', c1, !isNaN(pd.meanRev) ? fmt(pd.meanRev,2) + 'σ' : 'N/A');
     html += critRow(2,'IV > 50% (High Vol — Fat Put Premiums)', c2, ivRank !== null ? fmt(ivRank,1) + '%' : 'N/A');
     html += critRow(3,'Duration ≥ 540 DTE (LEAPS-Length)', c3, dte + ' days');
     html += critRow(4,'Net Debit ≤ 5% (Put Funds the Call)', c4, netCostPct !== null ? fmt(Math.abs(netCostPct),2) + '%' : 'N/A');
@@ -4070,11 +4120,10 @@ async function runSynth(forceTicker) {
     // ── Contextual suggestions ──
     var suggWarn = [], suggGood = [];
     if (!c1) {
-      var rsiVal = pd.rsiWeekly !== undefined ? pd.rsiWeekly : pd.rsi;
-      if (rsiVal < 40) {
-        suggWarn.push('💡 <strong>RSI approaching:</strong> Weekly RSI is ' + fmt(rsiVal,1) + ' — not yet below 30. Wait for deeper oversold conditions before entering.');
+      if (!isNaN(pd.meanRev) && pd.meanRev < -1 && pd.meanRev > -2) {
+        suggWarn.push('💡 <strong>MR approaching:</strong> Weekly Mean Reversion is ' + fmt(pd.meanRev,2) + 'σ — not yet below -2.0σ. Wait for deeper oversold conditions before entering.');
       } else {
-        suggWarn.push('💡 <strong>Not oversold:</strong> Weekly RSI is ' + fmt(rsiVal,1) + ' — synthetics work best entered at market lows when put premiums are fattest.');
+        suggWarn.push('💡 <strong>Not oversold:</strong> Weekly Mean Reversion is ' + (!isNaN(pd.meanRev) ? fmt(pd.meanRev,2) + 'σ' : 'N/A') + ' — synthetics work best entered at market lows when put premiums are fattest.');
       }
     }
     if (!c2 && ivRank !== null) {
@@ -4277,28 +4326,28 @@ function buildMiniRankings(strategy, activeTicker) {
       var sa = cardData[a].putScore !== null ? cardData[a].putScore : -1;
       var sb = cardData[b].putScore !== null ? cardData[b].putScore : -1;
       if (sb !== sa) return sb - sa;
-      return (cardData[a].rsi || 999) - (cardData[b].rsi || 999);
+      return (cardData[a].meanRev || 999) - (cardData[b].meanRev || 999);
     });
   } else if (strategy === 'cc') {
     sorted.sort(function(a, b) {
       var sa = cardData[a].ccScore !== null ? cardData[a].ccScore : -1;
       var sb = cardData[b].ccScore !== null ? cardData[b].ccScore : -1;
       if (sb !== sa) return sb - sa;
-      return (cardData[b].rsi || 0) - (cardData[a].rsi || 0);
+      return (cardData[b].meanRev || 0) - (cardData[a].meanRev || 0);
     });
   } else if (strategy === 'leaps') {
     sorted.sort(function(a, b) {
       var sa = cardData[a].leapsScore !== null ? cardData[a].leapsScore : -1;
       var sb = cardData[b].leapsScore !== null ? cardData[b].leapsScore : -1;
       if (sb !== sa) return sb - sa;
-      return (cardData[a].rsi || 999) - (cardData[b].rsi || 999);
+      return (cardData[a].meanRev || 999) - (cardData[b].meanRev || 999);
     });
   } else {
     sorted.sort(function(a, b) {
       var sa = cardData[a].synthScore !== null ? cardData[a].synthScore : -1;
       var sb = cardData[b].synthScore !== null ? cardData[b].synthScore : -1;
       if (sb !== sa) return sb - sa;
-      return (cardData[a].rsi || 999) - (cardData[b].rsi || 999);
+      return (cardData[a].meanRev || 999) - (cardData[b].meanRev || 999);
     });
   }
 
