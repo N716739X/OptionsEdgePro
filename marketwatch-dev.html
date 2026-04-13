@@ -3368,6 +3368,32 @@ async function runPut(forceTicker) {
       html += '<div class="suggestions-box">' + suggestionsP.map(function(s){ return '<div class="suggestion-item">' + s + '</div>'; }).join('') + '</div>';
     }
 
+    // ── Position Scenarios at Expiry (CSP) ──
+    if (bestStrike !== null && bestPremium !== null) {
+      var scenarioPcts = [-30, -20, -10, 0, 10, 20, 50, 100];
+      var scenarioLabels = ['-30% Crash', '-20% Drop', '-10% Dip', 'Flat', '+10% Rally', '+20% Rally', '+50% Rip', '+100% Moon'];
+      html += '<div class="chain-section"><h3>Position Scenarios at Expiry</h3><div class="scenarios">';
+      scenarioPcts.forEach(function(pct, si) {
+        var futurePrice = pd.price * (1 + pct / 100);
+        var pnl, zone;
+        if (futurePrice >= bestStrike) {
+          pnl = bestPremium;
+          zone = 'Put expires worthless — keep full premium';
+        } else {
+          pnl = futurePrice - bestStrike + bestPremium;
+          zone = 'Assigned at ' + fmtDollar(bestStrike) + ' — cost basis ' + fmtDollar(bestStrike - bestPremium);
+        }
+        var pnlPer = pnl * 100;
+        html += '<div class="scenario-card"><h4>' + scenarioLabels[si] + '</h4>' +
+          '<div class="sc-row"><span class="sc-key">Price</span><span class="sc-val">' + fmtDollar(futurePrice) + '</span></div>' +
+          '<div class="sc-row"><span class="sc-key">Zone</span><span class="sc-val" style="font-size:10px;color:var(--text-muted)">' + zone + '</span></div>' +
+          '<div class="sc-row"><span class="sc-key">P&L/share</span><span class="sc-val ' + (pnl >= 0 ? 'up' : 'down') + '">' + (pnl >= 0 ? '+' : '') + fmtDollar(pnl) + '</span></div>' +
+          '<div class="sc-row"><span class="sc-key">P&L/contract</span><span class="sc-val ' + (pnlPer >= 0 ? 'up' : 'down') + '">' + (pnlPer >= 0 ? '+$' : '-$') + fmt(Math.abs(pnlPer),2) + '</span></div>' +
+        '</div>';
+      });
+      html += '</div></div>';
+    }
+
     html += '<div class="chain-section"><h3>Put Chain — '+bestExpiry+' ('+dte+' DTE)</h3>';
     html += buildChainTable(chain, -0.20, pd.price, true) + '</div>';
 
@@ -3509,6 +3535,32 @@ async function runCC(forceTicker) {
     }
 
     html += '<div class="btc-note">📌 BTC at 80% profit or 21 DTE, whichever comes first.</div>';
+
+    // ── Position Scenarios at Expiry (CC) ──
+    if (bestStrike !== null && bestPremium !== null) {
+      var scenarioPcts = [-30, -20, -10, 0, 10, 20, 50, 100];
+      var scenarioLabels = ['-30% Crash', '-20% Drop', '-10% Dip', 'Flat', '+10% Rally', '+20% Rally', '+50% Rip', '+100% Moon'];
+      html += '<div class="chain-section"><h3>Position Scenarios at Expiry</h3><div class="scenarios">';
+      scenarioPcts.forEach(function(pct, si) {
+        var futurePrice = pd.price * (1 + pct / 100);
+        var pnl, zone;
+        if (futurePrice <= bestStrike) {
+          pnl = (futurePrice - pd.price) + bestPremium;
+          zone = 'Call expires worthless — keep shares + premium';
+        } else {
+          pnl = (bestStrike - pd.price) + bestPremium;
+          zone = 'Shares called away at ' + fmtDollar(bestStrike) + ' + premium';
+        }
+        var pnlPer = pnl * 100;
+        html += '<div class="scenario-card"><h4>' + scenarioLabels[si] + '</h4>' +
+          '<div class="sc-row"><span class="sc-key">Price</span><span class="sc-val">' + fmtDollar(futurePrice) + '</span></div>' +
+          '<div class="sc-row"><span class="sc-key">Zone</span><span class="sc-val" style="font-size:10px;color:var(--text-muted)">' + zone + '</span></div>' +
+          '<div class="sc-row"><span class="sc-key">P&L/share</span><span class="sc-val ' + (pnl >= 0 ? 'up' : 'down') + '">' + (pnl >= 0 ? '+' : '') + fmtDollar(pnl) + '</span></div>' +
+          '<div class="sc-row"><span class="sc-key">P&L/contract</span><span class="sc-val ' + (pnlPer >= 0 ? 'up' : 'down') + '">' + (pnlPer >= 0 ? '+$' : '-$') + fmt(Math.abs(pnlPer),2) + '</span></div>' +
+        '</div>';
+      });
+      html += '</div></div>';
+    }
 
     html += '<div class="chain-section" style="margin-top:14px"><h3>Call Chain — '+bestExpiry+' ('+dte+' DTE)</h3>';
     html += buildChainTable(chain, bestStrike, pd.price, false, true) + '</div>'; // true = match by strike not delta
