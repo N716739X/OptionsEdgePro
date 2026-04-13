@@ -185,7 +185,22 @@ header {
   padding: 4px 10px;
   font-family: monospace;
   white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
+.tz-select {
+  background: var(--surface);
+  color: var(--accent);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 10px;
+  font-family: monospace;
+  padding: 1px 2px;
+  cursor: pointer;
+  outline: none;
+}
+.tz-select:hover { border-color: var(--accent); }
 .market-status {
   font-size: 10px;
   padding: 3px 8px;
@@ -1392,7 +1407,7 @@ input, textarea, select { -webkit-user-select: text; user-select: text; }
     <span class="logo-text">OptionsEdge<span> Pro</span></span>
   </div>
   <div class="header-right">
-    <div class="clock-box" id="clock">--:--:-- CST</div>
+    <div class="clock-box"><span id="clock">--:--:--</span><select class="tz-select" id="tz-sel" onchange="updateClock()"><option value="ET">ET</option><option value="CT">CT</option><option value="MT">MT</option><option value="PT">PT</option></select></div>
     <div class="market-status closed" id="mkt-status">CLOSED</div>
     <button class="hbtn" onclick="toggleTheme()">◑ THEME</button>
     <button class="hbtn" onclick="openTickerModal()">⚙ TICKERS</button>
@@ -1879,19 +1894,30 @@ function isMarketOpen() {
   return mins >= 8 * 60 + 30 && mins < 15 * 60; // 8:30-15:00 CST
 }
 
+var _tzOffsets = {
+  ET: { std: -5, dst: -4, stdName: 'EST', dstName: 'EDT' },
+  CT: { std: -6, dst: -5, stdName: 'CST', dstName: 'CDT' },
+  MT: { std: -7, dst: -6, stdName: 'MST', dstName: 'MDT' },
+  PT: { std: -8, dst: -7, stdName: 'PST', dstName: 'PDT' }
+};
+function _isDST(now) {
+  var month = now.getUTCMonth() + 1;
+  return month > 3 && month < 11;
+}
 function updateClock() {
   var now    = new Date();
-  var offset = -6;
-  var month  = now.getUTCMonth() + 1;
-  if (month > 3 && month < 11) offset = -5;
-  var cst = new Date(now.getTime() + offset * 3600000);
-  var hr24 = cst.getUTCHours();
-  var ampm  = hr24 >= 12 ? 'PM' : 'AM';
-  var hr12  = hr24 % 12 || 12;
-  var m     = String(cst.getUTCMinutes()).padStart(2,'0');
-  var s     = String(cst.getUTCSeconds()).padStart(2,'0');
-  var tz    = offset === -5 ? 'CDT' : 'CST';
-  document.getElementById('clock').textContent = hr12 + ':' + m + ':' + s + ' ' + ampm + ' ' + tz;
+  var selTz  = document.getElementById('tz-sel').value || 'ET';
+  var tzInfo = _tzOffsets[selTz];
+  var dst    = _isDST(now);
+  var offset = dst ? tzInfo.dst : tzInfo.std;
+  var tzName = dst ? tzInfo.dstName : tzInfo.stdName;
+  var local  = new Date(now.getTime() + offset * 3600000);
+  var hr24   = local.getUTCHours();
+  var ampm   = hr24 >= 12 ? 'PM' : 'AM';
+  var hr12   = hr24 % 12 || 12;
+  var m      = String(local.getUTCMinutes()).padStart(2,'0');
+  var s      = String(local.getUTCSeconds()).padStart(2,'0');
+  document.getElementById('clock').textContent = hr12 + ':' + m + ':' + s + ' ' + ampm + ' ' + tzName;
 
   var open = isMarketOpen();
   var el   = document.getElementById('mkt-status');
