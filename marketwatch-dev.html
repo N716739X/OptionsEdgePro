@@ -3591,7 +3591,7 @@ async function runLeaps(forceTicker) {
     var bestExtrinsic = (bestPremium && bestIntrinsic !== null) ? Math.max(0, bestPremium - bestIntrinsic) : null;
     var extPct = (bestExtrinsic !== null && bestPremium > 0) ? (bestExtrinsic / bestPremium * 100) : null;
     // Find the 50/50 I/E strike (closest ext% to 50%, ITM only) for display
-    var strike5050 = null, ext5050 = null, delta5050 = null, mid5050 = null;
+    var pick50 = { strike: null, mid: null, delta: null, ext: null, oi: null, spread: null, intrinsic: null, extrinsic: null };
     if (repChain && repChain.strike) {
       var bestIEDiff = Infinity;
       for (var ie5 = 0; ie5 < repChain.strike.length; ie5++) {
@@ -3605,12 +3605,20 @@ async function runLeaps(forceTicker) {
         var diff5 = Math.abs(ePct5 - 50);
         if (diff5 < bestIEDiff) {
           bestIEDiff = diff5;
-          strike5050 = s5; ext5050 = ePct5; mid5050 = m5i;
-          delta5050 = repChain.delta ? repChain.delta[ie5] : null;
+          var b5i = repChain.bid ? repChain.bid[ie5] : null;
+          var a5i = repChain.ask ? repChain.ask[ie5] : null;
+          pick50 = {
+            strike: s5, mid: m5i, delta: repChain.delta ? repChain.delta[ie5] : null,
+            ext: ePct5, intrinsic: intr5, extrinsic: extr5,
+            oi: repChain.openInterest ? repChain.openInterest[ie5] : null,
+            spread: (b5i && a5i && m5i) ? ((a5i - b5i) / m5i * 100) : null
+          };
         }
       }
     }
+    var strike5050 = pick50.strike; var ext5050 = pick50.ext; var delta5050 = pick50.delta; var mid5050 = pick50.mid;
     var be5050 = (strike5050 && mid5050) ? strike5050 + mid5050 : null;
+    var cagr5050 = (be5050 && pd.price && repYears > 0) ? (Math.pow(be5050 / pd.price, 1 / repYears) - 1) * 100 : null;
 
     // I/E passes if 75/25 strike has ext ≤30% OR 50/50 strike has ext 40-60%
     var ie75ok = extPct !== null && extPct <= 30;
@@ -3632,37 +3640,53 @@ async function runLeaps(forceTicker) {
     setStatus('leaps-status', 'Done', 'ok');
 
     var html = priceBarHtml(ticker, pd, 'Weekly');
+
+    // ── IV summary bar ──
     html += '<div class="info-box">' +
       '<div class="info-item"><div class="info-label">Current IV</div><div class="info-val">' + (currentIV !== null ? fmt(currentIV,1)+'%' : '—') + '</div></div>' +
       '<div class="info-item"><div class="info-label">IV Rank</div><div class="info-val">' + (ivRank !== null ? fmt(ivRank,1)+'%' : '—') + '</div></div>' +
-      '<div class="info-item"><div class="info-label" style="color:var(--accent)">★ 75/25 Strike</div><div class="info-val">' + (bestStrike ? fmtDollar(bestStrike) + ' (Δ' + fmt(bestDelta,2) + ')' : '—') + '</div></div>' +
-      '<div class="info-item"><div class="info-label">  Breakeven</div><div class="info-val">' + (breakeven ? fmtDollar(breakeven) : '—') + '</div></div>' +
-      '<div class="info-item"><div class="info-label">  Ext %</div><div class="info-val">' + (extPct !== null ? fmt(extPct,1)+'%' : '—') + '</div></div>' +
-      '<div class="info-item"><div class="info-label" style="color:var(--green)">★ 50/50 Strike</div><div class="info-val">' + (strike5050 ? fmtDollar(strike5050) + ' (Δ' + fmt(delta5050,2) + ')' : '—') + '</div></div>' +
-      '<div class="info-item"><div class="info-label">  Breakeven</div><div class="info-val">' + (be5050 ? fmtDollar(be5050) : '—') + '</div></div>' +
-      '<div class="info-item"><div class="info-label">  Ext %</div><div class="info-val">' + (ext5050 !== null ? fmt(ext5050,1)+'%' : '—') + '</div></div>' +
+      '<div class="info-item"><div class="info-label">Expiry</div><div class="info-val">' + leapsExpiries[bestExpIdx] + '</div></div>' +
+      '<div class="info-item"><div class="info-label">DTE</div><div class="info-val">' + repDTE + '</div></div>' +
     '</div>';
 
-    // ── Trade Summary ──
-    var leapsCost     = bestPremium ? bestPremium * 100 : null;
-    var stockCost     = pd.price ? pd.price * 100 : null;
-    var leapsMaxLoss  = leapsCost;
-    var leapsLeverage = (stockCost && leapsCost && leapsCost > 0) ? (stockCost / leapsCost) : null;
-    var intrVal100    = bestIntrinsic !== null ? bestIntrinsic * 100 : null;
-    var extrVal100    = bestExtrinsic !== null ? bestExtrinsic * 100 : null;
-    function tsItem(label, val, cls, note) {
-      return '<div class="ts-item"><div class="ts-label">' + label + '</div>' +
-        '<div class="ts-val ' + cls + '">' + val + '</div>' +
-        (note ? '<div class="ts-note">' + note + '</div>' : '') + '</div>';
-    }
-    html += '<div class="trade-summary"><h4>Trade Summary — 1 Contract (100 shares equivalent)</h4><div class="trade-summary-grid">' +
-      tsItem('Cost',            leapsCost   ? '$' + fmt(leapsCost,2)  : '—', 'ts-neutral', 'Total premium paid') +
-      tsItem('Max Loss',        leapsMaxLoss ? '$' + fmt(leapsMaxLoss,2) : '—', 'ts-loss', 'Entire premium at risk') +
-      tsItem('Breakeven',       breakeven   ? fmtDollar(breakeven)     : '—', 'ts-neutral', 'Strike + premium at expiry') +
-      tsItem('Intrinsic',       intrVal100 !== null  ? '$' + fmt(intrVal100,2)  : '—', 'ts-gain', 'Built-in value (price − strike)') +
-      tsItem('Extrinsic',       extrVal100 !== null  ? '$' + fmt(extrVal100,2)  : '—', 'ts-neutral', 'Time value paid') +
-      tsItem('Leverage',        leapsLeverage ? fmt(leapsLeverage,1) + 'x' : '—', 'ts-neutral', 'vs buying 100 shares at $' + (pd.price ? fmt(pd.price,2) : '—')) +
-      tsItem('Breakeven CAGR',  breakevenCAGR !== null ? fmt(breakevenCAGR,1) + '%' : '—', 'ts-neutral', 'Annual growth needed to break even') +
+    // ── Side-by-side I/E pick cards ──
+    var cost75  = bestPremium ? bestPremium * 100 : null;
+    var cost50  = mid5050 ? mid5050 * 100 : null;
+    var lev75   = (pd.price && bestPremium && bestPremium > 0) ? (pd.price / bestPremium) : null;
+    var lev50   = (pd.price && mid5050 && mid5050 > 0) ? (pd.price / mid5050) : null;
+    var intr50_100 = pick50.intrinsic !== null ? pick50.intrinsic * 100 : null;
+    var extr50_100 = pick50.extrinsic !== null ? pick50.extrinsic * 100 : null;
+    var intrVal100 = bestIntrinsic !== null ? bestIntrinsic * 100 : null;
+    var extrVal100 = bestExtrinsic !== null ? bestExtrinsic * 100 : null;
+
+    html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">';
+    html += '<div class="scenario-card"><h4 style="color:var(--accent)">★ 75/25 Pick</h4>' +
+      '<div class="sc-row"><span class="sc-key">Strike</span><span class="sc-val">' + (bestStrike ? fmtDollar(bestStrike) : '—') + '</span></div>' +
+      '<div class="sc-row"><span class="sc-key">Delta</span><span class="sc-val">' + (bestDelta !== null ? fmt(bestDelta,2) : '—') + '</span></div>' +
+      '<div class="sc-row"><span class="sc-key">Mid</span><span class="sc-val">' + (bestPremium !== null ? fmtDollar(bestPremium) : '—') + '</span></div>' +
+      '<div class="sc-row"><span class="sc-key">Intrinsic</span><span class="sc-val">' + (bestIntrinsic !== null ? fmtDollar(bestIntrinsic) : '—') + '</span></div>' +
+      '<div class="sc-row"><span class="sc-key">Extrinsic</span><span class="sc-val">' + (bestExtrinsic !== null ? fmtDollar(bestExtrinsic) : '—') + '</span></div>' +
+      '<div class="sc-row"><span class="sc-key">Ext %</span><span class="sc-val ' + (extPct !== null && extPct <= 30 ? 'up' : 'down') + '">' + (extPct !== null ? fmt(extPct,1)+'%' : '—') + '</span></div>' +
+      '<div class="sc-row"><span class="sc-key">Cost (1 ct)</span><span class="sc-val">' + (cost75 ? '$'+fmt(cost75,2) : '—') + '</span></div>' +
+      '<div class="sc-row"><span class="sc-key">Breakeven</span><span class="sc-val">' + (breakeven ? fmtDollar(breakeven) : '—') + '</span></div>' +
+      '<div class="sc-row"><span class="sc-key">BE CAGR</span><span class="sc-val ' + (breakevenCAGR !== null && breakevenCAGR <= 15 ? 'up' : '') + '">' + (breakevenCAGR !== null ? fmt(breakevenCAGR,1)+'%' : '—') + '</span></div>' +
+      '<div class="sc-row"><span class="sc-key">Leverage</span><span class="sc-val">' + (lev75 ? fmt(lev75,1)+'x' : '—') + '</span></div>' +
+      '<div class="sc-row"><span class="sc-key">OI</span><span class="sc-val">' + (bestOI !== null ? fmtK(bestOI) : '—') + '</span></div>' +
+      '<div class="sc-row"><span class="sc-key">Spread</span><span class="sc-val ' + (bestSpread !== null && bestSpread > 10 ? 'down' : '') + '">' + (bestSpread !== null ? fmt(bestSpread,1)+'%' : '—') + '</span></div>' +
+    '</div>';
+    html += '<div class="scenario-card"><h4 style="color:var(--green)">★ 50/50 Pick</h4>' +
+      '<div class="sc-row"><span class="sc-key">Strike</span><span class="sc-val">' + (strike5050 ? fmtDollar(strike5050) : '—') + '</span></div>' +
+      '<div class="sc-row"><span class="sc-key">Delta</span><span class="sc-val">' + (delta5050 !== null ? fmt(delta5050,2) : '—') + '</span></div>' +
+      '<div class="sc-row"><span class="sc-key">Mid</span><span class="sc-val">' + (mid5050 !== null ? fmtDollar(mid5050) : '—') + '</span></div>' +
+      '<div class="sc-row"><span class="sc-key">Intrinsic</span><span class="sc-val">' + (pick50.intrinsic !== null ? fmtDollar(pick50.intrinsic) : '—') + '</span></div>' +
+      '<div class="sc-row"><span class="sc-key">Extrinsic</span><span class="sc-val">' + (pick50.extrinsic !== null ? fmtDollar(pick50.extrinsic) : '—') + '</span></div>' +
+      '<div class="sc-row"><span class="sc-key">Ext %</span><span class="sc-val ' + (ext5050 !== null && ext5050 >= 40 && ext5050 <= 60 ? 'up' : 'down') + '">' + (ext5050 !== null ? fmt(ext5050,1)+'%' : '—') + '</span></div>' +
+      '<div class="sc-row"><span class="sc-key">Cost (1 ct)</span><span class="sc-val">' + (cost50 ? '$'+fmt(cost50,2) : '—') + '</span></div>' +
+      '<div class="sc-row"><span class="sc-key">Breakeven</span><span class="sc-val">' + (be5050 ? fmtDollar(be5050) : '—') + '</span></div>' +
+      '<div class="sc-row"><span class="sc-key">BE CAGR</span><span class="sc-val ' + (cagr5050 !== null && cagr5050 <= 15 ? 'up' : '') + '">' + (cagr5050 !== null ? fmt(cagr5050,1)+'%' : '—') + '</span></div>' +
+      '<div class="sc-row"><span class="sc-key">Leverage</span><span class="sc-val">' + (lev50 ? fmt(lev50,1)+'x' : '—') + '</span></div>' +
+      '<div class="sc-row"><span class="sc-key">OI</span><span class="sc-val">' + (pick50.oi !== null ? fmtK(pick50.oi) : '—') + '</span></div>' +
+      '<div class="sc-row"><span class="sc-key">Spread</span><span class="sc-val ' + (pick50.spread !== null && pick50.spread > 10 ? 'down' : '') + '">' + (pick50.spread !== null ? fmt(pick50.spread,1)+'%' : '—') + '</span></div>' +
     '</div></div>';
 
     html += '<div class="scorecard"><h3>LEAPS Deep ITM Call — Score</h3><div class="criteria-list">';
