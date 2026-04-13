@@ -3598,7 +3598,7 @@ async function runLeaps(forceTicker) {
     var cost1ct = bestPremium ? bestPremium * 100 : null;
     var leverage = (pd.price && bestPremium && bestPremium > 0) ? (pd.price / bestPremium) : null;
 
-    html += '<div class="scenario-card" style="margin-bottom:16px"><h4 style="color:var(--accent)">★ Δ0.90 Deep ITM Pick</h4>' +
+    html += '<div class="scenario-card" style="margin-bottom:12px"><h4 style="color:var(--accent)">★ Δ0.90 Deep ITM Pick</h4>' +
       '<div class="sc-row"><span class="sc-key">Strike</span><span class="sc-val">' + (bestStrike ? fmtDollar(bestStrike) : '—') + '</span></div>' +
       '<div class="sc-row"><span class="sc-key">Delta</span><span class="sc-val">' + (bestDelta !== null ? fmt(bestDelta,2) : '—') + '</span></div>' +
       '<div class="sc-row"><span class="sc-key">Share Equiv</span><span class="sc-val">' + (shareEquiv !== null ? '~' + shareEquiv + ' shares/ct' : '—') + '</span></div>' +
@@ -3606,14 +3606,18 @@ async function runLeaps(forceTicker) {
       '<div class="sc-row"><span class="sc-key">Intrinsic</span><span class="sc-val">' + (bestIntrinsic !== null ? fmtDollar(bestIntrinsic) : '—') + '</span></div>' +
       '<div class="sc-row"><span class="sc-key">Extrinsic</span><span class="sc-val">' + (bestExtrinsic !== null ? fmtDollar(bestExtrinsic) : '—') + '</span></div>' +
       '<div class="sc-row"><span class="sc-key">Ext %</span><span class="sc-val">' + (extPct !== null ? fmt(extPct,1)+'%' : '—') + '</span></div>' +
-      '<div class="sc-row" style="border-top:1px solid var(--border);margin-top:6px;padding-top:6px"><span class="sc-key">Cost (1 ct)</span><span class="sc-val">' + (cost1ct ? '$'+fmt(cost1ct,2) : '—') + '</span></div>' +
+      '<div class="sc-row"><span class="sc-key">OI</span><span class="sc-val">' + (bestOI !== null ? fmtK(bestOI) : '—') + '</span></div>' +
+      '<div class="sc-row"><span class="sc-key">Spread</span><span class="sc-val ' + (bestSpread !== null && bestSpread > 10 ? 'down' : '') + '">' + (bestSpread !== null ? fmt(bestSpread,1)+'%' : '—') + '</span></div>' +
+    '</div>';
+
+    // ── Standalone Trade Summary ──
+    html += '<div class="scenario-card" style="margin-bottom:16px"><h4>Trade Summary</h4>' +
+      '<div class="sc-row"><span class="sc-key">Cost (1 ct)</span><span class="sc-val">' + (cost1ct ? '$'+fmt(cost1ct,2) : '—') + '</span></div>' +
       '<div class="sc-row"><span class="sc-key">Max Loss</span><span class="sc-val down">' + (cost1ct ? '$'+fmt(cost1ct,2) : '—') + '</span></div>' +
       '<div class="sc-row"><span class="sc-key">Max Gain</span><span class="sc-val up">∞</span></div>' +
       '<div class="sc-row"><span class="sc-key">Breakeven</span><span class="sc-val">' + (breakeven ? fmtDollar(breakeven) : '—') + '</span></div>' +
       '<div class="sc-row"><span class="sc-key">BE CAGR</span><span class="sc-val ' + (breakevenCAGR !== null && breakevenCAGR <= 15 ? 'up' : breakevenCAGR !== null && breakevenCAGR > 20 ? 'down' : '') + '">' + (breakevenCAGR !== null ? fmt(breakevenCAGR,1)+'%' : '—') + '</span></div>' +
       '<div class="sc-row"><span class="sc-key">Leverage</span><span class="sc-val">' + (leverage ? fmt(leverage,1)+'x' : '—') + '</span></div>' +
-      '<div class="sc-row"><span class="sc-key">OI</span><span class="sc-val">' + (bestOI !== null ? fmtK(bestOI) : '—') + '</span></div>' +
-      '<div class="sc-row"><span class="sc-key">Spread</span><span class="sc-val ' + (bestSpread !== null && bestSpread > 10 ? 'down' : '') + '">' + (bestSpread !== null ? fmt(bestSpread,1)+'%' : '—') + '</span></div>' +
     '</div>';
 
     html += '<div class="scorecard"><h3>LEAPS Deep ITM Call — Score</h3><div class="criteria-list">';
