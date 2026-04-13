@@ -2533,11 +2533,11 @@ function buildColCard(ticker, d, strategy, rank, isBestTrade) {
       mb('OI',    d.leaps_c6, d.leaps_c6 === null ? '—' : (d.leaps_c6 ? '✓' : '✗')) +
       mb('BID/A', d.leaps_c7, d.leaps_c7 === null ? '—' : (d.leaps_c7 ? '✓' : '✗'));
   } else {
-    // Bull Synthetic: 7 criteria — RSI<30, RSI<40, CallΔ, Duration, Debit, OI, Spread
+    // Bull Synthetic: 7 criteria — RSI<30, SMA, I/E 50/50, Duration, Debit, OI, Spread
     criteriaHtml =
       mb('RSI',   d.synth_c1, rsiDisp) +
       mb('SMA',   d.synth_c2, d.synth_c2 === true ? '▼' : d.synth_c2 === false ? '▲' : '—') +
-      mb('CALLΔ', d.synth_c3, d.synth_c3 === null ? '—' : (d.synth_c3 ? '✓' : '✗')) +
+      mb('I/E',   d.synth_c3, d.synthCallExtPct !== null && d.synthCallExtPct !== undefined ? fmt(d.synthCallExtPct,0) + '%' : (d.synth_c3 === null ? '—' : (d.synth_c3 ? '✓' : '✗'))) +
       mb('DUR',   d.synth_c4, d.synth_c4 === true ? '✓' : d.synth_c4 === false ? '✗' : '—') +
       mb('DEBIT', d.synth_c5, d.synth_c5 === null ? '—' : (d.synth_c5 ? '✓' : '✗')) +
       mb('OI',    d.synth_c6, d.synth_c6 === null ? '—' : (d.synth_c6 ? '✓' : '✗')) +
@@ -2793,7 +2793,7 @@ async function fetchTickerData(ticker) {
     var hasSynthExp = expirations.some(function(e) { return dteFromStr(e) >= 365; });
     var synth_c1 = pd.rsi < 30;                                     // RSI < 30
     var synth_c2 = !isNaN(pd.sma200) ? pd.price < pd.sma200 : null; // Price below 200 SMA
-    var synth_c3 = null;                                             // Call ITM delta (need chain)
+    var synth_c3 = null;                                             // Call I/E ~50/50 (need chain)
     var synth_c4 = hasSynthExp;                                      // Duration ≥ 365 days
     var synth_c5 = null;                                             // Net Debit ≤ 2% (need chain)
     var synth_c6 = null;                                             // Both OI ≥ 200 (need chain)
@@ -2946,38 +2946,28 @@ async function runSynthPhase3(ticker) {
     ]);
     var callChain = results[0], putChain = results[1];
 
-    // Find put near ATM first — OTM only (strike ≤ current price), price-proximity primary
-    // Split-strike Bull Synthetic: BUY call ~7% ITM, SELL put near ATM above call strike
-    var callTarget3 = pd.price * 0.93;
+    // Find call with ~50/50 intrinsic/extrinsic (ITM only, extrinsic 40-60% passes)
     var slCall = null;
+    var slCallExtPct = null;
     if (callChain && callChain.strike) {
-      var bC = Infinity;
+      var bestIEDiff = Infinity;
       for (var i = 0; i < callChain.strike.length; i++) {
-        var dC = callChain.delta ? Math.abs(callChain.delta[i]) : null;
         var sC = callChain.strike[i];
-        if (sC > pd.price) continue;
-        if (dC === null) continue;
-        var difC = Math.abs(sC - callTarget3);
-        if (dC >= 0.55 && dC <= 0.85 && difC < bC) {
-          bC = difC;
-          slCall = { strike: sC, mid: callChain.mid ? callChain.mid[i] : null,
+        if (sC >= pd.price) continue; // must be ITM
+        var cMid = callChain.mid ? callChain.mid[i] : null;
+        if (!cMid || cMid <= 0) continue;
+        var intrinsic = pd.price - sC;
+        var extrinsic = cMid - intrinsic;
+        if (extrinsic < 0) extrinsic = 0;
+        var extPct = (extrinsic / cMid) * 100;
+        var ieDiff = Math.abs(extPct - 50);
+        if (ieDiff < bestIEDiff) {
+          bestIEDiff = ieDiff;
+          slCallExtPct = extPct;
+          slCall = { strike: sC, mid: cMid,
             bid: callChain.bid ? callChain.bid[i] : null, ask: callChain.ask ? callChain.ask[i] : null,
-            delta: dC, oi: callChain.openInterest ? callChain.openInterest[i] : null };
-        }
-      }
-      if (!slCall) {
-        var bCD = Infinity;
-        for (var i2 = 0; i2 < callChain.strike.length; i2++) {
-          var sC2 = callChain.strike[i2];
-          if (sC2 > pd.price) continue;
-          var d2 = Math.abs(sC2 - callTarget3);
-          if (d2 < bCD) {
-            bCD = d2;
-            slCall = { strike: sC2, mid: callChain.mid ? callChain.mid[i2] : null,
-              bid: callChain.bid ? callChain.bid[i2] : null, ask: callChain.ask ? callChain.ask[i2] : null,
-              delta: callChain.delta ? Math.abs(callChain.delta[i2]) : null,
-              oi: callChain.openInterest ? callChain.openInterest[i2] : null };
-          }
+            delta: callChain.delta ? Math.abs(callChain.delta[i]) : null,
+            oi: callChain.openInterest ? callChain.openInterest[i] : null };
         }
       }
     }
@@ -3025,7 +3015,8 @@ async function runSynthPhase3(ticker) {
 
     d.synth_c1 = pd.rsi < 30;
     d.synth_c2 = !isNaN(d.sma200) ? d.price < d.sma200 : null;
-    d.synth_c3 = slCall.delta !== null ? (slCall.delta >= 0.55 && slCall.delta <= 0.85) : null;
+    d.synthCallExtPct = slCallExtPct;
+    d.synth_c3 = slCallExtPct !== null ? (slCallExtPct >= 40 && slCallExtPct <= 60) : null;
     d.synth_c4 = dte >= 365;
     d.synth_c5 = netCostPct !== null ? netCostPct <= 15 : null;
     d.synth_c6 = (slCall.oi !== null && slPut.oi !== null) ? (slCall.oi >= 200 && slPut.oi >= 200) : null;
@@ -3860,45 +3851,36 @@ async function runSynth(forceTicker) {
     ]);
 
     // Split-strike Bull Synthetic structure:
-    // BUY call: ~7% ITM (5-10% below price), delta 0.55-0.85
-    // SELL put: ~2% below price (near ATM), delta 0.30-0.60, ABOVE call strike
+    // BUY call: ITM with ~50/50 intrinsic/extrinsic (40-60% ext passes)
+    // SELL put: near ATM (OTM, strike ≤ price), ABOVE call strike
     // Net debit ~5-15% of price is acceptable
 
-    // --- STEP 1: BUY call ~7% below current price (ITM) ---
-    var callTarget = pd.price * 0.93;
+    // --- STEP 1: BUY call with ~50/50 I/E (ITM only) ---
     var slCall = null;
+    var slCallExtPct = null;
     if (callChain && callChain.strike) {
-      var bC = Infinity;
+      var bestIEDiff = Infinity;
       for (var i = 0; i < callChain.strike.length; i++) {
-        var dC = callChain.delta ? Math.abs(callChain.delta[i]) : null;
         var sC = callChain.strike[i];
-        if (sC > pd.price) continue; // must be ITM
-        if (dC === null) continue;
-        var difC = Math.abs(sC - callTarget);
-        if (dC >= 0.55 && dC <= 0.85 && difC < bC) {
-          bC = difC;
+        if (sC >= pd.price) continue; // must be ITM
+        var cMid = callChain.mid ? callChain.mid[i] : null;
+        if (!cMid || cMid <= 0) continue;
+        var intrinsic = pd.price - sC;
+        var extrinsic = cMid - intrinsic;
+        if (extrinsic < 0) extrinsic = 0;
+        var extPct = (extrinsic / cMid) * 100;
+        var ieDiff = Math.abs(extPct - 50);
+        if (ieDiff < bestIEDiff) {
+          bestIEDiff = ieDiff;
+          slCallExtPct = extPct;
           slCall = { strike: sC, bid: callChain.bid ? callChain.bid[i] : null,
-            ask: callChain.ask ? callChain.ask[i] : null, mid: callChain.mid ? callChain.mid[i] : null,
-            delta: dC, oi: callChain.openInterest ? callChain.openInterest[i] : null };
-        }
-      }
-      if (!slCall) { // fallback: closest to 93% of price
-        var bCD = Infinity;
-        for (var i2 = 0; i2 < callChain.strike.length; i2++) {
-          var sC2 = callChain.strike[i2];
-          if (sC2 > pd.price) continue;
-          var dist2 = Math.abs(sC2 - callTarget);
-          if (dist2 < bCD) {
-            bCD = dist2;
-            slCall = { strike: sC2, bid: callChain.bid ? callChain.bid[i2] : null,
-              ask: callChain.ask ? callChain.ask[i2] : null, mid: callChain.mid ? callChain.mid[i2] : null,
-              delta: callChain.delta ? Math.abs(callChain.delta[i2]) : null,
-              oi: callChain.openInterest ? callChain.openInterest[i2] : null };
-          }
+            ask: callChain.ask ? callChain.ask[i] : null, mid: cMid,
+            delta: callChain.delta ? Math.abs(callChain.delta[i]) : null,
+            oi: callChain.openInterest ? callChain.openInterest[i] : null };
         }
       }
     }
-    if (!slCall) throw new Error('No ITM call strike found (5-10% below price).');
+    if (!slCall) throw new Error('No ITM call strike found with valid I/E ratio.');
 
     // --- STEP 2: SELL put ~2% below price, ABOVE call strike (near ATM) ---
     var putTarget = pd.price * 0.98;
@@ -3949,7 +3931,7 @@ async function runSynth(forceTicker) {
 
     var c1 = pd.rsi < 30;
     var c2 = !isNaN(pd.sma200) ? pd.price < pd.sma200 : null;
-    var c3 = slCall.delta !== null ? (slCall.delta >= 0.55 && slCall.delta <= 0.85) : null;  // ITM call 5-10% below price
+    var c3 = slCallExtPct !== null ? (slCallExtPct >= 40 && slCallExtPct <= 60) : null;  // Call I/E ~50/50
     var c4 = dte >= 365;
     var c5 = netCostPct !== null ? netCostPct <= 15 : null;  // target ~5-15% net debit
     var c6 = (slCall.oi !== null && slPut.oi !== null) ? (slCall.oi >= 200 && slPut.oi >= 200) : null;
@@ -3964,6 +3946,7 @@ async function runSynth(forceTicker) {
       '<div class="info-item"><div class="info-label">DTE</div><div class="info-val">' + dte + '</div></div>' +
       '<div class="info-item"><div class="info-label">Call Strike</div><div class="info-val">' + fmtDollar(slCall.strike) + '</div></div>' +
       '<div class="info-item"><div class="info-label">Put Strike</div><div class="info-val">' + fmtDollar(slPut.strike) + '</div></div>' +
+      '<div class="info-item"><div class="info-label">Call I/E</div><div class="info-val">' + (slCallExtPct !== null ? fmt(100-slCallExtPct,1) + '% / ' + fmt(slCallExtPct,1) + '%' : '—') + '</div></div>' +
       '<div class="info-item"><div class="info-label">Net Debit</div><div class="info-val">' + (netCost !== null ? fmtDollar(netCost) : '—') + ' (' + (netCostPct !== null ? fmt(netCostPct,2)+'%' : '—') + ')</div></div>' +
       '<div class="info-item"><div class="info-label">Breakeven</div><div class="info-val">' + (breakeven !== null ? fmtDollar(breakeven) : '—') + (beAboveCur !== null ? ' ('+fmt(beAboveCur,1)+'% away)' : '') + '</div></div>' +
     '</div>';
@@ -4076,7 +4059,7 @@ async function runSynth(forceTicker) {
     html += '<div class="scorecard"><h3>Bull Synthetic — Score</h3><div class="criteria-list">';
     html += critRow(1,'RSI(10) < 30 · Daily (Oversold Entry)', c1, fmt(pd.rsi,1));
     html += critRow(2,'Price Below 200 SMA (Pullback)', c2, pd.sma200 ? fmtDollar(pd.price) + ' vs ' + fmtDollar(pd.sma200) : 'N/A');
-    html += critRow(3,'Call ITM 5-10% Below Price (Δ0.55–0.85)', c3, fmt(slCall.delta,2));
+    html += critRow(3,'Call I/E ~50/50 (Ext 40–60%)', c3, slCallExtPct !== null ? fmt(slCallExtPct,1) + '% ext' : 'N/A');
     html += critRow(4,'Duration ≥ 365 Days', c4, dte+' days');
     html += critRow(5,'Net Debit ≤ 15% of Price', c5, netCostPct !== null ? fmt(netCostPct,2)+'%' : 'N/A');
     html += critRow(6,'Both Legs OI ≥ 200', c6, 'Call: '+fmtK(slCall.oi)+' / Put: '+fmtK(slPut.oi));
