@@ -3368,6 +3368,9 @@ async function runPut(forceTicker) {
       html += '<div class="suggestions-box">' + suggestionsP.map(function(s){ return '<div class="suggestion-item">' + s + '</div>'; }).join('') + '</div>';
     }
 
+    html += '<div class="chain-section"><h3>Put Chain — '+bestExpiry+' ('+dte+' DTE)</h3>';
+    html += buildChainTable(chain, -0.20, pd.price, true) + '</div>';
+
     // ── Position Scenarios at Expiry (CSP) ──
     if (bestStrike !== null && bestPremium !== null) {
       var scenarioPcts = [-30, -20, -10, 0, 10, 20, 50, 100];
@@ -3393,9 +3396,6 @@ async function runPut(forceTicker) {
       });
       html += '</div></div>';
     }
-
-    html += '<div class="chain-section"><h3>Put Chain — '+bestExpiry+' ('+dte+' DTE)</h3>';
-    html += buildChainTable(chain, -0.20, pd.price, true) + '</div>';
 
     document.getElementById('put-results').innerHTML = html;
   } catch(e) {
@@ -3536,6 +3536,9 @@ async function runCC(forceTicker) {
 
     html += '<div class="btc-note">📌 BTC at 80% profit or 21 DTE, whichever comes first.</div>';
 
+    html += '<div class="chain-section" style="margin-top:14px"><h3>Call Chain — '+bestExpiry+' ('+dte+' DTE)</h3>';
+    html += buildChainTable(chain, bestStrike, pd.price, false, true) + '</div>'; // true = match by strike not delta
+
     // ── Position Scenarios at Expiry (CC) ──
     if (bestStrike !== null && bestPremium !== null) {
       var scenarioPcts = [-30, -20, -10, 0, 10, 20, 50, 100];
@@ -3561,9 +3564,6 @@ async function runCC(forceTicker) {
       });
       html += '</div></div>';
     }
-
-    html += '<div class="chain-section" style="margin-top:14px"><h3>Call Chain — '+bestExpiry+' ('+dte+' DTE)</h3>';
-    html += buildChainTable(chain, bestStrike, pd.price, false, true) + '</div>'; // true = match by strike not delta
 
     document.getElementById('cc-results').innerHTML = html;
   } catch(e) {
