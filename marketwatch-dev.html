@@ -2501,7 +2501,7 @@ function buildColCard(ticker, d, strategy, rank, isBestTrade) {
     }
   }
 
-  var mr      = d.meanRev;
+  var mr      = (strategy === 'leaps' || strategy === 'synth') ? (d.weeklyMeanRev != null ? d.weeklyMeanRev : d.meanRev) : d.meanRev;
   var mrZ     = mrZone(mr);
   var mrColor = mrZ.cls;
   var mrDisp  = mrZ.label;
@@ -2589,9 +2589,8 @@ function buildColCard(ticker, d, strategy, rank, isBestTrade) {
     // LEAPS James: 7 criteria — MR, Delta, BE CAGR, Duration, IV, OI, Spread
     var deltaDisp = d.leapsDelta !== null && d.leapsDelta !== undefined ? fmt(d.leapsDelta,2) : (d.leaps_c1 === null ? '—' : (d.leaps_c1 ? '✓' : '✗'));
     var cagrDisp  = d.leapsCAGR !== null && d.leapsCAGR !== undefined ? fmt(d.leapsCAGR,1)+'%' : (d.leaps_c2 === null ? '—' : (d.leaps_c2 ? '✓' : '✗'));
-    var leapsMrDisp = d.leapsMR !== undefined && !isNaN(d.leapsMR) ? mrZone(d.leapsMR).label : mrDisp;
     criteriaHtml =
-      mb('MR',    d.leaps_c4, leapsMrDisp) +
+      mb('MR',    d.leaps_c4, mrDisp) +
       mb('DELTA', d.leaps_c1, deltaDisp) +
       mb('CAGR',  d.leaps_c2, cagrDisp) +
       mb('DUR',   d.leaps_c3, d.leaps_c3 === true ? '✓' : d.leaps_c3 === false ? '✗' : '—') +
@@ -2600,9 +2599,8 @@ function buildColCard(ticker, d, strategy, rank, isBestTrade) {
       mb('BID/A', d.leaps_c7, d.leaps_c7 === null ? '—' : (d.leaps_c7 ? '✓' : '✗'));
   } else {
     // Synthetic Long: 7 criteria — MR≤-2 Wkly, IV>50%, DTE≥540, Debit≤5%, Call OI, Put OI, Spreads
-    var synthMrDisp = d.synthMR !== undefined && !isNaN(d.synthMR) ? mrZone(d.synthMR).label : mrDisp;
     criteriaHtml =
-      mb('MR',    d.synth_c1, synthMrDisp) +
+      mb('MR',    d.synth_c1, mrDisp) +
       mb('IV',    d.synth_c2, d.synth_c2 === null ? '—' : (d.synth_c2 ? '✓' : '✗')) +
       mb('DUR',   d.synth_c3, d.synth_c3 === true ? '✓' : d.synth_c3 === false ? '✗' : '—') +
       mb('DEBIT', d.synth_c4, d.synth_c4 === null ? '—' : (d.synth_c4 ? '✓' : '✗')) +
@@ -2679,15 +2677,15 @@ function renderColumns() {
     var sa = cardData[a].leapsScore !== null ? cardData[a].leapsScore : -1;
     var sb = cardData[b].leapsScore !== null ? cardData[b].leapsScore : -1;
     if (sb !== sa) return sb - sa;
-    return (cardData[a].meanRev || 999) - (cardData[b].meanRev || 999);
+    return ((cardData[a].weeklyMeanRev != null ? cardData[a].weeklyMeanRev : cardData[a].meanRev) || 999) - ((cardData[b].weeklyMeanRev != null ? cardData[b].weeklyMeanRev : cardData[b].meanRev) || 999);
   });
 
-  // Synthetic Long: sort by synthScore desc, ties broken by MR asc (most oversold first)
+  // Synthetic Long: sort by synthScore desc, ties broken by weekly MR asc (most oversold first)
   synthSorted.sort(function(a, b) {
     var sa = cardData[a].synthScore !== null ? cardData[a].synthScore : -1;
     var sb = cardData[b].synthScore !== null ? cardData[b].synthScore : -1;
     if (sb !== sa) return sb - sa;
-    return (cardData[a].meanRev || 999) - (cardData[b].meanRev || 999);
+    return ((cardData[a].weeklyMeanRev != null ? cardData[a].weeklyMeanRev : cardData[a].meanRev) || 999) - ((cardData[b].weeklyMeanRev != null ? cardData[b].weeklyMeanRev : cardData[b].meanRev) || 999);
   });
 
   // Render each column
@@ -3143,6 +3141,7 @@ function applyServerScores(s) {
     week52H:     s.week52H,
     week52L:     s.week52L,
     meanRev:     s.meanRev,
+    weeklyMeanRev: s.weeklyMeanRev != null ? s.weeklyMeanRev : s.meanRev,
     sma200:      s.sma200,
     ivRank:      s.ivRank,
     expiry:      s.expiry,
