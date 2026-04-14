@@ -1953,6 +1953,25 @@ function updateClock() {
     el.className   = 'market-status closed';
   }
 }
+// ── Persist timezone selection via cookie ──
+function _saveTz(tz) {
+  document.cookie = 'oe_tz=' + tz + ';path=/;max-age=31536000';
+}
+function _loadTz() {
+  var m = document.cookie.match(/oe_tz=(ET|CT|MT|PT)/);
+  return m ? m[1] : null;
+}
+(function() {
+  var saved = _loadTz();
+  if (saved) document.getElementById('tz-sel').value = saved;
+})();
+var _origUpdateClock = updateClock;
+updateClock = function() {
+  _origUpdateClock();
+};
+document.getElementById('tz-sel').addEventListener('change', function() {
+  _saveTz(this.value);
+});
 setInterval(updateClock, 1000);
 updateClock();
 
