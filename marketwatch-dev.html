@@ -3022,36 +3022,37 @@ async function runSynthPhase3(ticker) {
     var callChain = results[0], putChain = results[1];
 
     // James same-strike synthetic long: Buy call + Sell put at SAME strike
-    // Target ATM strike (closest to current price)
+    // Target strike where net debit is closest to ≤5% of stock price
     var slCall = null, slPut = null;
     if (callChain && callChain.strike && putChain && putChain.strike) {
-      // Find ATM strike: closest to current price in call chain
-      var bestDist = Infinity;
-      var bestIdx = -1;
+      var putMap = {};
+      for (var pi2 = 0; pi2 < putChain.strike.length; pi2++) putMap[putChain.strike[pi2]] = pi2;
+      var bestNd = Infinity, bestCI = -1, bestPI = -1;
       for (var i = 0; i < callChain.strike.length; i++) {
-        var dist = Math.abs(callChain.strike[i] - pd.price);
-        if (dist < bestDist) { bestDist = dist; bestIdx = i; }
+        var sk = callChain.strike[i];
+        if (!(sk in putMap)) continue;
+        var cMid = callChain.mid ? callChain.mid[i] : null;
+        var pMid = putChain.mid ? putChain.mid[putMap[sk]] : null;
+        if (cMid === null || pMid === null) continue;
+        var nd = (cMid - pMid) / pd.price * 100;
+        // Prefer strikes with nd ≤5%, pick closest to 5%; if none ≤5%, pick lowest nd
+        var score = nd <= 5 ? (5 - nd) : (nd - 5 + 1000); // bias toward ≤5%
+        if (score < bestNd) { bestNd = score; bestCI = i; bestPI = putMap[sk]; }
       }
-      if (bestIdx >= 0) {
-        var atmStrike = callChain.strike[bestIdx];
+      if (bestCI >= 0) {
+        var atmStrike = callChain.strike[bestCI];
         slCall = { strike: atmStrike,
-          bid: callChain.bid ? callChain.bid[bestIdx] : null,
-          ask: callChain.ask ? callChain.ask[bestIdx] : null,
-          mid: callChain.mid ? callChain.mid[bestIdx] : null,
-          delta: callChain.delta ? Math.abs(callChain.delta[bestIdx]) : null,
-          oi: callChain.openInterest ? callChain.openInterest[bestIdx] : null };
-        // Find matching put at same strike
-        for (var j = 0; j < putChain.strike.length; j++) {
-          if (putChain.strike[j] === atmStrike) {
-            slPut = { strike: atmStrike,
-              bid: putChain.bid ? putChain.bid[j] : null,
-              ask: putChain.ask ? putChain.ask[j] : null,
-              mid: putChain.mid ? putChain.mid[j] : null,
-              delta: putChain.delta ? putChain.delta[j] : null,
-              oi: putChain.openInterest ? putChain.openInterest[j] : null };
-            break;
-          }
-        }
+          bid: callChain.bid ? callChain.bid[bestCI] : null,
+          ask: callChain.ask ? callChain.ask[bestCI] : null,
+          mid: callChain.mid ? callChain.mid[bestCI] : null,
+          delta: callChain.delta ? Math.abs(callChain.delta[bestCI]) : null,
+          oi: callChain.openInterest ? callChain.openInterest[bestCI] : null };
+        slPut = { strike: atmStrike,
+          bid: putChain.bid ? putChain.bid[bestPI] : null,
+          ask: putChain.ask ? putChain.ask[bestPI] : null,
+          mid: putChain.mid ? putChain.mid[bestPI] : null,
+          delta: putChain.delta ? putChain.delta[bestPI] : null,
+          oi: putChain.openInterest ? putChain.openInterest[bestPI] : null };
       }
     }
     if (!slCall || !slPut) return;
@@ -4007,7 +4008,7 @@ async function runSynth(forceTicker) {
 
     // James same-strike synthetic long: BUY call + SELL put at SAME strike
     // Sell put → use proceeds to buy call. Same asset, same expiry, same strike.
-    // Target ATM strike (closest to current price)
+    // Target strike where net debit is closest to ≤5% of stock price
 
     var slCall = null, slPut = null;
     if (!callChain || !callChain.strike || !putChain || !putChain.strike)
@@ -4018,13 +4019,18 @@ async function runSynth(forceTicker) {
     for (var pi = 0; pi < putChain.strike.length; pi++) {
       putStrikeMap[putChain.strike[pi]] = pi;
     }
-    var bestDist = Infinity, bestCallIdx = -1, bestPutIdx = -1;
+    var bestNdScore = Infinity, bestCallIdx = -1, bestPutIdx = -1;
     for (var i = 0; i < callChain.strike.length; i++) {
       var s = callChain.strike[i];
       if (!(s in putStrikeMap)) continue; // need matching put
-      var dist = Math.abs(s - pd.price);
-      if (dist < bestDist) {
-        bestDist = dist;
+      var cM = callChain.mid ? callChain.mid[i] : null;
+      var pM = putChain.mid ? putChain.mid[putStrikeMap[s]] : null;
+      if (cM === null || pM === null) continue;
+      var ndPct = (cM - pM) / pd.price * 100;
+      // Prefer strikes with nd ≤5%, pick closest to 5%; if none ≤5%, pick lowest nd
+      var ndScore = ndPct <= 5 ? (5 - ndPct) : (ndPct - 5 + 1000);
+      if (ndScore < bestNdScore) {
+        bestNdScore = ndScore;
         bestCallIdx = i;
         bestPutIdx = putStrikeMap[s];
       }
@@ -4124,7 +4130,7 @@ async function runSynth(forceTicker) {
       var atmIdx = bestCallIdx;
       var cStart = Math.max(0, atmIdx - 4);
       var cEnd   = Math.min(callChain.strike.length, atmIdx + 5);
-      html += '<div class="chain-section"><h3>Synthetic Long Strikes <span style="color:var(--text-muted);font-weight:400;font-size:11px">— same-strike call+put, ★ = ATM</span></h3>' +
+      html += '<div class="chain-section"><h3>Synthetic Long Strikes <span style="color:var(--text-muted);font-weight:400;font-size:11px">— same-strike call+put, ★ = best net debit</span></h3>' +
         '<div class="leaps-table-wrap"><table><thead><tr>' +
         '<th>Strike</th><th>C Bid</th><th>C Ask</th><th>C Mid</th><th>C Δ</th><th>C OI</th>' +
         '<th>P Bid</th><th>P Ask</th><th>P Mid</th><th>P Δ</th><th>P OI</th><th>Net</th>' +
