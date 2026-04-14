@@ -680,10 +680,17 @@ async function scoreTicker(ticker, env) {
   const gut_c7 = null;     // Spreads ≤ 10% (need chain)
   const gutScore = [gut_c1, gut_c2, gut_c3, gut_c4, gut_c5, gut_c6, gut_c7].filter(x => x === true).length;
 
-  // MSL (Modified Synthetic Long — Laura's 3-leg strategy)
-  // Criteria: MR≤-2σ Weekly, Put Credit≥45%, Call 50/50 I/E, Duration≥540, Net Debit≤33%, Call OI≥300, Put OI≥300
-  // Only c1 and c4 can be scored server-side; rest need option chain data (Phase 3 on frontend)
-  const msl_c1 = synth_c1; // MR ≤ -2σ Weekly
+  // MSL (Option Goddess SL — Laura's 3-leg strategy)
+  // Criteria: MR≤-2σ 4H, Put Credit≥45%, Call 50/50 I/E, Duration≥540, Net Debit≤33%, Call OI≥300, Put OI≥300
+  // c1 uses 4H MR; c4 uses DTE; rest need option chain data (Phase 3 on frontend)
+  let fourHourMR = meanRev; // fallback to daily
+  try {
+    const fourHData = await cachedFetch('https://api.twelvedata.com/time_series?symbol=' + ticker + '&interval=4h&outputsize=60&apikey=' + TD_KEY);
+    const fourHCloses = (fourHData.values || []).map(v => parseFloat(v.close)).reverse();
+    const fourHMR = calcMeanRev(fourHCloses);
+    if (!isNaN(fourHMR)) fourHourMR = fourHMR;
+  } catch(e) { /* use daily as fallback */ }
+  const msl_c1 = !isNaN(fourHourMR) ? fourHourMR <= -2 : null; // MR ≤ -2σ 4H
   const msl_c2 = null;     // Put Credit ≥ 45% of width (need chain)
   const msl_c3 = null;     // Call ~50/50 intrinsic/extrinsic (need chain)
   const msl_c4 = synth_c3; // Duration >= 540 DTE

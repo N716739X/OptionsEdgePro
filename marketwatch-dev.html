@@ -2553,7 +2553,8 @@ function buildColCard(ticker, d, strategy, rank, isBestTrade) {
     }
   }
 
-  var mr      = (strategy === 'leaps' || strategy === 'synth' || strategy === 'gut' || strategy === 'msl') ? (d.weeklyMeanRev != null ? d.weeklyMeanRev : d.meanRev) : d.meanRev;
+  var mr      = strategy === 'msl' ? (d.mslMR != null ? d.mslMR : d.meanRev) :
+                (strategy === 'leaps' || strategy === 'synth' || strategy === 'gut') ? (d.weeklyMeanRev != null ? d.weeklyMeanRev : d.meanRev) : d.meanRev;
   var mrZ     = mrZone(mr);
   var mrColor = mrZ.cls;
   var mrDisp  = mrZ.label;
@@ -3308,10 +3309,10 @@ async function runMslPhase3(ticker) {
   try {
     var d = cardData[ticker];
     if (!d) return;
-    var weeklyMR = d.meanRev;
-    try { weeklyMR = await fetchMeanRev(ticker, '1week'); } catch(e) {}
+    var fourHourMR = d.meanRev;
+    try { fourHourMR = await fetchMeanRev(ticker, '4h'); } catch(e) {}
 
-    var pd = { price: d.price, meanRev: weeklyMR, ivRank: d.ivRank };
+    var pd = { price: d.price, meanRev: fourHourMR, ivRank: d.ivRank };
     var expirations = d.expirations || await fetchExpirations(ticker);
     var mslExp = expirations.filter(function(e) { return dteFromStr(e) >= 540; });
     if (mslExp.length === 0) mslExp = expirations.filter(function(e) { return dteFromStr(e) >= 365; });
@@ -3402,7 +3403,7 @@ async function runMslPhase3(ticker) {
 
     // 7 criteria
     d.msl_c1 = !isNaN(pd.meanRev) ? pd.meanRev <= -2 : null;
-    d.mslMR  = weeklyMR;
+    d.mslMR  = fourHourMR;
     d.msl_c2 = putCreditPct !== null ? putCreditPct >= 45 : null;
     d.msl_c3 = (callRatio >= 0.40 && callRatio <= 0.60);
     d.msl_c4 = dte >= 540;
@@ -4874,9 +4875,9 @@ async function runMsl(forceTicker) {
     setStatus('msl-status', spinner() + 'Price & indicators…', 'loading');
     var pd = await fetchPriceData(ticker);
 
-    // MSL uses Weekly Mean Reversion
+    // OG SL uses 4-hour Mean Reversion (Laura's IADSS 4H chart)
     try {
-      pd.meanRev = await fetchMeanRev(ticker, '1week');
+      pd.meanRev = await fetchMeanRev(ticker, '4h');
     } catch(e) { /* keep daily MR as fallback */ }
 
     setStatus('msl-status', spinner() + 'Expirations…', 'loading');
@@ -4999,7 +5000,7 @@ async function runMsl(forceTicker) {
 
     setStatus('msl-status', 'Done', 'ok');
 
-    var html = priceBarHtml(ticker, pd, 'Daily');
+    var html = priceBarHtml(ticker, pd, '4H');
     html += '<div class="info-box">' +
       '<div class="info-item"><div class="info-label">Expiry</div><div class="info-val">' + bestExpiry + '</div></div>' +
       '<div class="info-item"><div class="info-label">DTE</div><div class="info-val">' + dte + '</div></div>' +
@@ -5142,7 +5143,7 @@ async function runMsl(forceTicker) {
 
     // Scorecard
     html += '<div class="scorecard"><h3>Option Goddess SL — Score</h3><div class="criteria-list">';
-    html += critRow(1,'MR · Weekly (Oversold — Buy the Dip)', c1, mrZone(pd.meanRev).label);
+    html += critRow(1,'MR · 4H (Oversold — Buy the Dip)', c1, mrZone(pd.meanRev).label);
     html += critRow(2,'Put Credit ≥ 45% of Width (∼50% Target)', c2, putCreditPct !== null ? fmt(putCreditPct,1) + '%' : 'N/A');
     html += critRow(3,'Call ~50/50 Intrinsic/Extrinsic (40-60%)', c3, fmt(callRatio*100,1) + '% / ' + fmt((1-callRatio)*100,1) + '%');
     html += critRow(4,'Duration ≥ 540 DTE (LEAPS-Length)', c4, dte + ' days');
@@ -5155,9 +5156,9 @@ async function runMsl(forceTicker) {
     var suggWarn = [], suggGood = [];
     if (!c1) {
       if (!isNaN(pd.meanRev) && pd.meanRev < -1 && pd.meanRev > -2) {
-        suggWarn.push('💡 <strong>MR approaching:</strong> Weekly Mean Reversion is ' + mrZone(pd.meanRev).label + ' — not yet Deeply Oversold. Wait for deeper oversold conditions.');
+        suggWarn.push('💡 <strong>MR approaching:</strong> 4H Mean Reversion is ' + mrZone(pd.meanRev).label + ' — not yet Deeply Oversold. Wait for deeper oversold conditions.');
       } else {
-        suggWarn.push('💡 <strong>Not oversold:</strong> Weekly Mean Reversion is ' + mrZone(pd.meanRev).label + ' — Option Goddess SL works best at market lows when put premiums are fattest.');
+        suggWarn.push('💡 <strong>Not oversold:</strong> 4H Mean Reversion is ' + mrZone(pd.meanRev).label + ' — Option Goddess SL works best at market lows when put premiums are fattest.');
       }
     }
     if (!c2 && putCreditPct !== null) {
