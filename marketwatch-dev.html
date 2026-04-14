@@ -297,12 +297,13 @@ header {
 ═══════════════════════════════════════════════════════ */
 .dash-columns {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   gap: 12px;
   padding: 14px 20px;
   align-items: stretch;
 }
-@media (max-width: 1100px) { .dash-columns { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 1300px) { .dash-columns { grid-template-columns: repeat(3, 1fr); } }
+@media (max-width: 900px) { .dash-columns { grid-template-columns: repeat(2, 1fr); } }
 @media (max-width: 600px)  { .dash-columns { grid-template-columns: 1fr; } }
 
 .dash-col {
@@ -1433,6 +1434,7 @@ input, textarea, select { -webkit-user-select: text; user-select: text; }
   <div class="tab" data-tab="cc">Covered Call</div>
   <div class="tab" data-tab="leaps">LEAPS</div>
   <div class="tab" data-tab="synth">Synthetic Long</div>
+  <div class="tab" data-tab="gut">Gut Spread</div>
 </div>
 
 <!-- ═══ TICKER STRIP ═══ -->
@@ -1488,6 +1490,17 @@ input, textarea, select { -webkit-user-select: text; user-select: text; }
       </div>
       <div class="dash-col-body" id="col-synth"></div>
     </div>
+    <!-- Gut Spread SYN Long Column -->
+    <div class="dash-col">
+      <div class="dash-col-header">
+        <div class="dash-col-header-top">
+          <span class="dash-col-title">Gut Spread</span>
+          <span class="dash-col-sub">Ranked by MR ↑</span>
+        </div>
+        <span class="dash-col-desc">ATM call + higher put, low net debit</span>
+      </div>
+      <div class="dash-col-body" id="col-gut"></div>
+    </div>
   </div>
 </div>
 
@@ -1540,6 +1553,19 @@ input, textarea, select { -webkit-user-select: text; user-select: text; }
       <input type="hidden" id="synth-ticker" />
     </div>
     <div id="synth-results"><div class="placeholder"><div class="ph-icon">↑</div><p>Select a ticker above to analyze</p></div></div>
+  </div>
+</div>
+
+<!-- ═══ GUT SPREAD PANEL ═══ -->
+<div id="panel-gut" class="panel">
+  <div id="mini-rankings-gut" class="mini-rankings"></div>
+  <div class="analyzer-container">
+    <div class="analyzer-status-row">
+      <span class="analyzer-label">Gut Spread SYN Long</span>
+      <span class="status-msg" id="gut-status"></span>
+      <input type="hidden" id="gut-ticker" />
+    </div>
+    <div id="gut-results"><div class="placeholder"><div class="ph-icon">↑</div><p>Select a ticker above to analyze</p></div></div>
   </div>
 </div>
 
@@ -1891,7 +1917,7 @@ document.querySelectorAll('.tab').forEach(function(tab) {
     localStorage.setItem('owp-tab', tab.dataset.tab); // remember last tab
     // Render mini rankings when switching to an analyzer tab
     var tid = tab.dataset.tab;
-    if (tid === 'put' || tid === 'cc' || tid === 'leaps' || tid === 'synth') {
+    if (tid === 'put' || tid === 'cc' || tid === 'leaps' || tid === 'synth' || tid === 'gut') {
       renderMiniRankings(tid, null);
     }
   });
@@ -2437,7 +2463,7 @@ function scoreToGrade(score, phase) {
   return 'F';
 }
 
-var COL_IDS = { put: 'col-put', cc: 'col-cc', leaps: 'col-leaps', synth: 'col-synth' };
+var COL_IDS = { put: 'col-put', cc: 'col-cc', leaps: 'col-leaps', synth: 'col-synth', gut: 'col-gut' };
 
 function renderSkeletons() {
   // Populate all 4 columns with loading skeletons
@@ -2477,6 +2503,7 @@ function buildColCard(ticker, d, strategy, rank, isBestTrade) {
   if (strategy === 'put')        score = d.putScore || 0;
   else if (strategy === 'cc')    score = d.ccScore || 0;
   else if (strategy === 'leaps') score = d.leapsScore || 0;
+  else if (strategy === 'gut')   score = d.gutScore || 0;
   else                           score = d.synthScore || 0;
 
   var totalCriteria = 7;
@@ -2501,7 +2528,7 @@ function buildColCard(ticker, d, strategy, rank, isBestTrade) {
     }
   }
 
-  var mr      = (strategy === 'leaps' || strategy === 'synth') ? (d.weeklyMeanRev != null ? d.weeklyMeanRev : d.meanRev) : d.meanRev;
+  var mr      = (strategy === 'leaps' || strategy === 'synth' || strategy === 'gut') ? (d.weeklyMeanRev != null ? d.weeklyMeanRev : d.meanRev) : d.meanRev;
   var mrZ     = mrZone(mr);
   var mrColor = mrZ.cls;
   var mrDisp  = mrZ.label;
@@ -2597,7 +2624,7 @@ function buildColCard(ticker, d, strategy, rank, isBestTrade) {
       mb('IV',    d.leaps_c5, ivDisp) +
       mb('OI',    d.leaps_c6, d.leaps_c6 === null ? '—' : (d.leaps_c6 ? '✓' : '✗')) +
       mb('BID/A', d.leaps_c7, d.leaps_c7 === null ? '—' : (d.leaps_c7 ? '✓' : '✗'));
-  } else {
+  } else if (strategy === 'synth') {
     // Synthetic Long: 7 criteria — MR≤-2 Wkly, IV>50%, DTE≥540, Debit≤5%, Call OI, Put OI, Spreads
     criteriaHtml =
       mb('MR',    d.synth_c1, mrDisp) +
@@ -2607,6 +2634,16 @@ function buildColCard(ticker, d, strategy, rank, isBestTrade) {
       mb('C-OI',  d.synth_c5, d.synth_c5 === null ? '—' : (d.synth_c5 ? '✓' : '✗')) +
       mb('P-OI',  d.synth_c6, d.synth_c6 === null ? '—' : (d.synth_c6 ? '✓' : '✗')) +
       mb('SPRD',  d.synth_c7, d.synth_c7 === null ? '—' : (d.synth_c7 ? '✓' : '✗'));
+  } else {
+    // Gut Spread: 7 criteria — MR≤-2 Wkly, IV>50%, DTE≥540, Debit≤5%, Call OI, Put OI, Spreads
+    criteriaHtml =
+      mb('MR',    d.gut_c1, mrDisp) +
+      mb('IV',    d.gut_c2, d.gut_c2 === null ? '—' : (d.gut_c2 ? '✓' : '✗')) +
+      mb('DUR',   d.gut_c3, d.gut_c3 === true ? '✓' : d.gut_c3 === false ? '✗' : '—') +
+      mb('DEBIT', d.gut_c4, d.gut_c4 === null ? '—' : (d.gut_c4 ? '✓' : '✗')) +
+      mb('C-OI',  d.gut_c5, d.gut_c5 === null ? '—' : (d.gut_c5 ? '✓' : '✗')) +
+      mb('P-OI',  d.gut_c6, d.gut_c6 === null ? '—' : (d.gut_c6 ? '✓' : '✗')) +
+      mb('SPRD',  d.gut_c7, d.gut_c7 === null ? '—' : (d.gut_c7 ? '✓' : '✗'));
   }
 
   // Footer score / label
@@ -2655,6 +2692,7 @@ function renderColumns() {
   var ccSorted    = putSorted.slice();
   var leapsSorted = putSorted.slice();
   var synthSorted = putSorted.slice();
+  var gutSorted   = putSorted.slice();
 
   // CSP: sort by putScore desc, ties broken by MR asc (most oversold first)
   putSorted.sort(function(a, b) {
@@ -2688,11 +2726,20 @@ function renderColumns() {
     return ((cardData[a].weeklyMeanRev != null ? cardData[a].weeklyMeanRev : cardData[a].meanRev) || 999) - ((cardData[b].weeklyMeanRev != null ? cardData[b].weeklyMeanRev : cardData[b].meanRev) || 999);
   });
 
+  // Gut Spread: sort by gutScore desc, ties broken by weekly MR asc (most oversold first)
+  gutSorted.sort(function(a, b) {
+    var sa = cardData[a].gutScore !== null ? cardData[a].gutScore : -1;
+    var sb = cardData[b].gutScore !== null ? cardData[b].gutScore : -1;
+    if (sb !== sa) return sb - sa;
+    return ((cardData[a].weeklyMeanRev != null ? cardData[a].weeklyMeanRev : cardData[a].meanRev) || 999) - ((cardData[b].weeklyMeanRev != null ? cardData[b].weeklyMeanRev : cardData[b].meanRev) || 999);
+  });
+
   // Render each column
   var colPut   = document.getElementById('col-put');
   var colCC    = document.getElementById('col-cc');
   var colLeaps = document.getElementById('col-leaps');
   var colSynth = document.getElementById('col-synth');
+  var colGut   = document.getElementById('col-gut');
 
   // Find the single best trade across all columns (highest score, min 6/7)
   // Collect every visible card with its score, then pick the absolute best
@@ -2701,7 +2748,8 @@ function renderColumns() {
     { list: putSorted,   strat: 'put',   key: 'putScore' },
     { list: ccSorted,    strat: 'cc',    key: 'ccScore' },
     { list: leapsSorted, strat: 'leaps', key: 'leapsScore' },
-    { list: synthSorted, strat: 'synth', key: 'synthScore' }
+    { list: synthSorted, strat: 'synth', key: 'synthScore' },
+    { list: gutSorted,   strat: 'gut',   key: 'gutScore' }
   ];
   for (var ci = 0; ci < colMap.length; ci++) {
     var cList = colMap[ci].list.slice(0, 4);
@@ -2718,12 +2766,13 @@ function renderColumns() {
   colCC.innerHTML    = ccSorted.slice(0,4).map(function(t,i)     { return buildColCard(t, cardData[t], 'cc',    i, bestTrade.score >= starMin && bestTrade.ticker === t && bestTrade.strategy === 'cc'); }).join('');
   colLeaps.innerHTML = leapsSorted.slice(0,4).map(function(t,i)  { return buildColCard(t, cardData[t], 'leaps', i, bestTrade.score >= starMin && bestTrade.ticker === t && bestTrade.strategy === 'leaps'); }).join('');
   colSynth.innerHTML = synthSorted.slice(0,4).map(function(t,i)  { return buildColCard(t, cardData[t], 'synth', i, bestTrade.score >= starMin && bestTrade.ticker === t && bestTrade.strategy === 'synth'); }).join('');
+  colGut.innerHTML   = gutSorted.slice(0,4).map(function(t,i)    { return buildColCard(t, cardData[t], 'gut',   i, bestTrade.score >= starMin && bestTrade.ticker === t && bestTrade.strategy === 'gut'); }).join('');
 
   // Trigger full phase 3 analysis once all tickers are loaded
   triggerPhase3();
 
   // Refresh mini rankings for ALL analyzer tabs (panels are hidden but DOM exists)
-  ['put', 'cc', 'leaps', 'synth'].forEach(function(tid) {
+  ['put', 'cc', 'leaps', 'synth', 'gut'].forEach(function(tid) {
     var activeInput = document.getElementById(tid + '-ticker');
     var activeTicker = activeInput ? (activeInput.value || null) : null;
     renderMiniRankings(tid, activeTicker);
@@ -3095,8 +3144,132 @@ async function runSynthPhase3(ticker) {
   } catch(e) { /* silently skip */ }
 }
 
+async function runGutPhase3(ticker) {
+  try {
+    var d = cardData[ticker];
+    if (!d) return;
+    // Gut uses Weekly Mean Reversion
+    var weeklyMR = d.meanRev;
+    try {
+      weeklyMR = await fetchMeanRev(ticker, '1week');
+    } catch(e) { /* use daily MR as fallback */ }
+
+    var pd = { price: d.price, meanRev: weeklyMR, ivRank: d.ivRank };
+
+    var expirations = d.expirations || await fetchExpirations(ticker);
+    var gutExp = expirations.filter(function(e) { return dteFromStr(e) >= 540; });
+    if (gutExp.length === 0) {
+      gutExp = expirations.filter(function(e) { return dteFromStr(e) >= 365; });
+    }
+    if (gutExp.length === 0) return;
+    gutExp.sort(function(a,b){ return dteFromStr(b) - dteFromStr(a); });
+    var bestExpiry = gutExp[0];
+    var dte = dteFromStr(bestExpiry);
+
+    var results = await Promise.all([
+      fetchChain(ticker, bestExpiry, 'call').catch(function(){return null;}),
+      fetchChain(ticker, bestExpiry, 'put').catch(function(){return null;})
+    ]);
+    var callChain = results[0], putChain = results[1];
+
+    // Gut Spread: Buy ATM call + Sell ITM put at HIGHER strike targeting ≤5% net debit
+    var gsCall = null, gsPut = null;
+    if (callChain && callChain.strike && putChain && putChain.strike) {
+      // Find ATM call (closest to current price)
+      var bestCallDist = Infinity, atmCallIdx = -1;
+      for (var ci = 0; ci < callChain.strike.length; ci++) {
+        var dist = Math.abs(callChain.strike[ci] - pd.price);
+        if (dist < bestCallDist) { bestCallDist = dist; atmCallIdx = ci; }
+      }
+      if (atmCallIdx >= 0) {
+        var atmStrike = callChain.strike[atmCallIdx];
+        var callMid = callChain.mid ? callChain.mid[atmCallIdx] : null;
+        // Scan puts at strikes ABOVE the ATM call strike
+        var bestPutIdx = -1, bestDebitPct = Infinity;
+        for (var pi = 0; pi < putChain.strike.length; pi++) {
+          if (putChain.strike[pi] <= atmStrike) continue; // must be higher strike (ITM put)
+          var putMid = putChain.mid ? putChain.mid[pi] : null;
+          if (callMid === null || putMid === null) continue;
+          var netDebit = callMid - putMid; // call cost - put credit (put ITM so put premium > call premium usually)
+          var debitPct = Math.abs(netDebit / pd.price * 100);
+          if (debitPct <= 5 && debitPct < bestDebitPct) {
+            bestDebitPct = debitPct;
+            bestPutIdx = pi;
+          }
+        }
+        // If no put yields ≤5%, pick closest to 5%
+        if (bestPutIdx < 0) {
+          var closestTo5 = Infinity;
+          for (var pi2 = 0; pi2 < putChain.strike.length; pi2++) {
+            if (putChain.strike[pi2] <= atmStrike) continue;
+            var putMid2 = putChain.mid ? putChain.mid[pi2] : null;
+            if (callMid === null || putMid2 === null) continue;
+            var nd2 = callMid - putMid2;
+            var dp2 = Math.abs(nd2 / pd.price * 100);
+            if (Math.abs(dp2 - 5) < closestTo5) { closestTo5 = Math.abs(dp2 - 5); bestPutIdx = pi2; }
+          }
+        }
+        if (bestPutIdx >= 0) {
+          gsCall = { strike: atmStrike,
+            bid: callChain.bid ? callChain.bid[atmCallIdx] : null,
+            ask: callChain.ask ? callChain.ask[atmCallIdx] : null,
+            mid: callMid,
+            delta: callChain.delta ? Math.abs(callChain.delta[atmCallIdx]) : null,
+            oi: callChain.openInterest ? callChain.openInterest[atmCallIdx] : null };
+          gsPut = { strike: putChain.strike[bestPutIdx],
+            bid: putChain.bid ? putChain.bid[bestPutIdx] : null,
+            ask: putChain.ask ? putChain.ask[bestPutIdx] : null,
+            mid: putChain.mid ? putChain.mid[bestPutIdx] : null,
+            delta: putChain.delta ? putChain.delta[bestPutIdx] : null,
+            oi: putChain.openInterest ? putChain.openInterest[bestPutIdx] : null };
+        }
+      }
+    }
+    if (!gsCall || !gsPut) return;
+
+    var netCost    = (gsCall.mid !== null && gsPut.mid !== null) ? gsCall.mid - gsPut.mid : null;
+    var netCostPct = (netCost !== null && pd.price) ? (netCost / pd.price * 100) : null;
+    var callSpread = (gsCall.bid !== null && gsCall.ask !== null) ? gsCall.ask - gsCall.bid : null;
+    var putSpread  = (gsPut.bid  !== null && gsPut.ask  !== null) ? gsPut.ask  - gsPut.bid  : null;
+    var callSpreadPct = (callSpread !== null && gsCall.mid) ? (callSpread / gsCall.mid * 100) : null;
+    var putSpreadPct  = (putSpread !== null && gsPut.mid)  ? (putSpread / gsPut.mid * 100)   : null;
+
+    // IV Rank from the put chain
+    var gutIVRank = null;
+    if (putChain && putChain.iv && putChain.iv.length > 0) {
+      var ivs = [];
+      for (var iv_i = 0; iv_i < putChain.iv.length; iv_i++) {
+        var iv_v = putChain.iv[iv_i];
+        if (iv_v !== null && iv_v !== undefined && !isNaN(iv_v) && iv_v > 0)
+          ivs.push(iv_v <= 1 ? iv_v * 100 : iv_v);
+      }
+      if (ivs.length > 0) {
+        ivs.sort(function(a,b){return a-b;});
+        var atmIV   = ivs[Math.floor(ivs.length/2)];
+        var ivRange = ivs[ivs.length-1] - ivs[0];
+        gutIVRank = ivRange > 0 ? Math.min(100, Math.max(0, (atmIV - ivs[0]) / ivRange * 100)) : 50;
+      }
+    }
+
+    // 7 criteria — same as Synth but with gut spread strike selection
+    d.gut_c1 = !isNaN(pd.meanRev) ? pd.meanRev <= -2 : null;
+    d.gutMR  = weeklyMR;
+    d.gut_c2 = gutIVRank !== null ? gutIVRank > 50 : null;
+    d.gut_c3 = dte >= 540;
+    d.gut_c4 = netCostPct !== null ? Math.abs(netCostPct) <= 5 : null;
+    d.gut_c5 = gsCall.oi !== null ? gsCall.oi >= 300 : null;
+    d.gut_c6 = gsPut.oi  !== null ? gsPut.oi  >= 300 : null;
+    d.gut_c7 = (callSpreadPct !== null && putSpreadPct !== null) ? (callSpreadPct <= 10 && putSpreadPct <= 10) : null;
+    d.gutScore = [d.gut_c1,d.gut_c2,d.gut_c3,d.gut_c4,d.gut_c5,d.gut_c6,d.gut_c7]
+      .filter(function(x){return x===true;}).length;
+    d.phase = 3;
+    renderColumns();
+    renderMiniRankings('gut');
+  } catch(e) { /* silently skip */ }
+}
+
 var _phase3Triggered = false;
-// Called once all tickers reach phase 2 — runs full analysis on top 3 per LEAPS/Synth column
+// Called once all tickers reach phase 2 — runs full analysis on top 3 per LEAPS/Synth/Gut column
 function triggerPhase3() {
   if (_phase3Triggered) return;
   var loaded = tickers.filter(function(t){ return cardData[t] && cardData[t].phase >= 2; });
@@ -3121,9 +3294,19 @@ function triggerPhase3() {
   });
   var synthTop3 = synthSorted.slice(0, 3);
 
-  // Run in parallel — all 6 at once
+  // Sort Gut top 3
+  var gutSorted2 = loaded.slice().sort(function(a,b) {
+    var sa = cardData[a].gutScore !== null ? cardData[a].gutScore : -1;
+    var sb = cardData[b].gutScore !== null ? cardData[b].gutScore : -1;
+    if (sb !== sa) return sb - sa;
+    return (cardData[a].meanRev || 999) - (cardData[b].meanRev || 999);
+  });
+  var gutTop3 = gutSorted2.slice(0, 3);
+
+  // Run in parallel — all 9 at once
   leapsTop3.forEach(function(t) { runLeapsPhase3(t); });
   synthTop3.forEach(function(t) { runSynthPhase3(t); });
+  gutTop3.forEach(function(t) { runGutPhase3(t); });
 }
 
 // ═══════════════════════════════════════════════════════
@@ -3165,6 +3348,9 @@ function applyServerScores(s) {
     leaps_c4: s.leaps.c4, leaps_c5: s.leaps.c5, leaps_c6: s.leaps.c6, leaps_c7: s.leaps.c7,
     synth_c1: s.synth.c1, synth_c2: s.synth.c2, synth_c3: s.synth.c3,
     synth_c4: s.synth.c4, synth_c5: s.synth.c5, synth_c6: s.synth.c6, synth_c7: s.synth.c7,
+    gutScore:  s.gut ? s.gut.score : null,
+    gut_c1: s.gut ? s.gut.c1 : null, gut_c2: s.gut ? s.gut.c2 : null, gut_c3: s.gut ? s.gut.c3 : null,
+    gut_c4: s.gut ? s.gut.c4 : null, gut_c5: s.gut ? s.gut.c5 : null, gut_c6: s.gut ? s.gut.c6 : null, gut_c7: s.gut ? s.gut.c7 : null,
     // Legacy fields for card rendering
     score: s.put.score,
     c1: s.put.c1, c2: s.put.c2, c3: s.put.c3, c4: s.put.c4, c5: s.put.c5, c6: s.put.c6, c7: s.put.c7
@@ -4237,6 +4423,296 @@ async function runSynth(forceTicker) {
 }
 
 // ═══════════════════════════════════════════════════════
+// GUT SPREAD SYN LONG ANALYZER (detail view)
+// ═══════════════════════════════════════════════════════
+async function runGut(forceTicker) {
+  var ticker = forceTicker || document.getElementById('gut-ticker').value.trim().toUpperCase();
+  if (!ticker) return;
+  document.getElementById('gut-results').innerHTML = '';
+  try {
+    setStatus('gut-status', spinner() + 'Price & indicators…', 'loading');
+    var pd = await fetchPriceData(ticker);
+
+    // Gut uses Weekly Mean Reversion
+    try {
+      pd.meanRev = await fetchMeanRev(ticker, '1week');
+    } catch(e) { /* keep daily MR as fallback */ }
+
+    setStatus('gut-status', spinner() + 'Expirations…', 'loading');
+    var expirations = await fetchExpirations(ticker);
+    var gutExp = expirations.filter(function(e) { return dteFromStr(e) >= 540; });
+    if (gutExp.length === 0) {
+      gutExp = expirations.filter(function(e) { return dteFromStr(e) >= 365; });
+    }
+    if (gutExp.length === 0) throw new Error('No expirations ≥ 365 days.');
+    gutExp.sort(function(a,b) { return dteFromStr(b) - dteFromStr(a); });
+    var bestExpiry = gutExp[0];
+    var dte = dteFromStr(bestExpiry);
+
+    setStatus('gut-status', spinner() + 'Call & put chains…', 'loading');
+    var [callChain, putChain] = await Promise.all([
+      fetchChain(ticker, bestExpiry, 'call'),
+      fetchChain(ticker, bestExpiry, 'put')
+    ]);
+
+    if (!callChain || !callChain.strike || !putChain || !putChain.strike)
+      throw new Error('Could not load option chains.');
+
+    // Gut Spread: Buy ATM call + Sell ITM put at HIGHER strike, targeting ≤5% net debit
+    // Step 1: Find ATM call (closest to current price)
+    var bestCallDist = Infinity, atmCallIdx = -1;
+    for (var ci = 0; ci < callChain.strike.length; ci++) {
+      var dist = Math.abs(callChain.strike[ci] - pd.price);
+      if (dist < bestCallDist) { bestCallDist = dist; atmCallIdx = ci; }
+    }
+    if (atmCallIdx < 0) throw new Error('No ATM call strike found.');
+
+    var atmStrike = callChain.strike[atmCallIdx];
+    var callMid   = callChain.mid ? callChain.mid[atmCallIdx] : null;
+
+    // Step 2: Scan puts at strikes ABOVE ATM for best net debit ≤5%
+    var gsCall = null, gsPut = null, bestPutIdx = -1, bestDebitPct = Infinity;
+    for (var pi = 0; pi < putChain.strike.length; pi++) {
+      if (putChain.strike[pi] <= atmStrike) continue;
+      var putMid = putChain.mid ? putChain.mid[pi] : null;
+      if (callMid === null || putMid === null) continue;
+      var netDebit = callMid - putMid;
+      var debitPct = Math.abs(netDebit / pd.price * 100);
+      if (debitPct <= 5 && debitPct < bestDebitPct) {
+        bestDebitPct = debitPct;
+        bestPutIdx = pi;
+      }
+    }
+    // Fallback: closest to 5%
+    if (bestPutIdx < 0) {
+      var closestTo5 = Infinity;
+      for (var pi2 = 0; pi2 < putChain.strike.length; pi2++) {
+        if (putChain.strike[pi2] <= atmStrike) continue;
+        var putMid2 = putChain.mid ? putChain.mid[pi2] : null;
+        if (callMid === null || putMid2 === null) continue;
+        var nd2 = callMid - putMid2;
+        var dp2 = Math.abs(nd2 / pd.price * 100);
+        if (Math.abs(dp2 - 5) < closestTo5) { closestTo5 = Math.abs(dp2 - 5); bestPutIdx = pi2; }
+      }
+    }
+    if (bestPutIdx < 0) throw new Error('No suitable ITM put strike found above ATM.');
+
+    gsCall = { strike: atmStrike,
+      bid: callChain.bid ? callChain.bid[atmCallIdx] : null,
+      ask: callChain.ask ? callChain.ask[atmCallIdx] : null,
+      mid: callMid,
+      delta: callChain.delta ? Math.abs(callChain.delta[atmCallIdx]) : null,
+      oi: callChain.openInterest ? callChain.openInterest[atmCallIdx] : null };
+    gsPut = { strike: putChain.strike[bestPutIdx],
+      bid: putChain.bid ? putChain.bid[bestPutIdx] : null,
+      ask: putChain.ask ? putChain.ask[bestPutIdx] : null,
+      mid: putChain.mid ? putChain.mid[bestPutIdx] : null,
+      delta: putChain.delta ? putChain.delta[bestPutIdx] : null,
+      oi: putChain.openInterest ? putChain.openInterest[bestPutIdx] : null };
+
+    var netCost    = (gsCall.mid !== null && gsPut.mid !== null) ? gsCall.mid - gsPut.mid : null;
+    var netCostPct = (netCost !== null && pd.price) ? (netCost / pd.price * 100) : null;
+    var callSpread = (gsCall.bid !== null && gsCall.ask !== null) ? gsCall.ask - gsCall.bid : null;
+    var putSpread  = (gsPut.bid  !== null && gsPut.ask  !== null) ? gsPut.ask  - gsPut.bid  : null;
+    var callSpreadPct = (callSpread !== null && gsCall.mid && gsCall.mid > 0) ? (callSpread / gsCall.mid * 100) : null;
+    var putSpreadPct  = (putSpread !== null && gsPut.mid && gsPut.mid > 0)  ? (putSpread / gsPut.mid * 100)   : null;
+    // Gut spread breakeven: put strike + net debit (since put is higher strike)
+    var breakeven  = netCost !== null ? gsPut.strike + Math.max(netCost, 0) : null;
+    var beAboveCur = (breakeven !== null && pd.price) ? ((breakeven / pd.price - 1) * 100) : null;
+
+    // IV rank for this expiration
+    var ivRank = await fetchIVRank(ticker, bestExpiry).catch(function(){ return null; });
+
+    // 7 criteria
+    var c1 = !isNaN(pd.meanRev) ? pd.meanRev <= -2 : null;
+    var c2 = ivRank !== null ? ivRank > 50 : null;
+    var c3 = dte >= 540;
+    var c4 = netCostPct !== null ? Math.abs(netCostPct) <= 5 : null;
+    var c5 = gsCall.oi !== null ? gsCall.oi >= 300 : null;
+    var c6 = gsPut.oi  !== null ? gsPut.oi  >= 300 : null;
+    var c7 = (callSpreadPct !== null && putSpreadPct !== null) ? (callSpreadPct <= 10 && putSpreadPct <= 10) : null;
+    var score = [c1,c2,c3,c4,c5,c6,c7].filter(function(x){return x===true;}).length;
+
+    setStatus('gut-status', 'Done', 'ok');
+
+    var html = priceBarHtml(ticker, pd, 'Daily');
+    html += '<div class="info-box">' +
+      '<div class="info-item"><div class="info-label">Expiry</div><div class="info-val">' + bestExpiry + '</div></div>' +
+      '<div class="info-item"><div class="info-label">DTE</div><div class="info-val">' + dte + '</div></div>' +
+      '<div class="info-item"><div class="info-label">Call Strike (ATM)</div><div class="info-val">' + fmtDollar(atmStrike) + '</div></div>' +
+      '<div class="info-item"><div class="info-label">Put Strike (ITM)</div><div class="info-val">' + fmtDollar(gsPut.strike) + ' (higher)</div></div>' +
+      '<div class="info-item"><div class="info-label">Net Cost</div><div class="info-val">' + (netCost !== null ? (netCost >= 0 ? fmtDollar(netCost) + ' debit' : fmtDollar(Math.abs(netCost)) + ' credit') : '—') + ' (' + (netCostPct !== null ? fmt(Math.abs(netCostPct),2)+'%' : '—') + ')</div></div>' +
+      '<div class="info-item"><div class="info-label">Breakeven</div><div class="info-val">' + (breakeven !== null ? fmtDollar(breakeven) : '—') + (beAboveCur !== null ? ' ('+fmt(beAboveCur,1)+'% away)' : '') + '</div></div>' +
+      (ivRank !== undefined && ivRank !== null ? '<div class="info-item"><div class="info-label">IV Rank</div><div class="info-val">' + fmt(ivRank,1) + '%</div></div>' : '') +
+    '</div>';
+
+    // Trade Summary
+    var gutDebit100  = netCost !== null ? netCost * 100 : null;
+    var gutMaxLoss   = gsPut.strike ? gsPut.strike * 100 + (netCost !== null ? netCost * 100 : 0) : null;
+    var callCost100  = gsCall.mid ? gsCall.mid * 100 : null;
+    var putCredit100 = gsPut.mid ? gsPut.mid * 100 : null;
+    function tsItem(label, val, cls, note) {
+      return '<div class="ts-item"><div class="ts-label">' + label + '</div>' +
+        '<div class="ts-val ' + cls + '">' + val + '</div>' +
+        (note ? '<div class="ts-note">' + note + '</div>' : '') + '</div>';
+    }
+    html += '<div class="trade-summary"><h4>Trade Summary — 1 Contract per Leg</h4><div class="trade-summary-grid">' +
+      tsItem('Net Cost',        gutDebit100 !== null ? (gutDebit100 >= 0 ? '$' + fmt(gutDebit100,2) + ' debit' : '$' + fmt(Math.abs(gutDebit100),2) + ' credit') : '—', 'ts-neutral', 'Call cost minus put credit') +
+      tsItem('Buy Call (ATM)',  callCost100   ? '$' + fmt(callCost100,2)   : '—', 'ts-loss',    fmtDollar(atmStrike) + ' strike') +
+      tsItem('Sell Put (ITM)',  putCredit100  ? '$' + fmt(putCredit100,2)  : '—', 'ts-gain',    fmtDollar(gsPut.strike) + ' strike (higher)') +
+      tsItem('Max Gain',        '∞', 'ts-gain', 'Unlimited above breakeven') +
+      tsItem('Max Loss',        gutMaxLoss  ? '$' + fmt(gutMaxLoss,2)  : '—', 'ts-loss', 'Put strike + net debit (if stock → $0)') +
+      tsItem('Breakeven',       breakeven     ? fmtDollar(breakeven) + (beAboveCur !== null ? ' (' + fmt(beAboveCur,1) + '% away)' : '') : '—', 'ts-neutral', 'Put strike + net debit') +
+      tsItem('Assignment Risk', gsPut.strike ? '$' + fmt(gsPut.strike * 100,2) : '—', 'ts-neutral', 'Cash if put assigned at ' + fmtDollar(gsPut.strike)) +
+    '</div></div>';
+
+    // Leg detail cards
+    html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">';
+    html += '<div class="scenario-card"><h4>BUY — Call (ATM)</h4>' +
+      '<div class="sc-row"><span class="sc-key">Strike</span><span class="sc-val">' + fmtDollar(gsCall.strike) + '</span></div>' +
+      '<div class="sc-row"><span class="sc-key">Bid/Ask</span><span class="sc-val">' + fmtDollar(gsCall.bid) + ' / ' + fmtDollar(gsCall.ask) + '</span></div>' +
+      '<div class="sc-row"><span class="sc-key">Mid</span><span class="sc-val">' + fmtDollar(gsCall.mid) + '</span></div>' +
+      '<div class="sc-row"><span class="sc-key">Delta</span><span class="sc-val">' + fmt(gsCall.delta,2) + '</span></div>' +
+      '<div class="sc-row"><span class="sc-key">OI</span><span class="sc-val">' + fmtK(gsCall.oi) + '</span></div>' +
+      '<div class="sc-row"><span class="sc-key">Spread</span><span class="sc-val ' + (callSpreadPct && callSpreadPct > 10 ? 'down' : 'up') + '">' + (callSpread !== null ? fmtDollar(callSpread) + (callSpreadPct !== null ? ' (' + fmt(callSpreadPct,1) + '%)' : '') : '—') + '</span></div>' +
+    '</div>';
+    html += '<div class="scenario-card"><h4>SELL — Put (ITM, Higher Strike)</h4>' +
+      '<div class="sc-row"><span class="sc-key">Strike</span><span class="sc-val">' + fmtDollar(gsPut.strike) + '</span></div>' +
+      '<div class="sc-row"><span class="sc-key">Bid/Ask</span><span class="sc-val">' + fmtDollar(gsPut.bid) + ' / ' + fmtDollar(gsPut.ask) + '</span></div>' +
+      '<div class="sc-row"><span class="sc-key">Mid</span><span class="sc-val">' + fmtDollar(gsPut.mid) + '</span></div>' +
+      '<div class="sc-row"><span class="sc-key">Delta</span><span class="sc-val">' + fmt(Math.abs(gsPut.delta),2) + '</span></div>' +
+      '<div class="sc-row"><span class="sc-key">OI</span><span class="sc-val">' + fmtK(gsPut.oi) + '</span></div>' +
+      '<div class="sc-row"><span class="sc-key">Spread</span><span class="sc-val ' + (putSpreadPct && putSpreadPct > 10 ? 'down' : 'up') + '">' + (putSpread !== null ? fmtDollar(putSpread) + (putSpreadPct !== null ? ' (' + fmt(putSpreadPct,1) + '%)' : '') : '—') + '</span></div>' +
+    '</div></div>';
+
+    // Chain table: show puts at strikes above ATM with net debit column
+    if (callChain && callChain.strike && putChain && putChain.strike) {
+      // Build lookup for call chain by strike
+      var callStrikeMap = {};
+      for (var cmi = 0; cmi < callChain.strike.length; cmi++) callStrikeMap[callChain.strike[cmi]] = cmi;
+
+      // Filter put strikes above ATM, show ±4 around the recommended put
+      var abovePuts = [];
+      for (var api = 0; api < putChain.strike.length; api++) {
+        if (putChain.strike[api] > atmStrike) abovePuts.push(api);
+      }
+      var recIdx = abovePuts.indexOf(bestPutIdx);
+      var pStart = Math.max(0, recIdx - 4);
+      var pEnd   = Math.min(abovePuts.length, recIdx + 5);
+
+      html += '<div class="chain-section"><h3>Gut Spread Strikes <span style="color:var(--text-muted);font-weight:400;font-size:11px">— ATM call ' + fmtDollar(atmStrike) + ' + higher put, ★ = recommended</span></h3>' +
+        '<div class="leaps-table-wrap"><table><thead><tr>' +
+        '<th>Put Strike</th><th>P Bid</th><th>P Ask</th><th>P Mid</th><th>P Δ</th><th>P OI</th>' +
+        '<th>Net Debit</th><th>Debit %</th>' +
+        '</tr></thead><tbody>';
+      for (var px = pStart; px < pEnd; px++) {
+        var pidx = abovePuts[px];
+        var isRec = pidx === bestPutIdx;
+        var pStrike = putChain.strike[pidx];
+        var pBid = putChain.bid ? putChain.bid[pidx] : null;
+        var pAsk = putChain.ask ? putChain.ask[pidx] : null;
+        var pMid = putChain.mid ? putChain.mid[pidx] : null;
+        var pDlt = putChain.delta ? putChain.delta[pidx] : null;
+        var pOi  = putChain.openInterest ? putChain.openInterest[pidx] : null;
+        var rowNet = (callMid !== null && pMid !== null) ? callMid - pMid : null;
+        var rowNetPct = (rowNet !== null && pd.price) ? Math.abs(rowNet / pd.price * 100) : null;
+        html += '<tr' + (isRec ? ' class="recommended"' : '') + '>' +
+          '<td class="strike-cell">' + (isRec ? '<span class="star">★</span>' : '') + fmtDollar(pStrike) + '</td>' +
+          '<td>' + fmtDollar(pBid) + '</td><td>' + fmtDollar(pAsk) + '</td>' +
+          '<td><strong>' + fmtDollar(pMid) + '</strong></td>' +
+          '<td>' + (pDlt !== null ? fmt(Math.abs(pDlt),2) : '—') + '</td>' +
+          '<td>' + fmtK(pOi) + '</td>' +
+          '<td' + (rowNet !== null && rowNet <= 0 ? ' style="color:var(--green)"' : '') + '>' + (rowNet !== null ? (rowNet >= 0 ? fmtDollar(rowNet) : '-' + fmtDollar(Math.abs(rowNet))) : '—') + '</td>' +
+          '<td' + (rowNetPct !== null && rowNetPct <= 5 ? ' style="color:var(--green)"' : '') + '>' + (rowNetPct !== null ? fmt(rowNetPct,2) + '%' : '—') + '</td></tr>';
+      }
+      html += '</tbody></table></div></div>';
+    }
+
+    // Scorecard
+    html += '<div class="scorecard"><h3>Gut Spread SYN Long — Score</h3><div class="criteria-list">';
+    html += critRow(1,'MR · Weekly (Oversold — Buy the Dip)', c1, mrZone(pd.meanRev).label);
+    html += critRow(2,'IV > 50% (High Vol — Fat Put Premiums)', c2, ivRank !== null ? fmt(ivRank,1) + '%' : 'N/A');
+    html += critRow(3,'Duration ≥ 540 DTE (LEAPS-Length)', c3, dte + ' days');
+    html += critRow(4,'Net Debit ≤ 5% (Put Funds the Call)', c4, netCostPct !== null ? fmt(Math.abs(netCostPct),2) + '%' : 'N/A');
+    html += critRow(5,'Call OI ≥ 300 (Liquidity)', c5, fmtK(gsCall.oi));
+    html += critRow(6,'Put OI ≥ 300 (Liquidity)', c6, fmtK(gsPut.oi));
+    html += critRow(7,'Both Spreads ≤ 10% (Tight)', c7, (callSpreadPct !== null ? fmt(callSpreadPct,1)+'%' : '—')+' / '+(putSpreadPct !== null ? fmt(putSpreadPct,1)+'%' : '—'));
+    html += '</div>' + scoreSummaryHtml(score,7) + '</div>';
+
+    // Contextual suggestions
+    var suggWarn = [], suggGood = [];
+    if (!c1) {
+      if (!isNaN(pd.meanRev) && pd.meanRev < -1 && pd.meanRev > -2) {
+        suggWarn.push('💡 <strong>MR approaching:</strong> Weekly Mean Reversion is ' + mrZone(pd.meanRev).label + ' — not yet Deeply Oversold. Wait for deeper oversold conditions.');
+      } else {
+        suggWarn.push('💡 <strong>Not oversold:</strong> Weekly Mean Reversion is ' + mrZone(pd.meanRev).label + ' — gut spreads work best at market lows when put premiums are fattest.');
+      }
+    }
+    if (!c2 && ivRank !== null) {
+      suggWarn.push('💡 <strong>Low IV:</strong> IV is ' + fmt(ivRank,1) + '% — below 50%. Low-vol environments reduce the put credit. Wait for a volatility spike.');
+    }
+    if (!c3) {
+      suggWarn.push('💡 <strong>Short duration:</strong> ' + dte + ' DTE is below 540-day target. Longer expirations give the thesis time to play out.');
+    }
+    if (!c4 && netCostPct !== null) {
+      suggWarn.push('💡 <strong>Net debit elevated:</strong> ' + fmt(Math.abs(netCostPct),2) + '% — above 5%. The higher-strike put isn\'t generating enough credit. Consider waiting for vol expansion.');
+    }
+    if (!c5 || !c6) {
+      suggWarn.push('💡 <strong>Liquidity concern:</strong> OI below 300 on one or both legs. Use limit orders at the mid and enter as a combo/spread order.');
+    }
+    if (!c7) {
+      suggWarn.push('💡 <strong>Wide spreads:</strong> One or both legs have spreads above 10%. Trade during high-liquidity hours (9:45–11am ET).');
+    }
+    if (c4 || (netCostPct !== null && netCostPct <= 1)) {
+      if (netCostPct !== null && netCostPct < 0) {
+        suggGood.push('✅ <strong>Net credit entry:</strong> You collect a net credit of ' + fmt(Math.abs(netCostPct),2) + '% — the ITM put fully funds the call. Ideal gut spread.');
+      } else if (netCostPct !== null && netCostPct <= 1) {
+        suggGood.push('✅ <strong>Near-zero cost:</strong> Net debit under 1% — the ITM put credit almost fully funds the ATM call.');
+      }
+    }
+    if (beAboveCur !== null && Math.abs(beAboveCur) <= 3) {
+      suggGood.push('✅ <strong>Tight breakeven:</strong> Only ' + fmt(Math.abs(beAboveCur),1) + '% from current price — very efficient entry.');
+    }
+    if (score >= 6) {
+      suggGood.push('✅ <strong>' + (score === 7 ? 'All criteria met' : score + '/7 criteria met') + '</strong> — strong gut spread setup. Enter as a combo order to avoid leg risk.');
+    }
+    var suggestions = suggWarn.concat(suggGood);
+    if (suggestions.length > 0) {
+      html += '<div class="suggestions-box">' + suggestions.map(function(s){ return '<div class="suggestion-item">' + s + '</div>'; }).join('') + '</div>';
+    }
+
+    // P&L scenarios — Gut spread P&L at expiry
+    // Long call at atmStrike, short put at gsPut.strike (higher)
+    // P&L = max(0, F-callStrike) - max(0, putStrike-F) - netCost
+    var scenarioPcts = [-30, -20, -10, 0, 10, 20, 50, 100];
+    var scenarioLabels = ['-30% Crash', '-20% Drop', '-10% Dip', 'Flat', '+10% Rally', '+20% Rally', '+50% Rip', '+100% Moon'];
+    html += '<div class="chain-section"><h3>Position Scenarios at Expiry</h3><div class="scenarios">';
+    scenarioPcts.forEach(function(pct, si) {
+      var futurePrice   = pd.price * (1 + pct / 100);
+      var callValue     = Math.max(0, futurePrice - atmStrike);
+      var putObligation = Math.max(0, gsPut.strike - futurePrice);
+      var pnl           = callValue - putObligation - (netCost || 0);
+      var pnlPer        = pnl * 100;
+      var zone = futurePrice >= gsPut.strike ? 'Above put strike → both expire, keep spread credit' :
+                 futurePrice >= atmStrike ? 'Between strikes → call ITM, put OTM' :
+                 'Below call strike → put assigned, call expires';
+      html += '<div class="scenario-card"><h4>' + scenarioLabels[si] + '</h4>' +
+        '<div class="sc-row"><span class="sc-key">Price</span><span class="sc-val">' + fmtDollar(futurePrice) + '</span></div>' +
+        '<div class="sc-row"><span class="sc-key">Zone</span><span class="sc-val" style="font-size:10px;color:var(--text-muted)">' + zone + '</span></div>' +
+        '<div class="sc-row"><span class="sc-key">P&L/share</span><span class="sc-val ' + (pnl >= 0 ? 'up' : 'down') + '">' + (pnl >= 0 ? '+' : '') + fmtDollar(pnl) + '</span></div>' +
+        '<div class="sc-row"><span class="sc-key">P&L/contract</span><span class="sc-val ' + (pnlPer >= 0 ? 'up' : 'down') + '">' + (pnlPer >= 0 ? '+$' : '-$') + fmt(Math.abs(pnlPer),2) + '</span></div>' +
+      '</div>';
+    });
+    html += '</div></div>';
+
+    document.getElementById('gut-results').innerHTML = html;
+  } catch(e) {
+    setStatus('gut-status', '✗ ' + e.message, 'error');
+    document.getElementById('gut-results').innerHTML = '<div class="notice">'+e.message+'</div>';
+  }
+}
+
+// ═══════════════════════════════════════════════════════
 // TICKER STRIP
 // ═══════════════════════════════════════════════════════
 var activeStripTicker = null;
@@ -4250,12 +4726,13 @@ function renderTickerStrip() {
     var d     = cardData[t];
     var grade = '';
     if (d && d.phase >= 2 && onDashboard) {
-      // Best grade across all 4 strategies
+      // Best grade across all 5 strategies
       var scores = [
         d.putScore   || 0,
         d.ccScore    || 0,
         d.leapsScore || 0,
-        d.synthScore || 0
+        d.synthScore || 0,
+        d.gutScore   || 0
       ];
       var bestScore = Math.max.apply(null, scores);
       grade = scoreToGrade(bestScore, 2);
@@ -4297,6 +4774,7 @@ function stripSelect(ticker) {
   else if (tabId === 'cc')    runCC(ticker);
   else if (tabId === 'leaps') runLeaps(ticker);
   else if (tabId === 'synth') runSynth(ticker);
+  else if (tabId === 'gut')   runGut(ticker);
 }
 
 // Re-render columns + strip whenever card data updates
@@ -4390,6 +4868,13 @@ function buildMiniRankings(strategy, activeTicker) {
       if (sb !== sa) return sb - sa;
       return (cardData[a].meanRev || 999) - (cardData[b].meanRev || 999);
     });
+  } else if (strategy === 'gut') {
+    sorted.sort(function(a, b) {
+      var sa = cardData[a].gutScore !== null ? cardData[a].gutScore : -1;
+      var sb = cardData[b].gutScore !== null ? cardData[b].gutScore : -1;
+      if (sb !== sa) return sb - sa;
+      return (cardData[a].meanRev || 999) - (cardData[b].meanRev || 999);
+    });
   } else {
     sorted.sort(function(a, b) {
       var sa = cardData[a].synthScore !== null ? cardData[a].synthScore : -1;
@@ -4413,7 +4898,7 @@ function buildMiniRankings(strategy, activeTicker) {
     return cardHtml;
   }).join('');
 
-  var stratLabel = { put: 'Cash-Secured Put', cc: 'Covered Call', leaps: 'LEAPS', synth: 'Synthetic Long' }[strategy];
+  var stratLabel = { put: 'Cash-Secured Put', cc: 'Covered Call', leaps: 'LEAPS', synth: 'Synthetic Long', gut: 'Gut Spread' }[strategy];
 
   return '<div class="mini-rankings-header">' +
     '<span class="mini-rankings-title">Top 3 · ' + stratLabel + '</span>' +
@@ -4442,6 +4927,9 @@ function navigateToAnalyzer(ticker, strategy) {
   } else if (s === 'synth') {
     tabId   = 'synth';
     inputId = 'synth-ticker';
+  } else if (s === 'gut') {
+    tabId   = 'gut';
+    inputId = 'gut-ticker';
   } else {
     tabId   = 'put';
     inputId = 'put-ticker';
@@ -4461,6 +4949,7 @@ function navigateToAnalyzer(ticker, strategy) {
   else if (tabId === 'cc')    runCC(ticker);
   else if (tabId === 'leaps') runLeaps(ticker);
   else if (tabId === 'synth') runSynth(ticker);
+  else if (tabId === 'gut')   runGut(ticker);
 
   // Update mini rankings with this ticker highlighted
   renderMiniRankings(tabId, ticker);
@@ -4472,7 +4961,7 @@ function navigateToAnalyzer(ticker, strategy) {
 // ═══════════════════════════════════════════════════════
 // ENTER KEY SUPPORT
 // ═══════════════════════════════════════════════════════
-['put-ticker','cc-ticker','leaps-ticker','synth-ticker'].forEach(function(id) {
+['put-ticker','cc-ticker','leaps-ticker','synth-ticker','gut-ticker'].forEach(function(id) {
   var el = document.getElementById(id);
   if (el) el.addEventListener('keydown', function(e) {
     if (e.key === 'Enter') {
@@ -4480,6 +4969,7 @@ function navigateToAnalyzer(ticker, strategy) {
       if (id === 'cc-ticker')    runCC();
       if (id === 'leaps-ticker') runLeaps();
       if (id === 'synth-ticker') runSynth();
+      if (id === 'gut-ticker')   runGut();
     }
   });
 });

@@ -275,7 +275,7 @@ const MD_TOKEN = 'VjFYQWlwZDVCZ2ZIMm9TV3BFcndIeGxZbkdBelNESGNDVzh2czBWaHF1Yz0';
 // In-memory Map cache: all requests in the same Worker isolate share this.
 // Cloudflare Workers keep isolates alive for seconds to minutes between
 // requests, so high-traffic periods get excellent cache hit rates.
-const CACHE_TTL_STOCK = 5 * 60 * 1000;   // 5 minutes for stock quotes/RSI/SMA
+const CACHE_TTL_STOCK = 5 * 60 * 1000;   // 5 minutes for stock quotes/MR/SMA
 const CACHE_TTL_OPTIONS = 15 * 60 * 1000; // 15 minutes for options chains/expirations
 const responseCache = new Map(); // key -> { data, contentType, status, expires }
 
@@ -412,6 +412,34 @@ async function fetchJSON(url, headers = {}) {
   return res.json();
 }
 
+// Mean Reversion: Wilder RSI(16) → EMA(12) smooth → (val-50)/8
+function calcMeanRev(closes) {
+  if (!closes || closes.length < 30) return NaN;
+  const period = 16, emaP = 12, scale = 8;
+  const gains = [], losses = [];
+  for (let i = 1; i < closes.length; i++) {
+    const diff = closes[i] - closes[i - 1];
+    gains.push(Math.max(0, diff));
+    losses.push(Math.max(0, -diff));
+  }
+  let avgG = 0, avgL = 0;
+  for (let j = 0; j < period; j++) { avgG += gains[j]; avgL += losses[j]; }
+  avgG /= period; avgL /= period;
+  const rsiSeries = [];
+  for (let k = period; k < gains.length; k++) {
+    avgG = (avgG * (period - 1) + gains[k]) / period;
+    avgL = (avgL * (period - 1) + losses[k]) / period;
+    rsiSeries.push(avgL === 0 ? 100 : 100 - (100 / (1 + avgG / avgL)));
+  }
+  if (rsiSeries.length < emaP) return NaN;
+  const mult = 2 / (emaP + 1);
+  let ema = rsiSeries[0];
+  for (let m = 1; m < rsiSeries.length; m++) {
+    ema = (rsiSeries[m] - ema) * mult + ema;
+  }
+  return (ema - 50) / scale;
+}
+
 function dteFromStr(dateStr) {
   if (!dateStr) return null;
   const parts = dateStr.split('-');
@@ -492,10 +520,10 @@ async function scoreTicker(ticker, env) {
     return data;
   }
 
-  // Phase 1: price + RSI + SMA (parallel)
-  const [quoteData, rsiData, smaData] = await Promise.all([
+  // Phase 1: price + Mean Reversion + SMA (parallel)
+  const [quoteData, tsData, smaData] = await Promise.all([
     cachedFetch('https://api.twelvedata.com/quote?symbol=' + ticker + '&apikey=' + TD_KEY),
-    cachedFetch('https://api.twelvedata.com/rsi?symbol=' + ticker + '&interval=1day&time_period=10&outputsize=1&apikey=' + TD_KEY),
+    cachedFetch('https://api.twelvedata.com/time_series?symbol=' + ticker + '&interval=1day&outputsize=60&apikey=' + TD_KEY),
     cachedFetch('https://api.twelvedata.com/sma?symbol=' + ticker + '&interval=1day&time_period=200&outputsize=1&apikey=' + TD_KEY),
   ]);
 
@@ -504,10 +532,21 @@ async function scoreTicker(ticker, env) {
   const changePct = parseFloat(quoteData.percent_change);
   const week52H = parseFloat(quoteData.fifty_two_week?.high || quoteData.high);
   const week52L = parseFloat(quoteData.fifty_two_week?.low || quoteData.low);
-  const rsiVals = rsiData.values || [];
-  const rsi = parseFloat(rsiVals.length > 0 ? rsiVals[0].rsi : (rsiData.rsi || NaN));
+  // Mean Reversion: Wilder RSI(16) → EMA(12) smooth → (val-50)/8
+  const tsVals = tsData.values || [];
+  const closes = tsVals.map(v => parseFloat(v.close)).reverse(); // oldest-first
+  const meanRev = calcMeanRev(closes);
   const smaVals = smaData.values || [];
   const sma200 = parseFloat(smaVals.length > 0 ? smaVals[0].sma : (smaData.sma || NaN));
+
+  // Weekly Mean Reversion for LEAPS/Synth
+  let weeklyMeanRev = meanRev; // fallback to daily
+  try {
+    const wkData = await cachedFetch('https://api.twelvedata.com/time_series?symbol=' + ticker + '&interval=1week&outputsize=60&apikey=' + TD_KEY);
+    const wkCloses = (wkData.values || []).map(v => parseFloat(v.close)).reverse();
+    const wkMR = calcMeanRev(wkCloses);
+    if (!isNaN(wkMR)) weeklyMeanRev = wkMR;
+  } catch(e) { /* use daily as fallback */ }
 
   // Phase 2: expirations + ATR (parallel)
   const [expData, atrData] = await Promise.all([
@@ -593,7 +632,7 @@ async function scoreTicker(ticker, env) {
 
   // ── Score all 4 strategies ──
   const put_c1 = ivRank !== null ? ivRank > 80 : null;
-  const put_c2 = rsi < 30;
+  const put_c2 = !isNaN(meanRev) ? meanRev <= -2 : null;
   const put_c3 = !isNaN(sma200) ? price > sma200 : null;  // Price above 200 SMA (confirmed uptrend)
   const put_c4 = earningsRisk === null ? null : !earningsRisk;
   const put_c5 = premPct !== null ? premPct > 2 : null;
@@ -602,7 +641,7 @@ async function scoreTicker(ticker, env) {
   const putScore = [put_c1, put_c2, put_c3, put_c4, put_c5, put_c6, put_c7].filter(x => x === true).length;
 
   const cc_c1 = ivRank !== null ? ivRank > 80 : null;
-  const cc_c2 = rsi > 65;
+  const cc_c2 = !isNaN(meanRev) ? meanRev >= 2 : null;
   const cc_c3 = !isNaN(sma200) ? price > sma200 : null;  // Price above 200 SMA (confirmed uptrend)
   const cc_c4 = earningsRisk === null ? null : !earningsRisk;
   const cc_c5 = premPct !== null ? premPct >= 2 : null;
@@ -615,14 +654,14 @@ async function scoreTicker(ticker, env) {
   const leaps_c2 = null;                                            // Intrinsic/Extrinsic ~50/50 (need chain)
   const leaps_c3 = null;                                            // Strike Deep ITM Δ 0.70-0.90 (need chain)
   const leaps_c4 = hasLeapsExp;                                     // Duration 18+ months
-  const leaps_c5 = null;                                            // RSI < 30 Weekly (needs weekly RSI — resolved in frontend phase 3)
+  const leaps_c5 = !isNaN(weeklyMeanRev) ? weeklyMeanRev <= -2 : null; // MR ≤ -2σ Weekly
   const leaps_c6 = null;                                            // OI >= 300 (need chain)
   const leaps_c7 = null;                                            // Bid/Ask Spread <= 10% (need chain)
   const leapsScore = [leaps_c1, leaps_c2, leaps_c3, leaps_c4, leaps_c5, leaps_c6, leaps_c7].filter(x => x === true).length;
 
   // Synth: James-aligned same-strike synthetic long
   const hasSynthExp = expirations.some(e => dteFromStr(e) >= 540);
-  const synth_c1 = rsi < 30;                                     // RSI < 30 (proxy for weekly)
+  const synth_c1 = !isNaN(weeklyMeanRev) ? weeklyMeanRev <= -2 : null; // MR ≤ -2σ Weekly
   const synth_c2 = ivRank !== null ? ivRank > 50 : null;          // IV > 50%
   const synth_c3 = hasSynthExp;                                   // Duration >= 540 DTE
   const synth_c4 = null;                                          // Net Debit <= 5% (need chain)
@@ -631,21 +670,33 @@ async function scoreTicker(ticker, env) {
   const synth_c7 = null;                                          // Spreads <= 10% (need chain)
   const synthScore = [synth_c1, synth_c2, synth_c3, synth_c4, synth_c5, synth_c6, synth_c7].filter(x => x === true).length;
 
+  // Gut Spread: same criteria as Synth (chain-dependent ones scored in Phase 3 on frontend)
+  const gut_c1 = synth_c1; // MR ≤ -2σ Weekly
+  const gut_c2 = synth_c2; // IV > 50%
+  const gut_c3 = synth_c3; // Duration >= 540 DTE
+  const gut_c4 = null;     // Net Debit ≤ 5% (need chain — scored in Phase 3)
+  const gut_c5 = null;     // Call OI ≥ 300 (need chain)
+  const gut_c6 = null;     // Put OI ≥ 300 (need chain)
+  const gut_c7 = null;     // Spreads ≤ 10% (need chain)
+  const gutScore = [gut_c1, gut_c2, gut_c3, gut_c4, gut_c5, gut_c6, gut_c7].filter(x => x === true).length;
+
   // Build response — grades + badge info + display data (no raw scoring logic exposed)
   const putBadge = badgeInfo(putScore, 7, true);
   const ccBadge = badgeInfo(ccScore, 7, true);
   const leapsBadge = badgeInfo(leapsScore, 7, false);
   const synthBadge = badgeInfo(synthScore, 7, false);
+  const gutBadge = badgeInfo(gutScore, 7, false);
 
   return {
     ticker,
-    price, change, changePct, week52H, week52L, rsi, sma200,
+    price, change, changePct, week52H, week52L, meanRev, weeklyMeanRev, sma200,
     ivRank, expiry: bestExpiry, dte, bestStrike, bestPremium, premPct, earningsRisk,
     atrSeries,
     put:   { score: putScore, total: 7, grade: scoreToGrade(putScore, 7), badge: putBadge, c1: put_c1, c2: put_c2, c3: put_c3, c4: put_c4, c5: put_c5, c6: put_c6, c7: put_c7 },
     cc:    { score: ccScore, total: 7, grade: scoreToGrade(ccScore, 7), badge: ccBadge, c1: cc_c1, c2: cc_c2, c3: cc_c3, c4: cc_c4, c5: cc_c5, c6: cc_c6, c7: cc_c7 },
     leaps: { score: leapsScore, total: 7, grade: scoreToGrade(leapsScore, 7), badge: leapsBadge, c1: leaps_c1, c2: leaps_c2, c3: leaps_c3, c4: leaps_c4, c5: leaps_c5, c6: leaps_c6, c7: leaps_c7 },
     synth: { score: synthScore, total: 7, grade: scoreToGrade(synthScore, 7), badge: synthBadge, c1: synth_c1, c2: synth_c2, c3: synth_c3, c4: synth_c4, c5: synth_c5, c6: synth_c6, c7: synth_c7 },
+    gut:   { score: gutScore, total: 7, grade: scoreToGrade(gutScore, 7), badge: gutBadge, c1: gut_c1, c2: gut_c2, c3: gut_c3, c4: gut_c4, c5: gut_c5, c6: gut_c6, c7: gut_c7 },
   };
 }
 
