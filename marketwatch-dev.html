@@ -3231,29 +3231,18 @@ async function runGutPhase3(ticker) {
       if (atmCallIdx >= 0) {
         var atmStrike = callChain.strike[atmCallIdx];
         var callMid = callChain.mid ? callChain.mid[atmCallIdx] : null;
-        // Scan puts at strikes ABOVE the ATM call strike — pick closest to 5% but still under
-        var bestPutIdx = -1, bestDebitPct = -1;
+        // Scan puts at strikes ABOVE the ATM call strike — pick closest to 5% debit
+        var bestPutIdx = -1, closestTo5 = Infinity;
         for (var pi = 0; pi < putChain.strike.length; pi++) {
           if (putChain.strike[pi] <= atmStrike) continue; // must be higher strike (ITM put)
           var putMid = putChain.mid ? putChain.mid[pi] : null;
           if (callMid === null || putMid === null) continue;
           var netDebit = callMid - putMid;
           var debitPct = Math.abs(netDebit / pd.price * 100);
-          if (debitPct <= 5 && debitPct > bestDebitPct) {
-            bestDebitPct = debitPct;
+          var distFrom5 = Math.abs(debitPct - 5);
+          if (distFrom5 < closestTo5) {
+            closestTo5 = distFrom5;
             bestPutIdx = pi;
-          }
-        }
-        // If no put yields ≤5%, pick closest to 5% from above
-        if (bestPutIdx < 0) {
-          var closestTo5 = Infinity;
-          for (var pi2 = 0; pi2 < putChain.strike.length; pi2++) {
-            if (putChain.strike[pi2] <= atmStrike) continue;
-            var putMid2 = putChain.mid ? putChain.mid[pi2] : null;
-            if (callMid === null || putMid2 === null) continue;
-            var nd2 = callMid - putMid2;
-            var dp2 = Math.abs(nd2 / pd.price * 100);
-            if (Math.abs(dp2 - 5) < closestTo5) { closestTo5 = Math.abs(dp2 - 5); bestPutIdx = pi2; }
           }
         }
         if (bestPutIdx >= 0) {
@@ -4643,29 +4632,18 @@ async function runGut(forceTicker) {
     var atmStrike = callChain.strike[atmCallIdx];
     var callMid   = callChain.mid ? callChain.mid[atmCallIdx] : null;
 
-    // Step 2: Scan puts at strikes ABOVE ATM — pick closest to 5% but still under
-    var gsCall = null, gsPut = null, bestPutIdx = -1, bestDebitPct = -1;
+    // Step 2: Scan puts at strikes ABOVE ATM — pick closest to 5% debit
+    var gsCall = null, gsPut = null, bestPutIdx = -1, closestTo5 = Infinity;
     for (var pi = 0; pi < putChain.strike.length; pi++) {
       if (putChain.strike[pi] <= atmStrike) continue;
       var putMid = putChain.mid ? putChain.mid[pi] : null;
       if (callMid === null || putMid === null) continue;
       var netDebit = callMid - putMid;
       var debitPct = Math.abs(netDebit / pd.price * 100);
-      if (debitPct <= 5 && debitPct > bestDebitPct) {
-        bestDebitPct = debitPct;
+      var distFrom5 = Math.abs(debitPct - 5);
+      if (distFrom5 < closestTo5) {
+        closestTo5 = distFrom5;
         bestPutIdx = pi;
-      }
-    }
-    // Fallback: closest to 5% from above
-    if (bestPutIdx < 0) {
-      var closestTo5 = Infinity;
-      for (var pi2 = 0; pi2 < putChain.strike.length; pi2++) {
-        if (putChain.strike[pi2] <= atmStrike) continue;
-        var putMid2 = putChain.mid ? putChain.mid[pi2] : null;
-        if (callMid === null || putMid2 === null) continue;
-        var nd2 = callMid - putMid2;
-        var dp2 = Math.abs(nd2 / pd.price * 100);
-        if (Math.abs(dp2 - 5) < closestTo5) { closestTo5 = Math.abs(dp2 - 5); bestPutIdx = pi2; }
       }
     }
     if (bestPutIdx < 0) throw new Error('No suitable ITM put strike found above ATM.');
