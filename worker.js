@@ -680,12 +680,25 @@ async function scoreTicker(ticker, env) {
   const gut_c7 = null;     // Spreads ≤ 10% (need chain)
   const gutScore = [gut_c1, gut_c2, gut_c3, gut_c4, gut_c5, gut_c6, gut_c7].filter(x => x === true).length;
 
+  // MSL (Modified Synthetic Long — Laura's 3-leg strategy)
+  // Criteria: MR≤-2σ Weekly, Put Credit≥45%, Call 50/50 I/E, Duration≥540, Net Debit≤33%, Call OI≥300, Put OI≥300
+  // Only c1 and c4 can be scored server-side; rest need option chain data (Phase 3 on frontend)
+  const msl_c1 = synth_c1; // MR ≤ -2σ Weekly
+  const msl_c2 = null;     // Put Credit ≥ 45% of width (need chain)
+  const msl_c3 = null;     // Call ~50/50 intrinsic/extrinsic (need chain)
+  const msl_c4 = synth_c3; // Duration >= 540 DTE
+  const msl_c5 = null;     // Net Debit ≤ 33% of price (need chain)
+  const msl_c6 = null;     // Call OI ≥ 300 (need chain)
+  const msl_c7 = null;     // Sold Put OI ≥ 300 (need chain)
+  const mslScore = [msl_c1, msl_c2, msl_c3, msl_c4, msl_c5, msl_c6, msl_c7].filter(x => x === true).length;
+
   // Build response — grades + badge info + display data (no raw scoring logic exposed)
   const putBadge = badgeInfo(putScore, 7, true);
   const ccBadge = badgeInfo(ccScore, 7, true);
   const leapsBadge = badgeInfo(leapsScore, 7, false);
   const synthBadge = badgeInfo(synthScore, 7, false);
   const gutBadge = badgeInfo(gutScore, 7, false);
+  const mslBadge = badgeInfo(mslScore, 7, false);
 
   return {
     ticker,
@@ -697,6 +710,7 @@ async function scoreTicker(ticker, env) {
     leaps: { score: leapsScore, total: 7, grade: scoreToGrade(leapsScore, 7), badge: leapsBadge, c1: leaps_c1, c2: leaps_c2, c3: leaps_c3, c4: leaps_c4, c5: leaps_c5, c6: leaps_c6, c7: leaps_c7 },
     synth: { score: synthScore, total: 7, grade: scoreToGrade(synthScore, 7), badge: synthBadge, c1: synth_c1, c2: synth_c2, c3: synth_c3, c4: synth_c4, c5: synth_c5, c6: synth_c6, c7: synth_c7 },
     gut:   { score: gutScore, total: 7, grade: scoreToGrade(gutScore, 7), badge: gutBadge, c1: gut_c1, c2: gut_c2, c3: gut_c3, c4: gut_c4, c5: gut_c5, c6: gut_c6, c7: gut_c7 },
+    msl:   { score: mslScore, total: 7, grade: scoreToGrade(mslScore, 7), badge: mslBadge, c1: msl_c1, c2: msl_c2, c3: msl_c3, c4: msl_c4, c5: msl_c5, c6: msl_c6, c7: msl_c7 },
   };
 }
 
