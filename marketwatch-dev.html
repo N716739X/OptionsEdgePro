@@ -2546,21 +2546,21 @@ function buildColCard(ticker, d, strategy, rank, isBestTrade) {
     var putEarnDisp = cx.c4 === true ? 'OK' : cx.c4 === false ? 'RISK' : (d.phase < 2 ? '…' : '—');
     var putDeltaDisp = d.phase < 2 ? '…' : (cx.c6 === true ? '✓' : cx.c6 === false ? '✗' : '—');
     criteriaHtml =
-      mb('IV',    cx.c1, ivDisp) +
       mb('MR',    cx.c2, mrDisp) +
+      mb('IV',    cx.c1, ivDisp) +
       mb('SMA',   cx.c3, putSmaDisp) +
       mb('EARN',  cx.c4, putEarnDisp) +
       mb('PREM',  cx.c5, premDisp) +
       mb('DELTA', cx.c6, putDeltaDisp) +
       mb('DTE',   cx.c7, dteDisp);
   } else if (strategy === 'cc') {
-    // CC: 7 criteria — IV>80, MR≥+2, SMA200, Earnings, Premium, Delta, DTE
+    // CC: 7 criteria — MR≥+2, IV>80, SMA200, Earnings, Premium, Delta, DTE
     var ccSmaDisp = cx.c3 === true ? '▲' : cx.c3 === false ? '▼' : '—';
     var ccEarnDisp = cx.c4 === true ? 'OK' : cx.c4 === false ? 'RISK' : (d.phase < 2 ? '…' : '—');
     var ccDeltaDisp = d.phase < 2 ? '…' : (cx.c6 === true ? '✓' : cx.c6 === false ? '✗' : '—');
     criteriaHtml =
-      mb('IV',    cx.c1, ivDisp) +
       mb('MR',    cx.c2, mrDisp) +
+      mb('IV',    cx.c1, ivDisp) +
       mb('SMA',   cx.c3, ccSmaDisp) +
       mb('EARN',  cx.c4, ccEarnDisp) +
       mb('PREM',  cx.c5, premDisp) +
@@ -3390,8 +3390,8 @@ async function runPut(forceTicker) {
     '</div></div>';
 
     html += '<div class="scorecard"><h3>Cash-Secured Put — Score</h3><div class="criteria-list">';
-    html += critRow(1,'IV Rank > 80% (Elevated Premium)', c1, ivRank !== null ? fmt(ivRank,1)+'%' : 'N/A');
-    html += critRow(2,'MR · Daily (Oversold Zone)', c2, mrZone(pd.meanRev).label);
+    html += critRow(1,'MR · Daily (Oversold Zone)', c2, mrZone(pd.meanRev).label);
+    html += critRow(2,'IV Rank > 80% (Elevated Premium)', c1, ivRank !== null ? fmt(ivRank,1)+'%' : 'N/A');
     html += critRow(3,'Price Above 200 SMA (Confirmed Uptrend)', c3, pd.sma200 ? fmtDollar(pd.price) + ' vs ' + fmtDollar(pd.sma200) : 'N/A');
     html += critRow(4,'No Earnings Before Expiry', c4, earningsRisk ? 'Earnings: '+EARNINGS[ticker] : 'Clear');
     html += critRow(5,'Premium > 2% of Price', c5, premPct !== null ? fmt(premPct,2)+'%' : 'N/A');
@@ -3553,8 +3553,8 @@ async function runCC(forceTicker) {
     '</div></div>';
 
     html += '<div class="scorecard"><h3>Covered Call — Score</h3><div class="criteria-list">';
-    html += critRow(1,'IV Rank > 80% (Elevated Premium)', c1, ivRank !== null ? fmt(ivRank,1)+'%' : 'N/A');
-    html += critRow(2,'MR · Daily (Overbought Zone)', c2, mrZone(pd.meanRev).label);
+    html += critRow(1,'MR · Daily (Overbought Zone)', c2, mrZone(pd.meanRev).label);
+    html += critRow(2,'IV Rank > 80% (Elevated Premium)', c1, ivRank !== null ? fmt(ivRank,1)+'%' : 'N/A');
     html += critRow(3,'Price Above 200 SMA (Confirmed Uptrend)', c3, pd.sma200 ? fmtDollar(pd.price) + ' vs ' + fmtDollar(pd.sma200) : 'N/A');
     html += critRow(4,'No Earnings Before Expiry', c4, earningsRisk ? 'Earnings: '+EARNINGS[ticker] : 'Clear');
     html += critRow(5,'Premium ≥ 2% of Price', c5, premPct !== null ? fmt(premPct,2)+'%' : 'N/A');
