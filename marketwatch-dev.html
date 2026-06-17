@@ -3142,7 +3142,7 @@ async function fetchTickerData(ticker) {
 
     // Score PUT criteria — 7 total
     var put_c1 = null; // IV Rank removed — kept as null for back-compat with existing field references
-    var put_c2 = !isNaN(pd.meanRev) ? pd.meanRev <= -2 : null;
+    var put_c2 = !isNaN(pd.meanRev) ? pd.meanRev <= -1 : null;
     var put_c3 = !isNaN(pd.sma200) ? pd.price > pd.sma200 : null;  // Price above 200 SMA (confirmed uptrend)
     var put_c4 = earningsRisk === null ? null : !earningsRisk;
     var put_c5 = premPct !== null ? premPct > 2 : null;
@@ -3152,7 +3152,7 @@ async function fetchTickerData(ticker) {
 
     // Score CC criteria
     var cc_c1 = null; // IV Rank removed
-    var cc_c2 = !isNaN(pd.meanRev) ? pd.meanRev >= 2 : null;
+    var cc_c2 = !isNaN(pd.meanRev) ? pd.meanRev >= 1 : null;
     var cc_c3 = !isNaN(pd.sma200) ? pd.price > pd.sma200 : null;
     var cc_c4 = earningsRisk === null ? null : !earningsRisk;
     var cc_c5 = premPct !== null ? premPct >= 2 : null;
@@ -3293,7 +3293,7 @@ async function runLeapsPhase3(ticker) {
     d.leaps_c1 = bestDelta !== null ? bestDelta >= 0.80 : null;
     d.leaps_c2 = breakevenCAGR !== null ? breakevenCAGR <= 15 : null;
     d.leaps_c3 = repDTE >= 540;
-    d.leaps_c4 = !isNaN(pd.meanRev) ? pd.meanRev <= -2 : null;
+    d.leaps_c4 = !isNaN(pd.meanRev) ? pd.meanRev <= -1 : null;
     d.leaps_c5 = null; // IV<55% removed
     d.leaps_c6 = bestOI !== null ? bestOI >= 500 : null;
     d.leaps_c7 = bestSpread !== null ? bestSpread <= 10 : null;
@@ -3398,7 +3398,7 @@ async function runSynthPhase3(ticker) {
     d.ivRank = synthIVRank !== null ? synthIVRank : d.ivRank; // update card's ivRank to match synth expiry
 
     // James-aligned 7 criteria
-    d.synth_c1 = !isNaN(pd.meanRev) ? pd.meanRev <= -2 : null; // MR ≤ -2σ Weekly
+    d.synth_c1 = !isNaN(pd.meanRev) ? pd.meanRev <= -1 : null; // MR ≤ -1σ Weekly (James scale: Oversold zone entry)
     d.synthMR  = weeklyMR; // store for card rendering
     d.synth_c2 = null; // IV>50% removed
     d.synth_c3 = dte >= 540;                                                     // Duration ≥ 540 DTE
@@ -3511,7 +3511,7 @@ async function runGutPhase3(ticker) {
     }
 
     // 7 criteria — same as Synth but with gut spread strike selection
-    d.gut_c1 = !isNaN(pd.meanRev) ? pd.meanRev <= -2 : null;
+    d.gut_c1 = !isNaN(pd.meanRev) ? pd.meanRev <= -1 : null;
     d.gutMR  = weeklyMR;
     d.gut_c2 = null; // IV>50% removed
     d.gut_c3 = dte >= 540;
@@ -3637,7 +3637,7 @@ async function runMslPhase3(ticker) {
     var mslRiskRatioPh3 = (slRiskPh3 && slRiskPh3 > 0 && mslRiskPh3 !== null) ? (mslRiskPh3 / slRiskPh3 * 100) : null;
 
     // 6 scored criteria + back-compat fields
-    d.msl_c1 = !isNaN(pd.meanRev) ? pd.meanRev <= -2 : null;
+    d.msl_c1 = !isNaN(pd.meanRev) ? pd.meanRev <= -1 : null;
     d.mslMR  = fourHourMR;
     d.msl_c2 = putCreditPct !== null ? putCreditPct >= 42 : null;  // Laura's floor
     d.msl_c3 = (callRatio !== null && !isNaN(callRatio)) ? (callRatio >= 0.40 && callRatio <= 0.60) : null; // 50/50 I/E
@@ -3965,7 +3965,7 @@ async function runPut(forceTicker) {
     var deltaOk  = bestDelta !== null && Math.abs(bestDelta) >= 0.15 && Math.abs(bestDelta) <= 0.25;
     var assignCap= bestStrike ? bestStrike * 100 : null;
 
-    var c2 = !isNaN(pd.meanRev) ? pd.meanRev <= -2 : null;
+    var c2 = !isNaN(pd.meanRev) ? pd.meanRev <= -1 : null;
     var c3 = !isNaN(pd.sma200) ? pd.price > pd.sma200 : null;
     var c4 = !earningsRisk;
     var c5 = premPct !== null ? premPct > 2 : null;
@@ -4023,7 +4023,7 @@ async function runPut(forceTicker) {
       var eDate = EARNINGS[ticker];
       suggWarnP.push('💡 <strong>Earnings workaround:</strong> ' + ticker + ' has earnings on ' + eDate + ' inside your expiry window. Consider a shorter DTE expiring <strong>before ' + eDate + '</strong> to avoid earnings risk while still capturing the oversold setup.');
     }
-    if (!c2 && !isNaN(pd.meanRev) && pd.meanRev < -1 && pd.meanRev > -2) {
+    if (!c2 && !isNaN(pd.meanRev) && pd.meanRev < -0.5 && pd.meanRev > -1) {
       suggWarnP.push('💡 <strong>MR approaching:</strong> Mean Reversion is ' + mrZone(pd.meanRev).label + ' — approaching the Deeply Oversold zone. Watch for a continued dip before entering.');
     }
     if (!c3 && pd.sma200 && pd.price) {
@@ -4119,7 +4119,7 @@ async function runCC(forceTicker) {
     var otmOk     = upsidePct !== null ? (upsidePct >= 5 && upsidePct <= 15) : null;
     var totalRet  = (upsidePct !== null && premPct !== null) ? (upsidePct + premPct) : null;
 
-    var c2 = !isNaN(pd.meanRev) ? pd.meanRev >= 2 : null;
+    var c2 = !isNaN(pd.meanRev) ? pd.meanRev >= 1 : null;
     var c3 = !isNaN(pd.sma200) ? pd.price > pd.sma200 : null;
     var c4 = !earningsRisk;
     var c5 = premPct !== null ? premPct >= 2 : null;
@@ -4178,7 +4178,7 @@ async function runCC(forceTicker) {
       var eDate = EARNINGS[ticker];
       suggWarnC.push('💡 <strong>Earnings workaround:</strong> ' + ticker + ' has earnings on ' + eDate + ' inside your expiry window. Consider a shorter DTE expiring <strong>before ' + eDate + '</strong> to avoid the IV crush and gap risk.');
     }
-    if (!c2 && !isNaN(pd.meanRev) && pd.meanRev > 1 && pd.meanRev < 2) {
+    if (!c2 && !isNaN(pd.meanRev) && pd.meanRev > 0.5 && pd.meanRev < 1) {
       suggWarnC.push('💡 <strong>MR approaching:</strong> Mean Reversion is ' + mrZone(pd.meanRev).label + ' — approaching the Deeply Overbought zone. Watch for a continued rally before selling the call.');
     }
     if (!c3 && pd.sma200 && pd.price) {
@@ -4343,7 +4343,7 @@ async function runLeaps(forceTicker) {
     var c1 = bestDelta !== null ? bestDelta >= 0.80 : null;
     var c2 = breakevenCAGR !== null ? breakevenCAGR <= 15 : null;
     var c3 = repDTE >= 540;
-    var c4 = !isNaN(pd.meanRev) ? pd.meanRev <= -2 : null;
+    var c4 = !isNaN(pd.meanRev) ? pd.meanRev <= -1 : null;
     var c7 = bestSpread !== null ? bestSpread <= 10 : null;
     var score = [c1,c2,c3,c4,c7].filter(function(x){return x===true;}).length;
 
@@ -4403,7 +4403,7 @@ async function runLeaps(forceTicker) {
         suggestions.push('💡 <strong>BE CAGR elevated:</strong> ' + fmt(breakevenCAGR,1) + '% CAGR to break even. Under 15% is ideal. Consider a deeper ITM strike or longer expiry to reduce this.');
       }
     }
-    if (!c4 && !isNaN(pd.meanRev) && pd.meanRev < -1 && pd.meanRev > -2) {
+    if (!c4 && !isNaN(pd.meanRev) && pd.meanRev < -0.5 && pd.meanRev > -1) {
       suggestions.push('💡 <strong>MR approaching entry:</strong> Mean Reversion is ' + mrZone(pd.meanRev).label + ' — not Deeply Oversold yet. James says "buy options when prices are crazy low." Watch for a continued dip into the Deeply Oversold zone.');
     } else if (!c4) {
       suggestions.push('💡 <strong>Not oversold:</strong> Mean Reversion is ' + mrZone(pd.meanRev).label + ' — James\'s rule: "You do not buy the tops." Wait for a pullback to get a cheaper entry.');
@@ -4630,7 +4630,7 @@ async function runSynth(forceTicker) {
     var beAboveCur = (breakeven !== null && pd.price) ? ((breakeven / pd.price - 1) * 100) : null;
 
     // 4 criteria (IV>50% removed)
-    var c1 = !isNaN(pd.meanRev) ? pd.meanRev <= -2 : null; // MR ≤ -2σ Weekly
+    var c1 = !isNaN(pd.meanRev) ? pd.meanRev <= -1 : null; // MR ≤ -1σ Weekly (James scale: Oversold zone entry)
     var c3 = dte >= 540;                                                       // Duration ≥ 540 DTE
     var c4 = netCostPct !== null ? netCostPct <= 5 : null;                     // Net Debit ≤ 5% (credit always passes)
     var c7 = (callSpreadPct !== null && putSpreadPct !== null) ? (callSpreadPct <= 10 && putSpreadPct <= 10) : null; // Spreads ≤ 10%
@@ -4738,7 +4738,7 @@ async function runSynth(forceTicker) {
     // ── Contextual suggestions ──
     var suggWarn = [], suggGood = [];
     if (!c1) {
-      if (!isNaN(pd.meanRev) && pd.meanRev < -1 && pd.meanRev > -2) {
+      if (!isNaN(pd.meanRev) && pd.meanRev < -0.5 && pd.meanRev > -1) {
         suggWarn.push('💡 <strong>MR approaching:</strong> Weekly Mean Reversion is ' + mrZone(pd.meanRev).label + ' — not yet Deeply Oversold. Wait for deeper oversold conditions before entering.');
       } else {
         suggWarn.push('💡 <strong>Not oversold:</strong> Weekly Mean Reversion is ' + mrZone(pd.meanRev).label + ' — synthetics work best entered at market lows when put premiums are fattest.');
@@ -4895,7 +4895,7 @@ async function runGut(forceTicker) {
     var beAboveCur = (breakeven !== null && pd.price) ? ((breakeven / pd.price - 1) * 100) : null;
 
     // 4 criteria (IV>50% removed)
-    var c1 = !isNaN(pd.meanRev) ? pd.meanRev <= -2 : null;
+    var c1 = !isNaN(pd.meanRev) ? pd.meanRev <= -1 : null;
     var c3 = dte >= 540;
     var c4 = netCostPct !== null ? Math.abs(netCostPct) <= 5 : null;
     var c7 = (callSpreadPct !== null && putSpreadPct !== null) ? (callSpreadPct <= 10 && putSpreadPct <= 10) : null;
@@ -5009,7 +5009,7 @@ async function runGut(forceTicker) {
     // Contextual suggestions
     var suggWarn = [], suggGood = [];
     if (!c1) {
-      if (!isNaN(pd.meanRev) && pd.meanRev < -1 && pd.meanRev > -2) {
+      if (!isNaN(pd.meanRev) && pd.meanRev < -0.5 && pd.meanRev > -1) {
         suggWarn.push('💡 <strong>MR approaching:</strong> Weekly Mean Reversion is ' + mrZone(pd.meanRev).label + ' — not yet Deeply Oversold. Wait for deeper oversold conditions.');
       } else {
         suggWarn.push('💡 <strong>Not oversold:</strong> Weekly Mean Reversion is ' + mrZone(pd.meanRev).label + ' — gut spreads work best at market lows when put premiums are fattest.');
@@ -5206,7 +5206,7 @@ async function runMsl(forceTicker) {
     var beAboveCur = (breakeven !== null && pd.price) ? ((breakeven / pd.price - 1) * 100) : null;
 
     // 6 criteria (IV Rank removed; added Call I/E quality and MSL-vs-SL Risk Reduction)
-    var c1 = !isNaN(pd.meanRev) ? pd.meanRev <= -2 : null;
+    var c1 = !isNaN(pd.meanRev) ? pd.meanRev <= -1 : null;
     var c2 = putCreditPct !== null ? putCreditPct >= 42 : null;  // Laura's floor; >=50% = ideal (badge)
     var c2Ideal = putCreditPct !== null && putCreditPct >= 50;
     var c3 = (callRatio !== null && !isNaN(callRatio)) ? (callRatio >= 0.40 && callRatio <= 0.60) : null; // 50/50 I/E (40-60 pass, 45-55 ideal)
@@ -5575,7 +5575,7 @@ async function runMsl(forceTicker) {
     // Contextual suggestions
     var suggWarn = [], suggGood = [];
     if (!c1) {
-      if (!isNaN(pd.meanRev) && pd.meanRev < -1 && pd.meanRev > -2) {
+      if (!isNaN(pd.meanRev) && pd.meanRev < -0.5 && pd.meanRev > -1) {
         suggWarn.push('💡 <strong>MR approaching:</strong> 4H Mean Reversion is ' + mrZone(pd.meanRev).label + ' — not yet Deeply Oversold. Wait for deeper oversold conditions.');
       } else {
         suggWarn.push('💡 <strong>Not oversold:</strong> 4H Mean Reversion is ' + mrZone(pd.meanRev).label + ' — MSL works best at market lows when put premiums are fattest.');
