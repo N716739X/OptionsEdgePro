@@ -2369,10 +2369,11 @@ function mrZone(val) {
   if (val >= 1)   return { label: 'Overbought',        short: 'OB',   cls: 'up' };
   return { label: 'Neutral', short: 'Ntrl', cls: '' };
 }
-// ── Mean Reversion: Wilder RSI(16) → EMA(12) smooth → (val-50)/8 ──
+// ── Mean Reversion: Wilder RSI(14) → EMA(9) smooth → (val-50)/25 ──
+// Matches James's InvestAnswers indicator exactly (zones at ±1 = Oversold/OB, ±2 = Deeply OS/OB)
 function calcMeanRev(closes) {
   if (!closes || closes.length < 30) return NaN;
-  var period = 16, emaP = 12, scale = 8;
+  var period = 14, emaP = 9, scale = 25;
   // Wilder RSI series
   var gains = [], losses = [];
   for (var i = 1; i < closes.length; i++) {
