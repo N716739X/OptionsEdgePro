@@ -416,10 +416,11 @@ async function fetchJSON(url, headers = {}) {
   return res.json();
 }
 
-// Mean Reversion: Wilder RSI(16) → EMA(12) smooth → (val-50)/8
+// Mean Reversion: Wilder RSI(14) → EMA(9) smooth → (val-50)/25
+// Matches James's InvestAnswers indicator exactly (zones at ±1 = Oversold/OB, ±2 = Deeply OS/OB)
 function calcMeanRev(closes) {
   if (!closes || closes.length < 30) return NaN;
-  const period = 16, emaP = 12, scale = 8;
+  const period = 14, emaP = 9, scale = 25;
   const gains = [], losses = [];
   for (let i = 1; i < closes.length; i++) {
     const diff = closes[i] - closes[i - 1];
@@ -527,8 +528,8 @@ async function scoreTicker(ticker, env) {
   // Phase 1: price + Mean Reversion + SMA (parallel)
   const [quoteData, tsData, smaData] = await Promise.all([
     cachedFetch('https://api.twelvedata.com/quote?symbol=' + ticker + '&apikey=' + TD_KEY),
-    cachedFetch('https://api.twelvedata.com/time_series?symbol=' + ticker + '&interval=1day&outputsize=60&apikey=' + TD_KEY),
-    cachedFetch('https://api.twelvedata.com/sma?symbol=' + ticker + '&interval=1day&time_period=200&outputsize=1&apikey=' + TD_KEY),
+    cachedFetch('https://api.twelvedata.com/time_series?symbol=' + ticker + '&interval=4h&outputsize=60&apikey=' + TD_KEY),
+    cachedFetch('https://api.twelvedata.com/sma?symbol=' + ticker + '&interval=1day&time_period=200&outputsize=1&apikey=' + TD_KEY), // SMA stays daily (trend filter)
   ]);
 
   const price = parseFloat(quoteData.close || quoteData.price);
@@ -536,21 +537,16 @@ async function scoreTicker(ticker, env) {
   const changePct = parseFloat(quoteData.percent_change);
   const week52H = parseFloat(quoteData.fifty_two_week?.high || quoteData.high);
   const week52L = parseFloat(quoteData.fifty_two_week?.low || quoteData.low);
-  // Mean Reversion: Wilder RSI(16) → EMA(12) smooth → (val-50)/8
+  // Mean Reversion: Wilder RSI(14) → EMA(9) smooth → (val-50)/25 — matches James's indicator
   const tsVals = tsData.values || [];
   const closes = tsVals.map(v => parseFloat(v.close)).reverse(); // oldest-first
   const meanRev = calcMeanRev(closes);
   const smaVals = smaData.values || [];
   const sma200 = parseFloat(smaVals.length > 0 ? smaVals[0].sma : (smaData.sma || NaN));
 
-  // Weekly Mean Reversion for LEAPS/Synth
-  let weeklyMeanRev = meanRev; // fallback to daily
-  try {
-    const wkData = await cachedFetch('https://api.twelvedata.com/time_series?symbol=' + ticker + '&interval=1week&outputsize=60&apikey=' + TD_KEY);
-    const wkCloses = (wkData.values || []).map(v => parseFloat(v.close)).reverse();
-    const wkMR = calcMeanRev(wkCloses);
-    if (!isNaN(wkMR)) weeklyMeanRev = wkMR;
-  } catch(e) { /* use daily as fallback */ }
+  // All strategies use 4H Mean Reversion — James's scale (RSI14/EMA9/scale25)
+  // weeklyMeanRev alias kept for backward compat with scoring fields below
+  const weeklyMeanRev = meanRev; // same 4H value — no separate weekly fetch needed
 
   // Phase 2: expirations + ATR (parallel)
   const [expData, atrData] = await Promise.all([
@@ -636,7 +632,7 @@ async function scoreTicker(ticker, env) {
 
   // ── Score all 4 strategies ──
   const put_c1 = ivRank !== null ? ivRank > 80 : null;
-  const put_c2 = !isNaN(meanRev) ? meanRev <= -2 : null;
+  const put_c2 = !isNaN(meanRev) ? meanRev <= -1 : null;
   const put_c3 = !isNaN(sma200) ? price > sma200 : null;  // Price above 200 SMA (confirmed uptrend)
   const put_c4 = earningsRisk === null ? null : !earningsRisk;
   const put_c5 = premPct !== null ? premPct > 2 : null;
@@ -645,7 +641,7 @@ async function scoreTicker(ticker, env) {
   const putScore = [put_c1, put_c2, put_c3, put_c4, put_c5, put_c6, put_c7].filter(x => x === true).length;
 
   const cc_c1 = ivRank !== null ? ivRank > 80 : null;
-  const cc_c2 = !isNaN(meanRev) ? meanRev >= 2 : null;
+  const cc_c2 = !isNaN(meanRev) ? meanRev >= 1 : null;
   const cc_c3 = !isNaN(sma200) ? price > sma200 : null;  // Price above 200 SMA (confirmed uptrend)
   const cc_c4 = earningsRisk === null ? null : !earningsRisk;
   const cc_c5 = premPct !== null ? premPct >= 2 : null;
@@ -658,14 +654,14 @@ async function scoreTicker(ticker, env) {
   const leaps_c2 = null;                                            // Intrinsic/Extrinsic ~50/50 (need chain)
   const leaps_c3 = null;                                            // Strike Deep ITM Δ 0.70-0.90 (need chain)
   const leaps_c4 = hasLeapsExp;                                     // Duration 18+ months
-  const leaps_c5 = !isNaN(weeklyMeanRev) ? weeklyMeanRev <= -2 : null; // MR ≤ -2σ Weekly
+  const leaps_c5 = !isNaN(weeklyMeanRev) ? weeklyMeanRev <= -1 : null; // MR ≤ -1σ Weekly (James scale: Oversold zone entry)
   const leaps_c6 = null;                                            // OI >= 300 (need chain)
   const leaps_c7 = null;                                            // Bid/Ask Spread <= 10% (need chain)
   const leapsScore = [leaps_c1, leaps_c2, leaps_c3, leaps_c4, leaps_c5, leaps_c6, leaps_c7].filter(x => x === true).length;
 
   // Synth: James-aligned same-strike synthetic long
   const hasSynthExp = expirations.some(e => dteFromStr(e) >= 540);
-  const synth_c1 = !isNaN(weeklyMeanRev) ? weeklyMeanRev <= -2 : null; // MR ≤ -2σ Weekly
+  const synth_c1 = !isNaN(weeklyMeanRev) ? weeklyMeanRev <= -1 : null; // MR ≤ -1σ Weekly (James scale: Oversold zone entry)
   const synth_c2 = ivRank !== null ? ivRank > 50 : null;          // IV > 50%
   const synth_c3 = hasSynthExp;                                   // Duration >= 540 DTE
   const synth_c4 = null;                                          // Net Debit <= 5% (need chain)
@@ -675,7 +671,7 @@ async function scoreTicker(ticker, env) {
   const synthScore = [synth_c1, synth_c2, synth_c3, synth_c4, synth_c5, synth_c6, synth_c7].filter(x => x === true).length;
 
   // Gut Spread: same criteria as Synth (chain-dependent ones scored in Phase 3 on frontend)
-  const gut_c1 = synth_c1; // MR ≤ -2σ Weekly
+  const gut_c1 = synth_c1; // MR ≤ -1σ Weekly (James scale: Oversold zone entry)
   const gut_c2 = synth_c2; // IV > 50%
   const gut_c3 = synth_c3; // Duration >= 540 DTE
   const gut_c4 = null;     // Net Debit ≤ 5% (need chain — scored in Phase 3)
@@ -687,14 +683,9 @@ async function scoreTicker(ticker, env) {
   // MSL (Modified Synthetic Long — Laura's 3-leg strategy)
   // Criteria: MR≤-2σ 4H, Put Credit≥45%, IV Rank>50%, Duration≥540, Net Debit≤33%, Call OI≥300, Put OI≥300
   // c1 uses 4H MR; c4 uses DTE; rest need option chain data (Phase 3 on frontend)
-  let fourHourMR = meanRev; // fallback to daily
-  try {
-    const fourHData = await cachedFetch('https://api.twelvedata.com/time_series?symbol=' + ticker + '&interval=4h&outputsize=60&apikey=' + TD_KEY);
-    const fourHCloses = (fourHData.values || []).map(v => parseFloat(v.close)).reverse();
-    const fourHMR = calcMeanRev(fourHCloses);
-    if (!isNaN(fourHMR)) fourHourMR = fourHMR;
-  } catch(e) { /* use daily as fallback */ }
-  const msl_c1 = !isNaN(fourHourMR) ? fourHourMR <= -2 : null; // MR ≤ -2σ 4H
+  // MSL uses 4H MR — same as base meanRev (base time series is now 4H)
+  const fourHourMR = meanRev;
+  const msl_c1 = !isNaN(fourHourMR) ? fourHourMR <= -1 : null; // MR ≤ -1σ 4H (James scale: Oversold zone entry)
   const msl_c2 = null;     // Put Credit ≥ 45% of width (need chain)
   const msl_c3 = null;     // IV Rank > 50% (computed client-side in phase 3 from put chain)
   const msl_c4 = synth_c3; // Duration >= 540 DTE

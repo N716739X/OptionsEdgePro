@@ -2045,7 +2045,7 @@ const EARNINGS = {
 // ═══════════════════════════════════════════════════════
 var _storedTheme = localStorage.getItem('owp-theme') || 'cyberpunk';
 var currentTheme    = (['cyberpunk','matrix'].indexOf(_storedTheme) >= 0) ? _storedTheme : 'cyberpunk';
-var currentTF       = '1day'; // fixed — dashboard uses per-strategy TFs, analyzer uses this
+var currentTF       = '4h'; // James's indicator: always 4H
 var currentSort     = localStorage.getItem('owp-sort')     || 'score';
 var currentTab      = localStorage.getItem('owp-tab')      || 'dashboard';
 var tickers         = JSON.parse(localStorage.getItem('owp-tickers') || 'null') || DEFAULT_TICKERS.slice();
@@ -2402,7 +2402,7 @@ function calcMeanRev(closes) {
 
 // Fetch daily or weekly closes for mean reversion calc
 async function fetchMeanRev(ticker, interval) {
-  var intv = interval || '1day';
+  var intv = interval || '4h'; // default 4H — James's scale
   var data = await fetchTD('time_series', { symbol: ticker, interval: intv, outputsize: 60 });
   var vals = data.values || [];
   // TwelveData returns newest first — reverse to oldest-first
@@ -3058,7 +3058,7 @@ function renderSorted() { renderColumns(); }
 async function fetchTickerData(ticker) {
   try {
     // Phase 1: price + Mean Reversion — always Daily for dashboard scoring
-    var pd = await fetchPriceData(ticker, '1day');
+    var pd = await fetchPriceData(ticker, '4h');
 
     var d = {
       ticker:    ticker,
@@ -3166,7 +3166,7 @@ async function fetchTickerData(ticker) {
     var leaps_c1 = null;                                             // Delta ≥ 0.80 (need chain)
     var leaps_c2 = null;                                             // BE CAGR ≤ 15% (need chain)
     var leaps_c3 = hasLeapsExp;                                      // Duration 540+ DTE
-    var leaps_c4 = null;                                             // MR ≤ -2 Weekly (needs weekly MR from phase 3)
+    var leaps_c4 = null;                                             // MR ≤ -1σ 4H (James's scale — scored in phase 3)
     var leaps_c5 = null;                                             // IV<55% removed
     var leaps_c6 = null;                                             // OI ≥ 500 (need chain)
     var leaps_c7 = null;                                             // Bid/Ask ≤ 10% (need chain)
@@ -3175,7 +3175,7 @@ async function fetchTickerData(ticker) {
     // Score Synthetic Long criteria (proxy) — same-strike call+put
     // Synth 7: MR≤-2 Wkly, IV>50%, Duration≥540d, Net Debit≤5%, Call OI≥500, Put OI≥500, Spreads≤10%
     var hasSynthExp = expirations.some(function(e) { return dteFromStr(e) >= 540; });
-    var synth_c1 = null; // MR ≤ -2 Weekly (needs weekly MR from phase 3)
+    var synth_c1 = null; // MR ≤ -1σ 4H (James's scale — scored in phase 3)
     var synth_c2 = null;              // IV > 50% — deferred to Phase 3 (needs LEAPS-expiry chain, not short-term)
     var synth_c3 = hasSynthExp;                                      // Duration ≥ 540 days
     var synth_c4 = null;                                             // Net Debit ≤ 5% (need chain)
@@ -3234,10 +3234,10 @@ async function runLeapsPhase3(ticker) {
     var d = cardData[ticker];
     if (!d) return;
 
-    // LEAPS uses Weekly Mean Reversion — fetch separately since dashboard uses Daily
+    // LEAPS uses 4H Mean Reversion — James's scale
     var weeklyMR = d.meanRev; // fallback to daily if weekly fetch fails
     try {
-      weeklyMR = await fetchMeanRev(ticker, '1week');
+      weeklyMR = await fetchMeanRev(ticker, '4h');
     } catch(e) { /* use daily MR as fallback */ }
 
     var pd = { price: d.price, meanRev: weeklyMR };
@@ -3313,10 +3313,10 @@ async function runSynthPhase3(ticker) {
   try {
     var d = cardData[ticker];
     if (!d) return;
-    // Synth uses Weekly Mean Reversion — fetch separately since dashboard uses Daily
+    // Synth uses 4H Mean Reversion — James's scale
     var weeklyMR = d.meanRev; // fallback to daily if weekly fetch fails
     try {
-      weeklyMR = await fetchMeanRev(ticker, '1week');
+      weeklyMR = await fetchMeanRev(ticker, '4h');
     } catch(e) { /* use daily MR as fallback */ }
 
     var pd = { price: d.price, meanRev: weeklyMR, ivRank: d.ivRank };
@@ -3398,7 +3398,7 @@ async function runSynthPhase3(ticker) {
     d.ivRank = synthIVRank !== null ? synthIVRank : d.ivRank; // update card's ivRank to match synth expiry
 
     // James-aligned 7 criteria
-    d.synth_c1 = !isNaN(pd.meanRev) ? pd.meanRev <= -1 : null; // MR ≤ -1σ Weekly (James scale: Oversold zone entry)
+    d.synth_c1 = !isNaN(pd.meanRev) ? pd.meanRev <= -1 : null; // MR ≤ -1σ 4H (James scale: Oversold zone entry)
     d.synthMR  = weeklyMR; // store for card rendering
     d.synth_c2 = null; // IV>50% removed
     d.synth_c3 = dte >= 540;                                                     // Duration ≥ 540 DTE
@@ -3418,10 +3418,10 @@ async function runGutPhase3(ticker) {
   try {
     var d = cardData[ticker];
     if (!d) return;
-    // Gut uses Weekly Mean Reversion
+    // Gut uses 4H Mean Reversion — James's scale
     var weeklyMR = d.meanRev;
     try {
-      weeklyMR = await fetchMeanRev(ticker, '1week');
+      weeklyMR = await fetchMeanRev(ticker, '4h');
     } catch(e) { /* use daily MR as fallback */ }
 
     var pd = { price: d.price, meanRev: weeklyMR, ivRank: d.ivRank };
@@ -3938,7 +3938,7 @@ async function runPut(forceTicker) {
   document.getElementById('put-results').innerHTML = '';
   try {
     setStatus('put-status', spinner() + 'Price & indicators…', 'loading');
-    var pd = await fetchPriceData(ticker);
+    var pd = await fetchPriceData(ticker, '4h'); // CSP always uses Daily MR
 
     setStatus('put-status', spinner() + 'Expirations…', 'loading');
     var expirations = await fetchExpirations(ticker);
@@ -4009,7 +4009,7 @@ async function runPut(forceTicker) {
     '</div></div>';
 
     html += '<div class="scorecard"><h3>Cash-Secured Put — Score</h3><div class="criteria-list">';
-    html += critRow(1,'MR · Daily (Oversold Zone)', c2, mrZone(pd.meanRev).label);
+    html += critRow(1,'MR · 4H (Oversold Zone)', c2, mrZone(pd.meanRev).label);
     html += critRow(2,'Price Above 200 SMA (Confirmed Uptrend)', c3, pd.sma200 ? fmtDollar(pd.price) + ' vs ' + fmtDollar(pd.sma200) : 'N/A');
     html += critRow(3,'No Earnings Before Expiry', c4, earningsRisk ? 'Earnings: '+EARNINGS[ticker] : 'Clear');
     html += critRow(4,'Premium > 2% of Price', c5, premPct !== null ? fmt(premPct,2)+'%' : 'N/A');
@@ -4024,7 +4024,7 @@ async function runPut(forceTicker) {
       suggWarnP.push('💡 <strong>Earnings workaround:</strong> ' + ticker + ' has earnings on ' + eDate + ' inside your expiry window. Consider a shorter DTE expiring <strong>before ' + eDate + '</strong> to avoid earnings risk while still capturing the oversold setup.');
     }
     if (!c2 && !isNaN(pd.meanRev) && pd.meanRev < -0.5 && pd.meanRev > -1) {
-      suggWarnP.push('💡 <strong>MR approaching:</strong> Mean Reversion is ' + mrZone(pd.meanRev).label + ' — approaching the Deeply Oversold zone. Watch for a continued dip before entering.');
+      suggWarnP.push('💡 <strong>MR approaching:</strong> Mean Reversion is ' + mrZone(pd.meanRev).label + ' — approaching the Oversold zone. Watch for a continued dip before entering.');
     }
     if (!c3 && pd.sma200 && pd.price) {
       suggWarnP.push('💡 <strong>Below 200 SMA:</strong> Price is ' + fmtDollar(pd.price) + ' vs SMA ' + fmtDollar(pd.sma200) + ' — stock is below its 200-day MA, suggesting a sustained downtrend. Wait for price to reclaim the 200 SMA before selling puts to avoid catching a falling knife.');
@@ -4088,7 +4088,7 @@ async function runCC(forceTicker) {
   document.getElementById('cc-results').innerHTML = '';
   try {
     setStatus('cc-status', spinner() + 'Price & indicators…', 'loading');
-    var pd = await fetchPriceData(ticker);
+    var pd = await fetchPriceData(ticker, '4h'); // CC always uses Daily MR
 
     setStatus('cc-status', spinner() + 'Expirations…', 'loading');
     var expirations = await fetchExpirations(ticker);
@@ -4164,7 +4164,7 @@ async function runCC(forceTicker) {
     '</div></div>';
 
     html += '<div class="scorecard"><h3>Covered Call — Score</h3><div class="criteria-list">';
-    html += critRow(1,'MR · Daily (Overbought Zone)', c2, mrZone(pd.meanRev).label);
+    html += critRow(1,'MR · 4H (Overbought Zone)', c2, mrZone(pd.meanRev).label);
     html += critRow(2,'Price Above 200 SMA (Confirmed Uptrend)', c3, pd.sma200 ? fmtDollar(pd.price) + ' vs ' + fmtDollar(pd.sma200) : 'N/A');
     html += critRow(3,'No Earnings Before Expiry', c4, earningsRisk ? 'Earnings: '+EARNINGS[ticker] : 'Clear');
     html += critRow(4,'Premium ≥ 2% of Price', c5, premPct !== null ? fmt(premPct,2)+'%' : 'N/A');
@@ -4179,7 +4179,7 @@ async function runCC(forceTicker) {
       suggWarnC.push('💡 <strong>Earnings workaround:</strong> ' + ticker + ' has earnings on ' + eDate + ' inside your expiry window. Consider a shorter DTE expiring <strong>before ' + eDate + '</strong> to avoid the IV crush and gap risk.');
     }
     if (!c2 && !isNaN(pd.meanRev) && pd.meanRev > 0.5 && pd.meanRev < 1) {
-      suggWarnC.push('💡 <strong>MR approaching:</strong> Mean Reversion is ' + mrZone(pd.meanRev).label + ' — approaching the Deeply Overbought zone. Watch for a continued rally before selling the call.');
+      suggWarnC.push('💡 <strong>MR approaching:</strong> Mean Reversion is ' + mrZone(pd.meanRev).label + ' — approaching the Overbought zone. Watch for a continued rally before selling the call.');
     }
     if (!c3 && pd.sma200 && pd.price) {
       suggWarnC.push('💡 <strong>Below 200 SMA:</strong> Price is ' + fmtDollar(pd.price) + ' vs SMA ' + fmtDollar(pd.sma200) + ' — stock is in a downtrend. Wait for price to reclaim the 200-day moving average before selling calls.');
@@ -4249,9 +4249,9 @@ async function runLeaps(forceTicker) {
     setStatus('leaps-status', spinner() + 'Price & indicators…', 'loading');
     var pd = await fetchPriceData(ticker);
 
-    // LEAPS uses Weekly Mean Reversion — override daily MR with weekly
+    // LEAPS uses 4H Mean Reversion — override daily MR with weekly
     try {
-      pd.meanRev = await fetchMeanRev(ticker, '1week');
+      pd.meanRev = await fetchMeanRev(ticker, '4h');
     } catch(e) { /* keep daily MR as fallback */ }
 
     setStatus('leaps-status', spinner() + 'Expirations…', 'loading');
@@ -4384,7 +4384,7 @@ async function runLeaps(forceTicker) {
     '</div></div>';
 
     html += '<div class="scorecard"><h3>LEAPS Deep ITM Call — Score</h3><div class="criteria-list">';
-    html += critRow(1,'MR · Weekly (Oversold — Buy the Dip)', c4, mrZone(pd.meanRev).label);
+    html += critRow(1,'MR · 4H (Oversold — Buy the Dip)', c4, mrZone(pd.meanRev).label);
     html += critRow(2,'Delta ≥ 0.80 (Deep ITM, ~stock exposure)', c1, bestDelta !== null ? fmt(bestDelta,2) + (shareEquiv ? ' (~' + shareEquiv + ' sh)' : '') : 'N/A');
     html += critRow(3,'BE CAGR ≤ 15% (Achievable breakeven)', c2, breakevenCAGR !== null ? fmt(breakevenCAGR,1)+'%' : 'N/A');
     html += critRow(4,'Duration 18+ months (540+ DTE)', c3, repDTE + ' days');
@@ -4404,7 +4404,7 @@ async function runLeaps(forceTicker) {
       }
     }
     if (!c4 && !isNaN(pd.meanRev) && pd.meanRev < -0.5 && pd.meanRev > -1) {
-      suggestions.push('💡 <strong>MR approaching entry:</strong> Mean Reversion is ' + mrZone(pd.meanRev).label + ' — not Deeply Oversold yet. James says "buy options when prices are crazy low." Watch for a continued dip into the Deeply Oversold zone.');
+      suggestions.push('💡 <strong>MR approaching entry:</strong> Mean Reversion is ' + mrZone(pd.meanRev).label + ' — not yet Oversold. James says "buy options when prices are crazy low." Watch for a continued dip.');
     } else if (!c4) {
       suggestions.push('💡 <strong>Not oversold:</strong> Mean Reversion is ' + mrZone(pd.meanRev).label + ' — James\'s rule: "You do not buy the tops." Wait for a pullback to get a cheaper entry.');
     }
@@ -4555,9 +4555,9 @@ async function runSynth(forceTicker) {
     setStatus('synth-status', spinner() + 'Price & indicators…', 'loading');
     var pd = await fetchPriceData(ticker);
 
-    // Synth uses Weekly Mean Reversion — override daily MR with weekly
+    // Synth uses 4H Mean Reversion — James's scale
     try {
-      pd.meanRev = await fetchMeanRev(ticker, '1week');
+      pd.meanRev = await fetchMeanRev(ticker, '4h');
     } catch(e) { /* keep daily MR as fallback */ }
 
     setStatus('synth-status', spinner() + 'Expirations…', 'loading');
@@ -4630,7 +4630,7 @@ async function runSynth(forceTicker) {
     var beAboveCur = (breakeven !== null && pd.price) ? ((breakeven / pd.price - 1) * 100) : null;
 
     // 4 criteria (IV>50% removed)
-    var c1 = !isNaN(pd.meanRev) ? pd.meanRev <= -1 : null; // MR ≤ -1σ Weekly (James scale: Oversold zone entry)
+    var c1 = !isNaN(pd.meanRev) ? pd.meanRev <= -1 : null; // MR ≤ -1σ 4H (James scale: Oversold zone entry)
     var c3 = dte >= 540;                                                       // Duration ≥ 540 DTE
     var c4 = netCostPct !== null ? netCostPct <= 5 : null;                     // Net Debit ≤ 5% (credit always passes)
     var c7 = (callSpreadPct !== null && putSpreadPct !== null) ? (callSpreadPct <= 10 && putSpreadPct <= 10) : null; // Spreads ≤ 10%
@@ -4729,7 +4729,7 @@ async function runSynth(forceTicker) {
     }
 
     html += '<div class="scorecard"><h3>Synthetic Long — Score</h3><div class="criteria-list">';
-    html += critRow(1,'MR · Weekly (Oversold — Buy the Dip)', c1, mrZone(pd.meanRev).label);
+    html += critRow(1,'MR · 4H (Oversold — Buy the Dip)', c1, mrZone(pd.meanRev).label);
     html += critRow(2,'Duration ≥ 540 DTE (LEAPS-Length)', c3, dte + ' days');
     html += critRow(3,'Net Debit ≤ 5% (Put Funds the Call)', c4, netCostPct !== null ? fmt(Math.abs(netCostPct),2) + '%' : 'N/A');
     html += critRow(4,'Both Spreads ≤ 10% (Tight)', c7, (callSpreadPct !== null ? fmt(callSpreadPct,1)+'%' : '—')+' / '+(putSpreadPct !== null ? fmt(putSpreadPct,1)+'%' : '—'));
@@ -4739,9 +4739,9 @@ async function runSynth(forceTicker) {
     var suggWarn = [], suggGood = [];
     if (!c1) {
       if (!isNaN(pd.meanRev) && pd.meanRev < -0.5 && pd.meanRev > -1) {
-        suggWarn.push('💡 <strong>MR approaching:</strong> Weekly Mean Reversion is ' + mrZone(pd.meanRev).label + ' — not yet Deeply Oversold. Wait for deeper oversold conditions before entering.');
+        suggWarn.push('💡 <strong>MR approaching:</strong> 4H Mean Reversion is ' + mrZone(pd.meanRev).label + ' — not yet Oversold. Wait for a continued dip before entering.');
       } else {
-        suggWarn.push('💡 <strong>Not oversold:</strong> Weekly Mean Reversion is ' + mrZone(pd.meanRev).label + ' — synthetics work best entered at market lows when put premiums are fattest.');
+        suggWarn.push('💡 <strong>Not oversold:</strong> 4H Mean Reversion is ' + mrZone(pd.meanRev).label + ' — synthetics work best entered at market lows when put premiums are fattest.');
       }
     }
     if (!c3) {
@@ -4818,9 +4818,9 @@ async function runGut(forceTicker) {
     setStatus('gut-status', spinner() + 'Price & indicators…', 'loading');
     var pd = await fetchPriceData(ticker);
 
-    // Gut uses Weekly Mean Reversion
+    // Gut uses 4H Mean Reversion — James's scale
     try {
-      pd.meanRev = await fetchMeanRev(ticker, '1week');
+      pd.meanRev = await fetchMeanRev(ticker, '4h');
     } catch(e) { /* keep daily MR as fallback */ }
 
     setStatus('gut-status', spinner() + 'Expirations…', 'loading');
@@ -5000,7 +5000,7 @@ async function runGut(forceTicker) {
 
     // Scorecard
     html += '<div class="scorecard"><h3>Gut Spread SYN Long — Score</h3><div class="criteria-list">';
-    html += critRow(1,'MR · Weekly (Oversold — Buy the Dip)', c1, mrZone(pd.meanRev).label);
+    html += critRow(1,'MR · 4H (Oversold — Buy the Dip)', c1, mrZone(pd.meanRev).label);
     html += critRow(2,'Duration ≥ 540 DTE (LEAPS-Length)', c3, dte + ' days');
     html += critRow(3,'Net Debit ≤ 5% (Put Funds the Call)', c4, netCostPct !== null ? fmt(Math.abs(netCostPct),2) + '%' : 'N/A');
     html += critRow(4,'Both Spreads ≤ 10% (Tight)', c7, (callSpreadPct !== null ? fmt(callSpreadPct,1)+'%' : '—')+' / '+(putSpreadPct !== null ? fmt(putSpreadPct,1)+'%' : '—'));
@@ -5010,9 +5010,9 @@ async function runGut(forceTicker) {
     var suggWarn = [], suggGood = [];
     if (!c1) {
       if (!isNaN(pd.meanRev) && pd.meanRev < -0.5 && pd.meanRev > -1) {
-        suggWarn.push('💡 <strong>MR approaching:</strong> Weekly Mean Reversion is ' + mrZone(pd.meanRev).label + ' — not yet Deeply Oversold. Wait for deeper oversold conditions.');
+        suggWarn.push('💡 <strong>MR approaching:</strong> 4H Mean Reversion is ' + mrZone(pd.meanRev).label + ' — not yet Oversold. Wait for a continued dip.');
       } else {
-        suggWarn.push('💡 <strong>Not oversold:</strong> Weekly Mean Reversion is ' + mrZone(pd.meanRev).label + ' — gut spreads work best at market lows when put premiums are fattest.');
+        suggWarn.push('💡 <strong>Not oversold:</strong> 4H Mean Reversion is ' + mrZone(pd.meanRev).label + ' — gut spreads work best at market lows when put premiums are fattest.');
       }
     }
     if (!c3) {
@@ -5576,7 +5576,7 @@ async function runMsl(forceTicker) {
     var suggWarn = [], suggGood = [];
     if (!c1) {
       if (!isNaN(pd.meanRev) && pd.meanRev < -0.5 && pd.meanRev > -1) {
-        suggWarn.push('💡 <strong>MR approaching:</strong> 4H Mean Reversion is ' + mrZone(pd.meanRev).label + ' — not yet Deeply Oversold. Wait for deeper oversold conditions.');
+        suggWarn.push('💡 <strong>MR approaching:</strong> 4H Mean Reversion is ' + mrZone(pd.meanRev).label + ' — not yet Oversold. Wait for a continued dip.');
       } else {
         suggWarn.push('💡 <strong>Not oversold:</strong> 4H Mean Reversion is ' + mrZone(pd.meanRev).label + ' — MSL works best at market lows when put premiums are fattest.');
       }
