@@ -270,8 +270,7 @@ async function handleWebhook(req, env) {
 
 // ── Existing proxy logic (preserve all current functionality) ─────────────────
 
-// MarketData.app API token (options chain data)
-const MD_TOKEN = 'VjFYQWlwZDVCZ2ZIMm9TV3BFcndIeGxZbkdBelNESGNDVzh2czBWaHF1Yz0';
+// MarketData.app API token (options chain data) — provided via env.MD_TOKEN (Cloudflare secret)
 
 // ── Response cache (shared across all users within same isolate) ──────────────
 // In-memory Map cache: all requests in the same Worker isolate share this.
@@ -348,7 +347,7 @@ async function handleProxy(req, env) {
   if (mdPath) {
     // MarketData.app proxy: ?path=options/chain/TSLA/&side=call&...
     const params = new URLSearchParams();
-    params.set('token', MD_TOKEN);
+    params.set('token', env.MD_TOKEN);
     for (const [k, v] of url.searchParams.entries()) {
       if (k !== 'path') params.set(k, v);
     }
@@ -358,7 +357,7 @@ async function handleProxy(req, env) {
     proxyUrl = target;
     if (proxyUrl.includes('api.twelvedata.com')) {
       const tdUrl = new URL(proxyUrl);
-      tdUrl.searchParams.set('apikey', TD_KEY);
+      tdUrl.searchParams.set('apikey', env.TD_KEY);
       proxyUrl = tdUrl.toString();
     }
   }
@@ -396,7 +395,7 @@ async function handleProxy(req, env) {
 
 // ── Scoring engine (server-side — IP protection) ─────────────────────────────
 
-const TD_KEY = '170a58b2c2094e3987e4289f4fe39a08';
+// TwelveData API key — provided via env.TD_KEY (Cloudflare secret)
 
 // Hardcoded earnings dates — update periodically
 const EARNINGS = {
@@ -527,9 +526,9 @@ async function scoreTicker(ticker, env) {
 
   // Phase 1: price + Mean Reversion + SMA (parallel)
   const [quoteData, tsData, smaData] = await Promise.all([
-    cachedFetch('https://api.twelvedata.com/quote?symbol=' + ticker + '&apikey=' + TD_KEY),
-    cachedFetch('https://api.twelvedata.com/time_series?symbol=' + ticker + '&interval=4h&outputsize=60&apikey=' + TD_KEY),
-    cachedFetch('https://api.twelvedata.com/sma?symbol=' + ticker + '&interval=1day&time_period=200&outputsize=1&apikey=' + TD_KEY), // SMA stays daily (trend filter)
+    cachedFetch('https://api.twelvedata.com/quote?symbol=' + ticker + '&apikey=' + env.TD_KEY),
+    cachedFetch('https://api.twelvedata.com/time_series?symbol=' + ticker + '&interval=4h&outputsize=60&apikey=' + env.TD_KEY),
+    cachedFetch('https://api.twelvedata.com/sma?symbol=' + ticker + '&interval=1day&time_period=200&outputsize=1&apikey=' + env.TD_KEY), // SMA stays daily (trend filter)
   ]);
 
   const price = parseFloat(quoteData.close || quoteData.price);
@@ -550,8 +549,8 @@ async function scoreTicker(ticker, env) {
 
   // Phase 2: expirations + ATR (parallel)
   const [expData, atrData] = await Promise.all([
-    cachedFetch('https://api.marketdata.app/v1/options/expirations/' + ticker + '/?token=' + MD_TOKEN).catch(() => ({ expirations: [] })),
-    cachedFetch('https://api.twelvedata.com/atr?symbol=' + ticker + '&interval=1day&time_period=14&outputsize=30&apikey=' + TD_KEY).catch(() => ({ values: [] })),
+    cachedFetch('https://api.marketdata.app/v1/options/expirations/' + ticker + '/?token=' + env.MD_TOKEN).catch(() => ({ expirations: [] })),
+    cachedFetch('https://api.twelvedata.com/atr?symbol=' + ticker + '&interval=1day&time_period=14&outputsize=30&apikey=' + env.TD_KEY).catch(() => ({ values: [] })),
   ]);
 
   const expirations = normalizeExpirations(expData.expirations || []);
@@ -567,7 +566,7 @@ async function scoreTicker(ticker, env) {
   if (bestExpiry) {
     try {
       const putChain = await cachedFetch(
-        'https://api.marketdata.app/v1/options/chain/' + ticker + '/?expiration=' + bestExpiry + '&side=put&token=' + MD_TOKEN
+        'https://api.marketdata.app/v1/options/chain/' + ticker + '/?expiration=' + bestExpiry + '&side=put&token=' + env.MD_TOKEN
       );
 
       // IV rank from chain
