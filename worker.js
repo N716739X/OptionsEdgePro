@@ -629,6 +629,34 @@ async function scoreTicker(ticker, env) {
   const premPct = (bestPremium && price) ? (bestPremium / price * 100) : null;
   const deltaOk = bestDelta !== null && Math.abs(bestDelta) >= 0.15 && Math.abs(bestDelta) <= 0.25;
 
+  // ── Covered Call: score off the actual CALL chain + its own 30–45 expiry (matches the CC analyzer) ──
+  // Laura OG income-call rules: 4H chart, +2 MR, 30–45 DTE, sell an OTM call (~8% OTM target).
+  let ccExpiry = findBestExpiry(expirations, 30, 45) || findBestExpiry(expirations, 25, 45);
+  let ccDte = ccExpiry ? dteFromStr(ccExpiry) : null;
+  let ccEarnRisk = ccExpiry ? earningsBeforeExpiry(ticker, ccExpiry) : null;
+  let ccStrike = null, ccDelta = null, ccPremium = null;
+  if (ccExpiry) {
+    try {
+      const callChain = await cachedFetch(
+        'https://api.marketdata.app/v1/options/chain/' + ticker + '/?expiration=' + ccExpiry + '&side=call&token=' + env.MD_TOKEN
+      );
+      if (callChain?.strike) {
+        const targetOTM = price * 1.08; // target ~8% OTM (5–10% window)
+        let bd = Infinity;
+        for (let i = 0; i < callChain.strike.length; i++) {
+          const dl = callChain.delta ? callChain.delta[i] : null;
+          if (dl === null) continue;
+          if (dl < 0.10 || dl > 0.45) continue; // ignore far wings
+          const dif = Math.abs(callChain.strike[i] - targetOTM);
+          if (dif < bd) { bd = dif; ccStrike = callChain.strike[i]; ccDelta = dl; ccPremium = callChain.mid ? callChain.mid[i] : null; }
+        }
+      }
+    } catch (e) { /* options unavailable */ }
+  }
+  const ccPremPct = (ccPremium && price) ? (ccPremium / price * 100) : null;
+  const ccUpside = (ccStrike && price) ? ((ccStrike - price) / price * 100) : null;
+  const ccOtmOk = ccUpside !== null ? (ccUpside >= 5 && ccUpside <= 15) : null;
+
   // ── Score all 4 strategies ──
   const put_c1 = ivRank !== null ? ivRank > 80 : null;
   const put_c2 = !isNaN(meanRev) ? meanRev <= -1 : null;
@@ -639,14 +667,14 @@ async function scoreTicker(ticker, env) {
   const put_c7 = dte !== null ? (dte >= 30 && dte <= 45) : null;
   const putScore = [put_c1, put_c2, put_c3, put_c4, put_c5, put_c6, put_c7].filter(x => x === true).length;
 
-  const cc_c1 = ivRank !== null ? ivRank > 80 : null;
-  const cc_c2 = !isNaN(meanRev) ? meanRev >= 1 : null;
+  const cc_c1 = null; // IV Rank is not one of the CC analyzer's 6 criteria
+  const cc_c2 = !isNaN(meanRev) ? meanRev >= 2 : null; // Laura OG: +2 MR (Deeply Overbought), 4H
   const cc_c3 = !isNaN(sma200) ? price > sma200 : null;  // Price above 200 SMA (confirmed uptrend)
-  const cc_c4 = earningsRisk === null ? null : !earningsRisk;
-  const cc_c5 = premPct !== null ? premPct >= 2 : null;
-  const cc_c6 = deltaOk;
-  const cc_c7 = dte !== null ? (dte >= 30 && dte <= 45) : null;
-  const ccScore = [cc_c1, cc_c2, cc_c3, cc_c4, cc_c5, cc_c6, cc_c7].filter(x => x === true).length;
+  const cc_c4 = ccEarnRisk === null ? null : !ccEarnRisk;
+  const cc_c5 = ccPremPct !== null ? ccPremPct >= 2 : null; // premium from the CALL we'd sell
+  const cc_c6 = ccOtmOk;                                    // strike 5–15% OTM (targets 8%)
+  const cc_c7 = ccDte !== null ? (ccDte >= 30 && ccDte <= 45) : null;
+  const ccScore = [cc_c2, cc_c3, cc_c4, cc_c5, cc_c6, cc_c7].filter(x => x === true).length;
 
   const hasLeapsExp = expirations.some(e => dteFromStr(e) >= 540);
   const leaps_c1 = ivRank !== null ? ivRank < 55 : null;           // IV < 55% (Buy Low IV)
@@ -695,7 +723,7 @@ async function scoreTicker(ticker, env) {
 
   // Build response — grades + badge info + display data (no raw scoring logic exposed)
   const putBadge = badgeInfo(putScore, 7, true);
-  const ccBadge = badgeInfo(ccScore, 7, true);
+  const ccBadge = badgeInfo(ccScore, 6, true);
   const leapsBadge = badgeInfo(leapsScore, 7, false);
   const synthBadge = badgeInfo(synthScore, 7, false);
   const gutBadge = badgeInfo(gutScore, 7, false);
@@ -706,8 +734,10 @@ async function scoreTicker(ticker, env) {
     price, change, changePct, week52H, week52L, meanRev, weeklyMeanRev, sma200,
     ivRank, expiry: bestExpiry, dte, bestStrike, bestPremium, premPct, earningsRisk,
     atrSeries,
+    // Covered-call-specific display data (its own expiry/strike/premium from the call chain)
+    ccExpiry, ccDte, ccStrike, ccPremium, ccPremPct,
     put:   { score: putScore, total: 7, grade: scoreToGrade(putScore, 7), badge: putBadge, c1: put_c1, c2: put_c2, c3: put_c3, c4: put_c4, c5: put_c5, c6: put_c6, c7: put_c7 },
-    cc:    { score: ccScore, total: 7, grade: scoreToGrade(ccScore, 7), badge: ccBadge, c1: cc_c1, c2: cc_c2, c3: cc_c3, c4: cc_c4, c5: cc_c5, c6: cc_c6, c7: cc_c7 },
+    cc:    { score: ccScore, total: 6, grade: scoreToGrade(ccScore, 6), badge: ccBadge, c1: cc_c1, c2: cc_c2, c3: cc_c3, c4: cc_c4, c5: cc_c5, c6: cc_c6, c7: cc_c7 },
     leaps: { score: leapsScore, total: 7, grade: scoreToGrade(leapsScore, 7), badge: leapsBadge, c1: leaps_c1, c2: leaps_c2, c3: leaps_c3, c4: leaps_c4, c5: leaps_c5, c6: leaps_c6, c7: leaps_c7 },
     synth: { score: synthScore, total: 7, grade: scoreToGrade(synthScore, 7), badge: synthBadge, c1: synth_c1, c2: synth_c2, c3: synth_c3, c4: synth_c4, c5: synth_c5, c6: synth_c6, c7: synth_c7 },
     gut:   { score: gutScore, total: 7, grade: scoreToGrade(gutScore, 7), badge: gutBadge, c1: gut_c1, c2: gut_c2, c3: gut_c3, c4: gut_c4, c5: gut_c5, c6: gut_c6, c7: gut_c7 },

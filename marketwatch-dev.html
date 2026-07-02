@@ -2853,16 +2853,19 @@ function buildColCard(ticker, d, strategy, rank, isBestTrade) {
       mb('DTE',   cx.c7, dteDisp);
   } else if (strategy === 'cc') {
     // CC: 6 criteria — MR≥+2, SMA200, Earnings, Premium, Delta, DTE (IV Rank removed)
+    // Uses CC-specific premium/DTE (from the call chain + 30–45 expiry) so the card matches the analyzer.
     var ccSmaDisp = cx.c3 === true ? '▲' : cx.c3 === false ? '▼' : '—';
     var ccEarnDisp = cx.c4 === true ? 'OK' : cx.c4 === false ? 'RISK' : (d.phase < 2 ? '…' : '—');
     var ccDeltaDisp = d.phase < 2 ? '…' : (cx.c6 === true ? '✓' : cx.c6 === false ? '✗' : '—');
+    var ccPremDisp = (d.ccPremPct !== null && d.ccPremPct !== undefined) ? fmt(d.ccPremPct, 1) + '%' : (d.phase < 2 ? '…' : '—');
+    var ccDteDisp  = (d.ccDte !== null && d.ccDte !== undefined) ? d.ccDte + 'd' : (d.phase < 2 ? '…' : '—');
     criteriaHtml =
       mb('MR',    cx.c2, mrDisp) +
       mb('SMA',   cx.c3, ccSmaDisp) +
       mb('EARN',  cx.c4, ccEarnDisp) +
-      mb('PREM',  cx.c5, premDisp) +
+      mb('PREM',  cx.c5, ccPremDisp) +
       mb('DELTA', cx.c6, ccDeltaDisp) +
-      mb('DTE',   cx.c7, dteDisp);
+      mb('DTE',   cx.c7, ccDteDisp);
   } else if (strategy === 'leaps') {
     // LEAPS: 5 criteria — MR, Delta, BE CAGR, Duration, Bid/Ask (IV<55% removed)
     var deltaDisp = d.leapsDelta !== null && d.leapsDelta !== undefined ? fmt(d.leapsDelta,2) : (d.leaps_c1 === null ? '—' : (d.leaps_c1 ? '✓' : '✗'));
@@ -2909,7 +2912,7 @@ function buildColCard(ticker, d, strategy, rank, isBestTrade) {
     '<div class="card-header">' +
       '<div>' +
         '<div class="card-ticker">' + (isBestTrade ? '<span class="top3-star">★</span>' : '') + ticker + '</div>' +
-        '<div class="card-name" style="font-size:9px;color:var(--text-muted)">' + (strategy.toUpperCase()) + (d.expiry ? ' · ' + expiryDisplay(d.expiry) : '') + '</div>' +
+        '<div class="card-name" style="font-size:9px;color:var(--text-muted)">' + (strategy.toUpperCase()) + (function(){ var ex = (strategy === 'cc' && d.ccExpiry) ? d.ccExpiry : d.expiry; return ex ? ' · ' + expiryDisplay(ex) : ''; })() + '</div>' +
       '</div>' +
       '<div class="grade-box grade-' + grade + '">' + (grade || '—') + '</div>' +
     '</div>' +
@@ -3747,6 +3750,11 @@ function applyServerScores(s) {
     bestPremium: s.bestPremium,
     premPct:     s.premPct,
     earningsRisk:s.earningsRisk,
+    ccExpiry:    s.ccExpiry,
+    ccDte:       s.ccDte,
+    ccStrike:    s.ccStrike,
+    ccPremium:   s.ccPremium,
+    ccPremPct:   s.ccPremPct,
     atrSeries:   s.atrSeries,
     putScore:    s.put.score,
     ccScore:     s.cc.score,
