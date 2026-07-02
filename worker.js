@@ -703,16 +703,6 @@ async function scoreTicker(ticker, env) {
   const cc_c7 = ccDte !== null ? (ccDte >= 30 && ccDte <= 45) : null;
   const ccScore = [cc_c2, cc_c3, cc_c4, cc_c5, cc_c6, cc_c7].filter(x => x === true).length;
 
-  const hasLeapsExp = expirations.some(e => dteFromStr(e) >= 540);
-  const leaps_c1 = ivRank !== null ? ivRank < 55 : null;           // IV < 55% (Buy Low IV)
-  const leaps_c2 = null;                                            // Intrinsic/Extrinsic ~50/50 (need chain)
-  const leaps_c3 = null;                                            // Strike Deep ITM Δ 0.70-0.90 (need chain)
-  const leaps_c4 = hasLeapsExp;                                     // Duration 18+ months
-  const leaps_c5 = !isNaN(weeklyMeanRev) ? weeklyMeanRev <= -1 : null; // MR ≤ -1σ Weekly (James scale: Oversold zone entry)
-  const leaps_c6 = null;                                            // OI >= 300 (need chain)
-  const leaps_c7 = null;                                            // Bid/Ask Spread <= 10% (need chain)
-  const leapsScore = [leaps_c1, leaps_c2, leaps_c3, leaps_c4, leaps_c5, leaps_c6, leaps_c7].filter(x => x === true).length;
-
   // Synth: James-aligned same-strike synthetic long
   const hasSynthExp = expirations.some(e => dteFromStr(e) >= 540);
   const synth_c1 = !isNaN(weeklyMeanRev) ? weeklyMeanRev <= -1 : null; // MR ≤ -1σ Weekly (James scale: Oversold zone entry)
@@ -741,7 +731,6 @@ async function scoreTicker(ticker, env) {
   // Build response — grades + badge info + display data (no raw scoring logic exposed)
   const putBadge = badgeInfo(putScore, 6, true);
   const ccBadge = badgeInfo(ccScore, 6, true);
-  const leapsBadge = badgeInfo(leapsScore, 7, false);
   const synthBadge = badgeInfo(synthScore, 7, false);
   const mslBadge = badgeInfo(mslScore, 7, false);
 
@@ -754,7 +743,6 @@ async function scoreTicker(ticker, env) {
     ccExpiry, ccDte, ccStrike, ccPremium, ccPremPct,
     put:   { score: putScore, total: 6, grade: scoreToGrade(putScore, 6), badge: putBadge, c1: put_c1, c2: put_c2, c3: put_c3, c4: put_c4, c5: put_c5, c6: put_c6, c7: put_c7 },
     cc:    { score: ccScore, total: 6, grade: scoreToGrade(ccScore, 6), badge: ccBadge, c1: cc_c1, c2: cc_c2, c3: cc_c3, c4: cc_c4, c5: cc_c5, c6: cc_c6, c7: cc_c7 },
-    leaps: { score: leapsScore, total: 7, grade: scoreToGrade(leapsScore, 7), badge: leapsBadge, c1: leaps_c1, c2: leaps_c2, c3: leaps_c3, c4: leaps_c4, c5: leaps_c5, c6: leaps_c6, c7: leaps_c7 },
     synth: { score: synthScore, total: 7, grade: scoreToGrade(synthScore, 7), badge: synthBadge, c1: synth_c1, c2: synth_c2, c3: synth_c3, c4: synth_c4, c5: synth_c5, c6: synth_c6, c7: synth_c7 },
     msl:   { score: mslScore, total: 7, grade: scoreToGrade(mslScore, 7), badge: mslBadge, c1: msl_c1, c2: msl_c2, c3: msl_c3, c4: msl_c4, c5: msl_c5, c6: msl_c6, c7: msl_c7 },
   };
