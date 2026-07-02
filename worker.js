@@ -665,12 +665,15 @@ async function scoreTicker(ticker, env) {
         'https://api.marketdata.app/v1/options/chain/' + ticker + '/?expiration=' + ccExpiry + '&side=call&token=' + env.MD_TOKEN
       );
       if (callChain?.strike) {
-        const targetOTM = price * 1.08; // target ~8% OTM (5–10% window)
+        // Laura OG (MM13): sell at overhead resistance (~9% OTM), taking whatever
+        // delta comes with it. Anchor on % OTM with a wide delta band so high-IV
+        // names aren't pushed far OTM by a tight delta cap.
+        const targetOTM = price * 1.09; // ~9% OTM (resistance proxy)
         let bd = Infinity;
         for (let i = 0; i < callChain.strike.length; i++) {
           const dl = callChain.delta ? callChain.delta[i] : null;
           if (dl === null) continue;
-          if (dl < 0.10 || dl > 0.45) continue; // ignore far wings
+          if (dl < 0.10 || dl > 0.55) continue; // wide band — resistance strike, not a delta target
           const dif = Math.abs(callChain.strike[i] - targetOTM);
           if (dif < bd) { bd = dif; ccStrike = callChain.strike[i]; ccDelta = dl; ccPremium = callChain.mid ? callChain.mid[i] : null; }
         }
@@ -679,7 +682,7 @@ async function scoreTicker(ticker, env) {
   }
   const ccPremPct = (ccPremium && price) ? (ccPremium / price * 100) : null;
   const ccUpside = (ccStrike && price) ? ((ccStrike - price) / price * 100) : null;
-  const ccOtmOk = ccUpside !== null ? (ccUpside >= 5 && ccUpside <= 15) : null;
+  const ccOtmOk = ccUpside !== null ? (ccUpside >= 5 && ccUpside <= 12) : null; // near a resistance level (~8–10%)
 
   // ── Score all 4 strategies ──
   const put_c1 = null; // IV Rank is not one of the CSP analyzer's 6 criteria

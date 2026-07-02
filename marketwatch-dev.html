@@ -4114,20 +4114,22 @@ async function runCC(forceTicker) {
 
     var bestStrike = null, bestDelta = null, bestPremium = null;
     if (chain && chain.strike) {
-      // Target 8% OTM strike (5-10% OTM range) — use OTM% as primary, delta as validation
-      var targetOTM = pd.price * 1.08;
+      // Laura OG (MM13): sell the call at overhead resistance — she'd sold ~9% OTM
+      // and took whatever delta came with it. We anchor on % OTM (resistance proxy)
+      // and keep a wide delta band so high-IV names aren't pushed far OTM.
+      var targetOTM = pd.price * 1.09; // ~9% OTM (her ALAB example: $140 call on a $128 stock)
       var bd2 = Infinity;
       for (var i = 0; i < chain.strike.length; i++) {
         var d2  = chain.delta ? chain.delta[i] : null;
         if (d2 === null) continue;
-        if (d2 < 0.10 || d2 > 0.45) continue; // filter out far wings
+        if (d2 < 0.10 || d2 > 0.55) continue; // wide band — resistance strike, not a delta target
         var dif2 = Math.abs(chain.strike[i] - targetOTM);
         if (dif2 < bd2) { bd2 = dif2; bestStrike = chain.strike[i]; bestDelta = d2; bestPremium = chain.mid ? chain.mid[i] : null; }
       }
     }
     var premPct   = (bestPremium && pd.price) ? (bestPremium / pd.price * 100) : null;
     var upsidePct = (bestStrike && pd.price) ? ((bestStrike - pd.price) / pd.price * 100) : null;
-    var otmOk     = upsidePct !== null ? (upsidePct >= 5 && upsidePct <= 15) : null;
+    var otmOk     = upsidePct !== null ? (upsidePct >= 5 && upsidePct <= 12) : null; // near a resistance level (~8–10%)
     var totalRet  = (upsidePct !== null && premPct !== null) ? (upsidePct + premPct) : null;
 
     var c2 = !isNaN(pd.meanRev) ? pd.meanRev >= 2 : null; // Laura OG: sell into +2 MR (Deeply Overbought) on the 4H IADSS chart
@@ -4180,7 +4182,7 @@ async function runCC(forceTicker) {
     html += critRow(2,'Price Above 200 SMA (Confirmed Uptrend)', c3, pd.sma200 ? fmtDollar(pd.price) + ' vs ' + fmtDollar(pd.sma200) : 'N/A');
     html += critRow(3,'No Earnings Before Expiry', c4, earningsRisk ? 'Earnings: '+EARNINGS[ticker] : 'Clear');
     html += critRow(4,'Premium ≥ 2% of Price', c5, premPct !== null ? fmt(premPct,2)+'%' : 'N/A');
-    html += critRow(5,'Strike 5–10% OTM (Δ 0.15–0.25)', c6, (upsidePct !== null ? fmt(upsidePct,1)+'% OTM' : (bestDelta !== null ? 'Δ'+fmt(bestDelta,2) : 'N/A')));
+    html += critRow(5,'Strike Near Resistance (5–12% OTM)', c6, (upsidePct !== null ? fmt(upsidePct,1)+'% OTM' + (bestDelta !== null ? ' · Δ'+fmt(bestDelta,2) : '') : 'N/A'));
     html += critRow(6,'Duration 30–45 DTE', c7, dte+' days');
     html += '</div>' + scoreSummaryHtml(score,6) + '</div>';
 
@@ -4200,7 +4202,7 @@ async function runCC(forceTicker) {
       suggWarnC.push('💡 <strong>Premium close:</strong> Premium is ' + fmt(premPct,2) + '% — just below 2%. Try a slightly lower (closer) strike to collect more premium.');
     }
     if (!c6 && upsidePct !== null) {
-      suggWarnC.push('💡 <strong>Strike too far OTM:</strong> ' + fmt(upsidePct,1) + '% OTM is outside the 5–10% target. The app selected the closest available strike — consider checking if a strike closer to 8% OTM is available.');
+      suggWarnC.push('💡 <strong>Strike distance:</strong> ' + fmt(upsidePct,1) + '% OTM is outside the 5–12% window. The app anchors on the nearest resistance-level strike — check the chart for a resistance level (a prior high or the 200 MA) you\'d be comfortable getting called away at.');
     }
     if (score === 6) {
       suggGoodC.push('✅ <strong>All criteria met</strong> — this is an ideal setup. Consider entering today with the recommended strike above.');
