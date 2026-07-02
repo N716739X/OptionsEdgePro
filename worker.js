@@ -724,16 +724,6 @@ async function scoreTicker(ticker, env) {
   const synth_c7 = null;                                          // Spreads <= 10% (need chain)
   const synthScore = [synth_c1, synth_c2, synth_c3, synth_c4, synth_c5, synth_c6, synth_c7].filter(x => x === true).length;
 
-  // Gut Spread: same criteria as Synth (chain-dependent ones scored in Phase 3 on frontend)
-  const gut_c1 = synth_c1; // MR ≤ -1σ Weekly (James scale: Oversold zone entry)
-  const gut_c2 = synth_c2; // IV > 50%
-  const gut_c3 = synth_c3; // Duration >= 540 DTE
-  const gut_c4 = null;     // Net Debit ≤ 5% (need chain — scored in Phase 3)
-  const gut_c5 = null;     // Call OI ≥ 300 (need chain)
-  const gut_c6 = null;     // Put OI ≥ 300 (need chain)
-  const gut_c7 = null;     // Spreads ≤ 10% (need chain)
-  const gutScore = [gut_c1, gut_c2, gut_c3, gut_c4, gut_c5, gut_c6, gut_c7].filter(x => x === true).length;
-
   // MSL (Modified Synthetic Long — Laura's 3-leg strategy)
   // Criteria: MR≤-2σ 4H, Put Credit≥45%, IV Rank>50%, Duration≥540, Net Debit≤33%, Call OI≥300, Put OI≥300
   // c1 uses 4H MR; c4 uses DTE; rest need option chain data (Phase 3 on frontend)
@@ -753,7 +743,6 @@ async function scoreTicker(ticker, env) {
   const ccBadge = badgeInfo(ccScore, 6, true);
   const leapsBadge = badgeInfo(leapsScore, 7, false);
   const synthBadge = badgeInfo(synthScore, 7, false);
-  const gutBadge = badgeInfo(gutScore, 7, false);
   const mslBadge = badgeInfo(mslScore, 7, false);
 
   return {
@@ -767,7 +756,6 @@ async function scoreTicker(ticker, env) {
     cc:    { score: ccScore, total: 6, grade: scoreToGrade(ccScore, 6), badge: ccBadge, c1: cc_c1, c2: cc_c2, c3: cc_c3, c4: cc_c4, c5: cc_c5, c6: cc_c6, c7: cc_c7 },
     leaps: { score: leapsScore, total: 7, grade: scoreToGrade(leapsScore, 7), badge: leapsBadge, c1: leaps_c1, c2: leaps_c2, c3: leaps_c3, c4: leaps_c4, c5: leaps_c5, c6: leaps_c6, c7: leaps_c7 },
     synth: { score: synthScore, total: 7, grade: scoreToGrade(synthScore, 7), badge: synthBadge, c1: synth_c1, c2: synth_c2, c3: synth_c3, c4: synth_c4, c5: synth_c5, c6: synth_c6, c7: synth_c7 },
-    gut:   { score: gutScore, total: 7, grade: scoreToGrade(gutScore, 7), badge: gutBadge, c1: gut_c1, c2: gut_c2, c3: gut_c3, c4: gut_c4, c5: gut_c5, c6: gut_c6, c7: gut_c7 },
     msl:   { score: mslScore, total: 7, grade: scoreToGrade(mslScore, 7), badge: mslBadge, c1: msl_c1, c2: msl_c2, c3: msl_c3, c4: msl_c4, c5: msl_c5, c6: msl_c6, c7: msl_c7 },
   };
 }
