@@ -409,10 +409,33 @@ const EARNINGS = {
   MU: '2026-06-24', SATS: '2026-05-08',
 };
 
-async function fetchJSON(url, headers = {}) {
+async function fetchJSON(url, headers = {}, attempt = 0) {
   const res = await fetch(url, { headers: { 'User-Agent': 'OptionsEdgePro/1.0', ...headers } });
+  // Retry transient rate-limit responses with a short backoff (scan fires several
+  // option-chain calls per ticker, so bursts can briefly hit the upstream limit).
+  if (res.status === 429 && attempt < 3) {
+    await new Promise(r => setTimeout(r, 300 * (attempt + 1)));
+    return fetchJSON(url, headers, attempt + 1);
+  }
   if (!res.ok && res.status !== 203) throw new Error('HTTP ' + res.status);
   return res.json();
+}
+
+// Run an async fn over items with a bounded concurrency (keeps the dashboard
+// scan from firing every ticker's option-chain calls at once and rate-limiting).
+async function mapLimit(items, limit, fn) {
+  const results = new Array(items.length);
+  let idx = 0;
+  async function worker() {
+    while (idx < items.length) {
+      const i = idx++;
+      results[i] = await fn(items[i], i);
+    }
+  }
+  const workers = [];
+  for (let w = 0; w < Math.min(limit, items.length); w++) workers.push(worker());
+  await Promise.all(workers);
+  return results;
 }
 
 // Mean Reversion: Wilder RSI(14) → EMA(9) smooth → (val-50)/25
@@ -771,16 +794,15 @@ async function handleScores(req, env) {
 
   if (allowedTickers.length === 0) return json({ error: 'No permitted tickers for your plan', tier: userTier }, 403);
 
-  // Score all allowed tickers in parallel
-  const results = await Promise.all(
-    allowedTickers.map(async (t) => {
-      try {
-        return await scoreTicker(t, env);
-      } catch (e) {
-        return { ticker: t, error: e.message };
-      }
-    })
-  );
+  // Score allowed tickers with bounded concurrency — each ticker makes several
+  // upstream option-chain calls, so scoring all at once can trip the rate limit.
+  const results = await mapLimit(allowedTickers, 5, async (t) => {
+    try {
+      return await scoreTicker(t, env);
+    } catch (e) {
+      return { ticker: t, error: e.message };
+    }
+  });
 
   return json({ scores: results, tier: userTier, allowedTickers });
 }
