@@ -2,7 +2,8 @@ const https = require('https');
 const http = require('http');
 
 exports.handler = async function(event, context) {
-  const TOKEN = 'VjFYQWlwZDVCZ2ZIMm9TV3BFcndIeGxZbkdBelNESGNDVzh2czBWaHF1Yz0';
+  // MarketData.app API token — set MARKETDATA_TOKEN in Netlify env vars (Site settings → Environment variables)
+  const TOKEN = process.env.MARKETDATA_TOKEN;
   const BASE_HOST = 'api.marketdata.app';
 
   const corsHeaders = {
@@ -14,6 +15,10 @@ exports.handler = async function(event, context) {
 
   if (event.httpMethod === 'OPTIONS') {
     return { statusCode: 200, headers: corsHeaders, body: '' };
+  }
+
+  if (!TOKEN) {
+    return { statusCode: 500, headers: corsHeaders, body: JSON.stringify({ s: 'error', errmsg: 'Server misconfigured: MARKETDATA_TOKEN is not set' }) };
   }
 
   const params = { ...(event.queryStringParameters || {}) };
