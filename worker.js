@@ -579,8 +579,9 @@ async function scoreTicker(ticker, env) {
   const expirations = normalizeExpirations(expData.expirations || []);
   const atrSeries = (atrData.values || []).map(v => parseFloat(v.atr)).reverse();
 
-  let bestExpiry = findBestExpiry(expirations, 30, 50);
-  if (!bestExpiry) bestExpiry = findBestExpiry(expirations, 25, 60);
+  // CSP income trade: 30–45 DTE only (Laura OG, mirror of the MM45 call rule)
+  let bestExpiry = findBestExpiry(expirations, 30, 45);
+  if (!bestExpiry) bestExpiry = findBestExpiry(expirations, 25, 45);
 
   const dte = bestExpiry ? dteFromStr(bestExpiry) : null;
   const earningsRisk = bestExpiry ? earningsBeforeExpiry(ticker, bestExpiry) : null;
@@ -681,14 +682,14 @@ async function scoreTicker(ticker, env) {
   const ccOtmOk = ccUpside !== null ? (ccUpside >= 5 && ccUpside <= 15) : null;
 
   // ── Score all 4 strategies ──
-  const put_c1 = ivRank !== null ? ivRank > 80 : null;
-  const put_c2 = !isNaN(meanRev) ? meanRev <= -1 : null;
+  const put_c1 = null; // IV Rank is not one of the CSP analyzer's 6 criteria
+  const put_c2 = !isNaN(meanRev) ? meanRev <= -2 : null; // Laura OG (mirror of MM45 calls): −2 MR (Deeply Oversold), 4H
   const put_c3 = !isNaN(sma200) ? price > sma200 : null;  // Price above 200 SMA (confirmed uptrend)
   const put_c4 = earningsRisk === null ? null : !earningsRisk;
   const put_c5 = premPct !== null ? premPct > 2 : null;
   const put_c6 = deltaOk;
   const put_c7 = dte !== null ? (dte >= 30 && dte <= 45) : null;
-  const putScore = [put_c1, put_c2, put_c3, put_c4, put_c5, put_c6, put_c7].filter(x => x === true).length;
+  const putScore = [put_c2, put_c3, put_c4, put_c5, put_c6, put_c7].filter(x => x === true).length;
 
   const cc_c1 = null; // IV Rank is not one of the CC analyzer's 6 criteria
   const cc_c2 = !isNaN(meanRev) ? meanRev >= 2 : null; // Laura OG: +2 MR (Deeply Overbought), 4H
@@ -745,7 +746,7 @@ async function scoreTicker(ticker, env) {
   const mslScore = [msl_c1, msl_c2, msl_c3, msl_c4, msl_c5, msl_c6, msl_c7].filter(x => x === true).length;
 
   // Build response — grades + badge info + display data (no raw scoring logic exposed)
-  const putBadge = badgeInfo(putScore, 7, true);
+  const putBadge = badgeInfo(putScore, 6, true);
   const ccBadge = badgeInfo(ccScore, 6, true);
   const leapsBadge = badgeInfo(leapsScore, 7, false);
   const synthBadge = badgeInfo(synthScore, 7, false);
@@ -759,7 +760,7 @@ async function scoreTicker(ticker, env) {
     atrSeries,
     // Covered-call-specific display data (its own expiry/strike/premium from the call chain)
     ccExpiry, ccDte, ccStrike, ccPremium, ccPremPct,
-    put:   { score: putScore, total: 7, grade: scoreToGrade(putScore, 7), badge: putBadge, c1: put_c1, c2: put_c2, c3: put_c3, c4: put_c4, c5: put_c5, c6: put_c6, c7: put_c7 },
+    put:   { score: putScore, total: 6, grade: scoreToGrade(putScore, 6), badge: putBadge, c1: put_c1, c2: put_c2, c3: put_c3, c4: put_c4, c5: put_c5, c6: put_c6, c7: put_c7 },
     cc:    { score: ccScore, total: 6, grade: scoreToGrade(ccScore, 6), badge: ccBadge, c1: cc_c1, c2: cc_c2, c3: cc_c3, c4: cc_c4, c5: cc_c5, c6: cc_c6, c7: cc_c7 },
     leaps: { score: leapsScore, total: 7, grade: scoreToGrade(leapsScore, 7), badge: leapsBadge, c1: leaps_c1, c2: leaps_c2, c3: leaps_c3, c4: leaps_c4, c5: leaps_c5, c6: leaps_c6, c7: leaps_c7 },
     synth: { score: synthScore, total: 7, grade: scoreToGrade(synthScore, 7), badge: synthBadge, c1: synth_c1, c2: synth_c2, c3: synth_c3, c4: synth_c4, c5: synth_c5, c6: synth_c6, c7: synth_c7 },

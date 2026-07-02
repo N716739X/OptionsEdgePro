@@ -3946,12 +3946,13 @@ async function runPut(forceTicker) {
   document.getElementById('put-results').innerHTML = '';
   try {
     setStatus('put-status', spinner() + 'Price & indicators…', 'loading');
-    var pd = await fetchPriceData(ticker, '4h'); // CSP always uses Daily MR
+    var pd = await fetchPriceData(ticker, '4h'); // CSP income trade uses the 4H IADSS chart (Laura OG rule)
 
     setStatus('put-status', spinner() + 'Expirations…', 'loading');
     var expirations = await fetchExpirations(ticker);
-    var bestExpiry  = findBestExpiry(expirations, 30, 50) || findBestExpiry(expirations, 25, 60);
-    if (!bestExpiry) throw new Error('No expiry in 30-50 DTE window.');
+    // Laura OG: sell income puts 30–45 DTE only (mirror of her MM45 call rule).
+    var bestExpiry  = findBestExpiry(expirations, 30, 45) || findBestExpiry(expirations, 25, 45);
+    if (!bestExpiry) throw new Error('No expiry in 30-45 DTE window.');
     var dte = dteFromStr(bestExpiry);
 
     var earningsRisk = earningsBeforeExpiry(ticker, bestExpiry);
@@ -3973,7 +3974,7 @@ async function runPut(forceTicker) {
     var deltaOk  = bestDelta !== null && Math.abs(bestDelta) >= 0.15 && Math.abs(bestDelta) <= 0.25;
     var assignCap= bestStrike ? bestStrike * 100 : null;
 
-    var c2 = !isNaN(pd.meanRev) ? pd.meanRev <= -1 : null;
+    var c2 = !isNaN(pd.meanRev) ? pd.meanRev <= -2 : null; // Laura OG (mirror of MM45 calls): sell into −2 MR (Deeply Oversold) on the 4H IADSS chart
     var c3 = !isNaN(pd.sma200) ? pd.price > pd.sma200 : null;
     var c4 = !earningsRisk;
     var c5 = premPct !== null ? premPct > 2 : null;
@@ -4018,7 +4019,7 @@ async function runPut(forceTicker) {
     '</div></div>';
 
     html += '<div class="scorecard"><h3>Cash-Secured Put — Score</h3><div class="criteria-list">';
-    html += critRow(1,'MR · 4H (Oversold Zone)', c2, mrZone(pd.meanRev).label);
+    html += critRow(1,'MR · 4H ≤ −2 (Deeply Oversold)', c2, mrZone(pd.meanRev).label);
     html += critRow(2,'Price Above 200 SMA (Confirmed Uptrend)', c3, pd.sma200 ? fmtDollar(pd.price) + ' vs ' + fmtDollar(pd.sma200) : 'N/A');
     html += critRow(3,'No Earnings Before Expiry', c4, earningsRisk ? 'Earnings: '+EARNINGS[ticker] : 'Clear');
     html += critRow(4,'Premium > 2% of Price', c5, premPct !== null ? fmt(premPct,2)+'%' : 'N/A');
@@ -4032,8 +4033,8 @@ async function runPut(forceTicker) {
       var eDate = EARNINGS[ticker];
       suggWarnP.push('💡 <strong>Earnings workaround:</strong> ' + ticker + ' has earnings on ' + eDate + ' inside your expiry window. Consider a shorter DTE expiring <strong>before ' + eDate + '</strong> to avoid earnings risk while still capturing the oversold setup.');
     }
-    if (!c2 && !isNaN(pd.meanRev) && pd.meanRev < -0.5 && pd.meanRev > -1) {
-      suggWarnP.push('💡 <strong>MR approaching:</strong> Mean Reversion is ' + mrZone(pd.meanRev).label + ' — approaching the Oversold zone. Watch for a continued dip before entering.');
+    if (!c2 && !isNaN(pd.meanRev) && pd.meanRev <= -1 && pd.meanRev > -2) {
+      suggWarnP.push('💡 <strong>MR approaching:</strong> Mean Reversion is ' + mrZone(pd.meanRev).label + ' — not yet at the −2 (Deeply Oversold) trigger. Wait for a continued dip before selling the put.');
     }
     if (!c3 && pd.sma200 && pd.price) {
       suggWarnP.push('💡 <strong>Below 200 SMA:</strong> Price is ' + fmtDollar(pd.price) + ' vs SMA ' + fmtDollar(pd.sma200) + ' — stock is below its 200-day MA, suggesting a sustained downtrend. Wait for price to reclaim the 200 SMA before selling puts to avoid catching a falling knife.');
