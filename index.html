@@ -1710,6 +1710,9 @@ input, textarea, select { -webkit-user-select: text; user-select: text; }
       <label style="display:flex;flex-direction:column;gap:4px;font-size:10px;text-transform:uppercase;letter-spacing:0.6px;color:var(--text-muted)">Roll Down To
         <input id="msladj-rollto" type="number" step="0.5" placeholder="50" onkeydown="if(event.key==='Enter')runMslAdjust()" style="width:110px;padding:7px 9px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:14px" />
       </label>
+      <label style="display:flex;flex-direction:column;gap:4px;font-size:10px;text-transform:uppercase;letter-spacing:0.6px;color:var(--text-muted)">Current BE <span style="text-transform:none;opacity:0.55">optional</span>
+        <input id="msladj-be" type="number" step="0.5" placeholder="—" onkeydown="if(event.key==='Enter')runMslAdjust()" style="width:110px;padding:7px 9px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:14px" />
+      </label>
       <button id="msladj-btn" onclick="runMslAdjust()" style="padding:9px 18px;background:var(--accent);border:none;border-radius:6px;color:#03121f;font-size:13px;font-weight:800;cursor:pointer">Calculate Rolls</button>
     </div>
     <div id="msladj-results"><div class="placeholder"><div class="ph-icon">↔</div><p>Enter your current MSL legs and a roll-down strike</p></div></div>
@@ -5064,6 +5067,7 @@ async function runMslAdjust() {
   var callStrike = parseFloat(document.getElementById('msladj-call').value);
   var putStrike  = parseFloat(document.getElementById('msladj-put').value);
   var rollTo     = parseFloat(document.getElementById('msladj-rollto').value);
+  var curBE      = parseFloat(document.getElementById('msladj-be').value); // optional — enables absolute new breakeven
   var resEl = document.getElementById('msladj-results');
   if (!ticker) { setStatus('msladj-status', 'Enter a ticker', 'error'); return; }
   if (isNaN(callStrike) || isNaN(putStrike) || isNaN(rollTo)) {
@@ -5122,16 +5126,53 @@ async function runMslAdjust() {
     setStatus('msladj-status', 'Done', 'ok');
 
     var mrZ = mrZone(pd.meanRev);
-    var stretched = !isNaN(pd.meanRev) && pd.meanRev <= -1.5;
+    // ── Trigger gate: Laura rolls ONLY on a bottom signal (MR ≈ −2 or buy divergence at 200 Daily SMA) ──
+    var mr = pd.meanRev;
+    var hasMR = !isNaN(mr);
+    var smaDistPct = (pd.sma200 && pd.price) ? ((pd.price - pd.sma200) / pd.sma200 * 100) : null;
+    var atSMA = smaDistPct !== null && Math.abs(smaDistPct) <= 3; // within 3% of the 200 Daily SMA
+    var mrDeep  = hasMR && mr <= -2;    // ideal trigger
+    var mrClose = hasMR && mr <= -1.5;  // Laura's "close enough" (−1.5 to −1.7)
+    var gateLabel, gateCls, gateMsg;
+    if (mrDeep || (mrClose && atSMA)) {
+      gateCls = 'ok';
+      gateLabel = 'OK to roll';
+      gateMsg = mrDeep ? 'MR ≤ −2 (deeply oversold) — her primary bottom trigger.' : 'MR near −2 and holding the 200 Daily SMA.';
+    } else if (mrClose) {
+      gateCls = 'warn';
+      gateLabel = 'Marginal — confirm on chart';
+      gateMsg = 'MR is in the −1.5 to −1.7 "close enough" zone but not at −2 or the 200 SMA. Confirm support or a buy divergence on your chart before rolling.';
+    } else {
+      gateCls = 'bad';
+      gateLabel = 'Wait — no bottom signal';
+      gateMsg = hasMR ? 'MR is ' + fmt(mr,2) + ', not oversold. Laura does not roll on math alone — wait for MR ≈ −2, or a buy divergence at support.' : 'Mean Reversion is unavailable for this ticker.';
+    }
+    var gateColor = gateCls === 'ok' ? 'var(--green)' : gateCls === 'warn' ? 'var(--yellow)' : 'var(--red)';
+    var gateIcon  = gateCls === 'ok' ? '✅' : gateCls === 'warn' ? '⚠️' : '⛔';
+    var gateChip = function(ok, label, val) {
+      var c  = ok === true ? 'var(--green)' : ok === false ? 'var(--text-muted)' : 'var(--accent)';
+      var ic = ok === true ? '✓' : ok === false ? '·' : 'ℹ';
+      return '<span style="color:var(--text-muted)"><span style="color:' + c + ';font-weight:800">' + ic + '</span> <b style="color:var(--text)">' + label + '</b>' + (val ? ' — ' + val : '') + '</span>';
+    };
+
     var html = priceBarHtml(ticker, pd, '4H');
     html += '<div class="info-box">' +
       '<div class="info-item"><div class="info-label">Expiry (Farthest)</div><div class="info-val">' + expiry + '</div></div>' +
       '<div class="info-item"><div class="info-label">DTE</div><div class="info-val">' + dte + '</div></div>' +
-      '<div class="info-item"><div class="info-label">MR · 4H</div><div class="info-val ' + mrZ.cls + '">' + (!isNaN(pd.meanRev) ? fmt(pd.meanRev,2) + ' · ' + mrZ.short : '—') + '</div></div>' +
-      '<div class="info-item"><div class="info-label">Timing</div><div class="info-val ' + (stretched ? 'up' : '') + '">' + (stretched ? 'Stretched — OK to work' : 'Not stretched — wait') + '</div></div>' +
+      '<div class="info-item"><div class="info-label">MR · 4H</div><div class="info-val ' + mrZ.cls + '">' + (hasMR ? fmt(mr,2) + ' · ' + mrZ.short : '—') + '</div></div>' +
+      '<div class="info-item"><div class="info-label">vs 200 SMA</div><div class="info-val ' + (atSMA ? 'up' : '') + '">' + (smaDistPct !== null ? (smaDistPct >= 0 ? '+' : '') + fmt(smaDistPct,1) + '%' : '—') + '</div></div>' +
     '</div>';
 
-    html += '<div class="btc-note">📌 Pull the levers only when the market is stretched (Laura adjusts near MR −2; "close enough" around −1.5 to −1.7). Roll each side as its own vertical — you don\'t have to roll both.</div>';
+    // Trigger-gate banner
+    html += '<div style="border:1px solid ' + gateColor + ';background:rgba(0,0,0,0.16);border-radius:10px;padding:12px 14px;margin-bottom:12px">' +
+      '<div style="font-size:13px;font-weight:800;color:' + gateColor + ';margin-bottom:5px">' + gateIcon + ' Roll signal: ' + gateLabel + '</div>' +
+      '<div style="font-size:11px;color:var(--text);line-height:1.5">' + gateMsg + '</div>' +
+      '<div style="display:flex;flex-wrap:wrap;gap:16px;margin-top:9px;font-size:11px">' +
+        gateChip(mrDeep, 'MR ≤ −2', hasMR ? fmt(mr,2) : '—') +
+        gateChip(atSMA, 'At 200 Daily SMA', smaDistPct !== null ? (smaDistPct >= 0 ? '+' : '') + fmt(smaDistPct,1) + '% vs SMA' : '—') +
+        gateChip(null, 'Buy divergence', 'confirm on chart — price lower low, MR higher low') +
+      '</div>' +
+    '</div>';
 
     function handleCard(title, sub, width, amount, amountLabel, threshLabel, threshStr, viable, note) {
       var vClass = viable === true ? 'up' : viable === false ? 'down' : '';
@@ -5160,6 +5201,24 @@ async function runMslAdjust() {
       : (putViable ? 'Credit meets the ≥60% floor. Widens spread: +$' + fmt(putWidth*100,0) + ' margin/contract, credit to cash.' : 'Credit below the ≥60% floor — wait for a better price.');
     html += handleCard('Right Handle — Roll Put Down', putSub, putWidth, putCredit, 'Credit (mid)', 'Min credit (≥60% width)', '$' + fmt(putMinCredit,2), putViable, putNote);
     html += '</div></div>';
+
+    // ── Paired Roll — combined net effect + new breakeven (put credit funds the call roll) ──
+    var callBEdrop  = (callDebit !== null) ? (callWidth - callDebit) : 0; // call roll lowers BE by (width − debit)
+    var putBEdrop   = (putCredit !== null) ? putCredit : 0;               // put roll lowers BE by the credit received
+    var totalBEdrop = callBEdrop + putBEdrop;
+    var netCashShare = (callDebit !== null ? callDebit : 0) - (putCredit !== null ? putCredit : 0); // + = net debit, − = net credit
+    var netCash100   = Math.abs(netCashShare) * 100;
+    var addedMargin100 = (putCredit !== null) ? putWidth * 100 : 0;       // put roll widens the spread
+    var newBE = !isNaN(curBE) ? (curBE - totalBEdrop) : null;
+    html += '<div class="chain-section"><h3>Paired Roll — Net Effect (both sides → ' + fmtDollar(rollTo) + ')</h3>' +
+      '<div class="scenarios"><div class="scenario-card" style="min-width:280px">' +
+        '<div class="sc-row"><span class="sc-key">Net cash · per contract</span><span class="sc-val ' + (netCashShare <= 0 ? 'up' : 'down') + '">' + (netCashShare <= 0 ? '+$' + fmt(netCash100,0) + ' credit' : '−$' + fmt(netCash100,0) + ' debit') + '</span></div>' +
+        '<div class="sc-row"><span class="sc-key">Added margin · per contract</span><span class="sc-val down">+$' + fmt(addedMargin100,0) + '</span></div>' +
+        '<div class="sc-row"><span class="sc-key">Breakeven lowered</span><span class="sc-val up">−$' + fmt(totalBEdrop,2) + ' / share</span></div>' +
+        '<div class="sc-row"><span class="sc-key">New breakeven</span><span class="sc-val ' + (newBE !== null ? 'up' : '') + '" style="font-weight:800">' + (newBE !== null ? fmtDollar(newBE) : 'enter Current BE above') + '</span></div>' +
+      '</div></div>' +
+      '<div class="btc-note" style="text-align:left">Goal: <strong>lower breakeven</strong> while controlling cost & margin. The put-roll credit funds the call-roll debit; widening the put spread adds $' + fmt(putWidth,0) + '/share of margin per contract. Numbers assume you roll <em>both</em> sides — you can do either alone. Every roll is a taxable event in non-retirement accounts (Laura pairs a winning put roll with a losing call roll in the same period to offset). Consult a tax professional.</div>' +
+    '</div>';
 
     html += '<div class="chain-section"><h3>Order Tickets — separate verticals</h3>' +
       '<div class="btc-note" style="text-align:left">' +
