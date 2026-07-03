@@ -536,6 +536,131 @@ function badgeInfo(score, total, isScored) {
   return { cls: 'badge-notready', txt: (isScored ? 'NO TRADE' : 'WAIT') + ' \u00b7 ' + score + '/' + total };
 }
 
+// \u2500\u2500 Server-side LEAPS-chain scoring for MSL + Synthetic Long \u2500\u2500
+// Ports the frontend runMslPhase3 / runSynthPhase3 logic exactly so dashboard
+// cards match the analyzers, without the client needing to fetch chains (phase 3).
+function scoreMslChains(price, mr, expiry, dte, callChain, putChain) {
+  const out = { chainScored: false, expiry: expiry, mr: mr,
+    c1: !isNaN(mr) ? mr <= -2 : null, c2: null, c3: null, c4: dte >= 365, c5: null, c6: null, c7: null, c8: null,
+    weighted: null, t1Pass: null, score: null, callRatio: null, netDebitPct: null, putCreditPct: null, riskRatio: null };
+  if (!callChain || !callChain.strike || !putChain || !putChain.strike || !callChain.strike.length || !putChain.strike.length) return out;
+  // Leg 1: sold ATM put (closest strike to price)
+  let bestPutDist = Infinity, soldPutIdx = -1;
+  for (let sp = 0; sp < putChain.strike.length; sp++) { const dd = Math.abs(putChain.strike[sp] - price); if (dd < bestPutDist) { bestPutDist = dd; soldPutIdx = sp; } }
+  if (soldPutIdx < 0) return out;
+  const soldPutStrike = putChain.strike[soldPutIdx];
+  const soldPutMid = putChain.mid ? putChain.mid[soldPutIdx] : null;
+  // Leg 2: bought lower put \u2014 credit >= 42% of width (maximize); fallback closest to 50%
+  let boughtPutIdx = -1, bestCreditPct = 0;
+  for (let bp = 0; bp < putChain.strike.length; bp++) {
+    if (putChain.strike[bp] >= soldPutStrike) continue;
+    const bpMid = putChain.mid ? putChain.mid[bp] : null;
+    if (soldPutMid === null || bpMid === null) continue;
+    const sw = soldPutStrike - putChain.strike[bp]; if (sw <= 0) continue;
+    const cp = (soldPutMid - bpMid) / sw * 100;
+    if (cp >= 42 && cp > bestCreditPct) { bestCreditPct = cp; boughtPutIdx = bp; }
+  }
+  if (boughtPutIdx < 0) {
+    let closest50 = Infinity;
+    for (let bp2 = 0; bp2 < putChain.strike.length; bp2++) {
+      if (putChain.strike[bp2] >= soldPutStrike) continue;
+      const bpMid2 = putChain.mid ? putChain.mid[bp2] : null;
+      if (soldPutMid === null || bpMid2 === null) continue;
+      const sw2 = soldPutStrike - putChain.strike[bp2]; if (sw2 <= 0) continue;
+      const cp2 = (soldPutMid - bpMid2) / sw2 * 100;
+      if (Math.abs(cp2 - 50) < closest50) { closest50 = Math.abs(cp2 - 50); boughtPutIdx = bp2; }
+    }
+  }
+  if (boughtPutIdx < 0) return out;
+  const boughtPutStrike = putChain.strike[boughtPutIdx];
+  const boughtPutMid = putChain.mid ? putChain.mid[boughtPutIdx] : null;
+  const spreadWidth = soldPutStrike - boughtPutStrike;
+  const putSpreadCredit = (soldPutMid !== null && boughtPutMid !== null) ? soldPutMid - boughtPutMid : null;
+  const putCreditPct = (putSpreadCredit !== null && spreadWidth > 0) ? (putSpreadCredit / spreadWidth * 100) : null;
+  // Leg 3: deep ITM call ~50/50 intrinsic/extrinsic
+  let bestCallIdx = -1, bestCallDiff = Infinity;
+  for (let ci = 0; ci < callChain.strike.length; ci++) {
+    if (callChain.strike[ci] >= price) continue;
+    const cMid = callChain.mid ? callChain.mid[ci] : null;
+    if (cMid === null || cMid <= 0) continue;
+    const intrinsic = price - callChain.strike[ci];
+    const extrinsic = cMid - intrinsic; if (extrinsic <= 0) continue;
+    const diff = Math.abs((intrinsic / cMid) - 0.50);
+    if (diff < bestCallDiff) { bestCallDiff = diff; bestCallIdx = ci; }
+  }
+  if (bestCallIdx < 0) return out;
+  const callStrike = callChain.strike[bestCallIdx];
+  const callMid = callChain.mid[bestCallIdx];
+  const callRatio = (price - callStrike) / callMid;
+  const callOI = callChain.openInterest ? callChain.openInterest[bestCallIdx] : null;
+  const soldPutOI = putChain.openInterest ? putChain.openInterest[soldPutIdx] : null;
+  const netDebit = (callMid !== null && putSpreadCredit !== null) ? callMid - putSpreadCredit : null;
+  const netDebitPct = (netDebit !== null && price) ? (netDebit / price * 100) : null;
+  // SL comparison (ATM call nearest the sold-put strike)
+  let slCallIdx = -1, slBest = Infinity;
+  for (let s = 0; s < callChain.strike.length; s++) { const sd = Math.abs(callChain.strike[s] - soldPutStrike); if (sd < slBest) { slBest = sd; slCallIdx = s; } }
+  const slCallMid = (slCallIdx >= 0 && callChain.mid) ? callChain.mid[slCallIdx] : null;
+  const slNetDebit = (slCallMid !== null && soldPutMid !== null) ? slCallMid - soldPutMid : null;
+  const slRisk = (slNetDebit !== null && soldPutStrike) ? (soldPutStrike + slNetDebit) : null;
+  const mslRisk = (netDebit !== null && spreadWidth > 0) ? (netDebit + spreadWidth) : null;
+  const riskRatio = (slRisk && slRisk > 0 && mslRisk !== null) ? (mslRisk / slRisk * 100) : null;
+  out.c2 = putCreditPct !== null ? putCreditPct >= 42 : null;
+  out.c3 = (callRatio !== null && !isNaN(callRatio)) ? (callRatio >= 0.40 && callRatio <= 0.60) : null;
+  out.c5 = netDebitPct !== null ? netDebitPct <= 40 : null;
+  out.c6 = callOI !== null ? callOI >= 500 : null;
+  out.c7 = soldPutOI !== null ? soldPutOI >= 500 : null;
+  out.c8 = riskRatio !== null ? riskRatio <= 60 : null;
+  out.callRatio = callRatio; out.netDebitPct = netDebitPct; out.putCreditPct = putCreditPct; out.riskRatio = riskRatio;
+  out.score = [out.c1, out.c2, out.c3, out.c4, out.c5, out.c8].filter(x => x === true).length;
+  out.weighted = (out.c1 === true ? 2 : 0) + (out.c2 === true ? 2 : 0) + (out.c8 === true ? 2 : 0) +
+                 (out.c3 === true ? 1 : 0) + (out.c5 === true ? 1 : 0) + (out.c4 === true ? 1 : 0);
+  const oiHardReject = (callOI !== null && callOI < 10) || (soldPutOI !== null && soldPutOI < 25);
+  out.t1Pass = (out.c1 === true && out.c2 === true && out.c8 === true && !oiHardReject);
+  out.chainScored = true;
+  return out;
+}
+
+function scoreSynthChains(price, mr, expiry, dte, callChain, putChain) {
+  const out = { chainScored: false, expiry: expiry, dte: dte, mr: mr,
+    c1: !isNaN(mr) ? mr <= -2 : null, c3: dte >= 540, c4: null, c5: null, c6: null, c7: null, ivRank: null, netCostPct: null, score: null };
+  let slCall = null, slPut = null;
+  if (callChain && callChain.strike && putChain && putChain.strike) {
+    const putMap = {};
+    for (let pi = 0; pi < putChain.strike.length; pi++) putMap[putChain.strike[pi]] = pi;
+    let bestDist = Infinity, bestCI = -1, bestPI = -1;
+    for (let i = 0; i < callChain.strike.length; i++) {
+      const sk = callChain.strike[i];
+      if (!(sk in putMap)) continue;
+      const dist = Math.abs(sk - price);
+      if (dist < bestDist) { bestDist = dist; bestCI = i; bestPI = putMap[sk]; }
+    }
+    if (bestCI >= 0) {
+      slCall = { mid: callChain.mid ? callChain.mid[bestCI] : null, bid: callChain.bid ? callChain.bid[bestCI] : null, ask: callChain.ask ? callChain.ask[bestCI] : null, oi: callChain.openInterest ? callChain.openInterest[bestCI] : null };
+      slPut  = { mid: putChain.mid ? putChain.mid[bestPI] : null, bid: putChain.bid ? putChain.bid[bestPI] : null, ask: putChain.ask ? putChain.ask[bestPI] : null, oi: putChain.openInterest ? putChain.openInterest[bestPI] : null };
+    }
+  }
+  if (!slCall || !slPut) return out;
+  const netCost = (slCall.mid !== null && slPut.mid !== null) ? slCall.mid - slPut.mid : null;
+  const netCostPct = (netCost !== null && price) ? (netCost / price * 100) : null;
+  const callSpread = (slCall.bid !== null && slCall.ask !== null) ? slCall.ask - slCall.bid : null;
+  const putSpread = (slPut.bid !== null && slPut.ask !== null) ? slPut.ask - slPut.bid : null;
+  const callSpreadPct = (callSpread !== null && slCall.mid) ? (callSpread / slCall.mid * 100) : null;
+  const putSpreadPct = (putSpread !== null && slPut.mid) ? (putSpread / slPut.mid * 100) : null;
+  if (putChain && putChain.iv && putChain.iv.length > 0) {
+    const ivs = [];
+    for (let k = 0; k < putChain.iv.length; k++) { const v = putChain.iv[k]; if (v !== null && v !== undefined && !isNaN(v) && v > 0) ivs.push(v <= 1 ? v * 100 : v); }
+    if (ivs.length > 0) { ivs.sort((a, b) => a - b); const atmIV = ivs[Math.floor(ivs.length / 2)]; const range = ivs[ivs.length - 1] - ivs[0]; out.ivRank = range > 0 ? Math.min(100, Math.max(0, (atmIV - ivs[0]) / range * 100)) : 50; }
+  }
+  out.netCostPct = netCostPct;
+  out.c4 = netCostPct !== null ? netCostPct <= 5 : null;
+  out.c5 = slCall.oi !== null ? slCall.oi >= 500 : null;
+  out.c6 = slPut.oi !== null ? slPut.oi >= 500 : null;
+  out.c7 = (callSpreadPct !== null && putSpreadPct !== null) ? (callSpreadPct <= 10 && putSpreadPct <= 10) : null;
+  out.score = [out.c1, out.c3, out.c4, out.c7].filter(x => x === true).length;
+  out.chainScored = true;
+  return out;
+}
+
 async function scoreTicker(ticker, env) {
   // Use internal cache for upstream API calls
   async function cachedFetch(url) {
@@ -723,48 +848,50 @@ async function scoreTicker(ticker, env) {
   const cc_c7 = ccDte !== null ? (ccDte >= 30 && ccDte <= 45) : null;
   const ccScore = [cc_c2, cc_c3, cc_c4, cc_c5, cc_c6, cc_c7].filter(x => x === true).length;
 
-  // Synth: James-aligned same-strike synthetic long
-  const hasSynthExp = expirations.some(e => dteFromStr(e) >= 540);
-  const synth_c1 = !isNaN(weeklyMeanRev) ? weeklyMeanRev <= -2 : null; // Laura OG (MM46): synthetic-long entry at MR −2 (Deeply Oversold)
-  const synth_c2 = ivRank !== null ? ivRank > 50 : null;          // IV > 50%
-  const synth_c3 = hasSynthExp;                                   // Duration >= 540 DTE
-  const synth_c4 = null;                                          // Net Debit <= 5% (need chain)
-  const synth_c5 = null;                                          // Call OI >= 300 (need chain)
-  const synth_c6 = null;                                          // Put OI >= 300 (need chain)
-  const synth_c7 = null;                                          // Spreads <= 10% (need chain)
-  const synthScore = [synth_c1, synth_c2, synth_c3, synth_c4, synth_c5, synth_c6, synth_c7].filter(x => x === true).length;
+  // ── Synth + MSL: LEAPS-chain scoring, server-side (replaces the old client phase-3) ──
+  // Fetch the farthest LEAPS chain once and score both strategies from it, so the
+  // dashboard cards populate without the client having to fetch chains and rate-limit.
+  let leapsExps = expirations.filter(e => dteFromStr(e) >= 540);
+  if (leapsExps.length === 0) leapsExps = expirations.filter(e => dteFromStr(e) >= 365);
+  let leapsExpiry = null, leapsDte = null, leapsCall = null, leapsPut = null;
+  if (leapsExps.length > 0) {
+    leapsExps.sort((a, b) => dteFromStr(b) - dteFromStr(a));
+    leapsExpiry = leapsExps[0];
+    leapsDte = dteFromStr(leapsExpiry);
+    try {
+      const lc = await cachedFetch('https://api.marketdata.app/v1/options/chain/' + ticker + '/?expiration=' + leapsExpiry + '&side=call&token=' + env.MD_TOKEN).catch(() => null);
+      const lp = await cachedFetch('https://api.marketdata.app/v1/options/chain/' + ticker + '/?expiration=' + leapsExpiry + '&side=put&token=' + env.MD_TOKEN).catch(() => null);
+      leapsCall = lc; leapsPut = lp;
+    } catch (e) { /* chain unavailable — falls back to un-scored (client phase-3) */ }
+  }
+  const synthCh = scoreSynthChains(price, weeklyMeanRev, leapsExpiry, leapsDte, leapsCall, leapsPut);
+  const mslCh   = scoreMslChains(price, meanRev, leapsExpiry, leapsDte, leapsCall, leapsPut);
+  if (synthCh.ivRank !== null) ivRank = synthCh.ivRank; // match the analyzer's LEAPS-expiry IV rank
+  const chainScored = synthCh.chainScored && mslCh.chainScored;
 
-  // MSL (Modified Synthetic Long — Laura's 3-leg strategy)
-  // Criteria: MR≤-2σ 4H, Put Credit≥45%, IV Rank>50%, Duration≥540, Net Debit≤33%, Call OI≥300, Put OI≥300
-  // c1 uses 4H MR; c4 uses DTE; rest need option chain data (Phase 3 on frontend)
-  // MSL uses 4H MR — same as base meanRev (base time series is now 4H)
-  const fourHourMR = meanRev;
-  const msl_c1 = !isNaN(fourHourMR) ? fourHourMR <= -2 : null; // Laura OG (MM46): entry at MR −2 (Deeply Oversold)
-  const msl_c2 = null;     // Put Credit ≥ 45% of width (need chain)
-  const msl_c3 = null;     // IV Rank > 50% (computed client-side in phase 3 from put chain)
-  const msl_c4 = synth_c3; // Duration >= 540 DTE
-  const msl_c5 = null;     // Net Debit ≤ 33% of price (need chain)
-  const msl_c6 = null;     // Call OI ≥ 300 (need chain)
-  const msl_c7 = null;     // Sold Put OI ≥ 300 (need chain)
-  const mslScore = [msl_c1, msl_c2, msl_c3, msl_c4, msl_c5, msl_c6, msl_c7].filter(x => x === true).length;
+  const synthScore = synthCh.score !== null ? synthCh.score : [synthCh.c1, synthCh.c3, synthCh.c4, synthCh.c7].filter(x => x === true).length;
+  const mslScore   = mslCh.score   !== null ? mslCh.score   : [mslCh.c1, mslCh.c2, mslCh.c3, mslCh.c4, mslCh.c5, mslCh.c8].filter(x => x === true).length;
 
-  // Build response — grades + badge info + display data (no raw scoring logic exposed)
+  // Build response — grades + badge info + display data
   const putBadge = badgeInfo(putScore, 6, true);
   const ccBadge = badgeInfo(ccScore, 6, true);
-  const synthBadge = badgeInfo(synthScore, 7, false);
-  const mslBadge = badgeInfo(mslScore, 7, false);
+  const synthBadge = badgeInfo(synthScore, 4, false);
+  const mslBadge = badgeInfo(mslScore, 6, false);
 
   return {
     ticker,
     price, change, changePct, week52H, week52L, meanRev, weeklyMeanRev, sma200,
     ivRank, expiry: bestExpiry, dte, bestStrike, bestPremium, premPct, earningsRisk,
-    atrSeries,
+    atrSeries, chainScored, mslExpiry: leapsExpiry,
     // Covered-call-specific display data (its own expiry/strike/premium from the call chain)
     ccExpiry, ccDte, ccStrike, ccPremium, ccPremPct,
     put:   { score: putScore, total: 6, grade: scoreToGrade(putScore, 6), badge: putBadge, c1: put_c1, c2: put_c2, c3: put_c3, c4: put_c4, c5: put_c5, c6: put_c6, c7: put_c7 },
     cc:    { score: ccScore, total: 6, grade: scoreToGrade(ccScore, 6), badge: ccBadge, c1: cc_c1, c2: cc_c2, c3: cc_c3, c4: cc_c4, c5: cc_c5, c6: cc_c6, c7: cc_c7 },
-    synth: { score: synthScore, total: 7, grade: scoreToGrade(synthScore, 7), badge: synthBadge, c1: synth_c1, c2: synth_c2, c3: synth_c3, c4: synth_c4, c5: synth_c5, c6: synth_c6, c7: synth_c7 },
-    msl:   { score: mslScore, total: 7, grade: scoreToGrade(mslScore, 7), badge: mslBadge, c1: msl_c1, c2: msl_c2, c3: msl_c3, c4: msl_c4, c5: msl_c5, c6: msl_c6, c7: msl_c7 },
+    synth: { score: synthScore, total: 4, grade: scoreToGrade(synthScore, 4), badge: synthBadge, mr: synthCh.mr, netCostPct: synthCh.netCostPct,
+             c1: synthCh.c1, c2: null, c3: synthCh.c3, c4: synthCh.c4, c5: synthCh.c5, c6: synthCh.c6, c7: synthCh.c7 },
+    msl:   { score: mslScore, total: 6, grade: scoreToGrade(mslScore, 6), badge: mslBadge, weighted: mslCh.weighted, t1Pass: mslCh.t1Pass,
+             mr: mslCh.mr, callRatio: mslCh.callRatio, netDebitPct: mslCh.netDebitPct, riskRatio: mslCh.riskRatio, expiry: mslCh.expiry,
+             c1: mslCh.c1, c2: mslCh.c2, c3: mslCh.c3, c4: mslCh.c4, c5: mslCh.c5, c6: mslCh.c6, c7: mslCh.c7, c8: mslCh.c8 },
   };
 }
 
