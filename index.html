@@ -1704,6 +1704,9 @@ input, textarea, select { -webkit-user-select: text; user-select: text; }
       <label style="display:flex;flex-direction:column;gap:4px;font-size:10px;text-transform:uppercase;letter-spacing:0.6px;color:var(--text-muted)">Current Call Strike
         <input id="msladj-call" type="number" step="0.5" placeholder="55" onkeydown="if(event.key==='Enter')runMslAdjust()" style="width:120px;padding:7px 9px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:14px" />
       </label>
+      <label style="display:flex;flex-direction:column;gap:4px;font-size:10px;text-transform:uppercase;letter-spacing:0.6px;color:var(--text-muted)">Short-Put Strike <span style="text-transform:none;opacity:0.55">optional</span>
+        <input id="msladj-short" type="number" step="0.5" placeholder="fixed leg" onkeydown="if(event.key==='Enter')runMslAdjust()" style="width:120px;padding:7px 9px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:14px" />
+      </label>
       <label style="display:flex;flex-direction:column;gap:4px;font-size:10px;text-transform:uppercase;letter-spacing:0.6px;color:var(--text-muted)">Current Long-Put Strike
         <input id="msladj-put" type="number" step="0.5" placeholder="55" onkeydown="if(event.key==='Enter')runMslAdjust()" style="width:140px;padding:7px 9px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:14px" />
       </label>
@@ -5071,6 +5074,7 @@ async function runMslAdjust() {
   var putStrike  = parseFloat(document.getElementById('msladj-put').value);
   var rollTo     = parseFloat(document.getElementById('msladj-rollto').value);
   var curBE      = parseFloat(document.getElementById('msladj-be').value); // optional — enables absolute new breakeven
+  var shortStrike = parseFloat(document.getElementById('msladj-short').value); // optional — the fixed short-put leg; enables spread-margin & max-risk
   var wantExp    = (document.getElementById('msladj-exp').value || '').trim(); // optional — your position's expiry (YYYY-MM-DD)
   var resEl = document.getElementById('msladj-results');
   if (!ticker) { setStatus('msladj-status', 'Enter a ticker', 'error'); return; }
@@ -5079,6 +5083,9 @@ async function runMslAdjust() {
   }
   if (rollTo >= callStrike || rollTo >= putStrike) {
     setStatus('msladj-status', 'Roll-to strike must be below your current strikes (you roll down)', 'error'); return;
+  }
+  if (!isNaN(shortStrike) && shortStrike <= putStrike) {
+    setStatus('msladj-status', 'Short-put strike must be ABOVE the long-put strike (it is the higher, fixed leg)', 'error'); return;
   }
   var btn = document.getElementById('msladj-btn'); if (btn) btn.disabled = true;
   resEl.innerHTML = '';
@@ -5230,10 +5237,25 @@ async function runMslAdjust() {
     var netCash100   = Math.abs(netCashShare) * 100;
     var addedMargin100 = (putCredit !== null) ? putWidth * 100 : 0;       // put roll widens the spread
     var newBE = !isNaN(curBE) ? (curBE - totalBEdrop) : null;
+    // Short-put strike (fixed leg) unlocks the real spread margin and defined max risk
+    var hasShort = !isNaN(shortStrike);
+    var curSpreadMargin100 = hasShort ? (shortStrike - putStrike) * 100 : null; // short − long
+    var newSpreadMargin100 = hasShort ? (shortStrike - rollTo)   * 100 : null; // short − new long
+    var curNetDebit  = !isNaN(curBE) ? (curBE - callStrike) : null;            // BE = call strike + net debit
+    var curMaxRisk100 = (hasShort && curNetDebit !== null) ? ((shortStrike - putStrike) + curNetDebit) * 100 : null;
+    var newNetDebit  = (newBE !== null) ? (newBE - rollTo) : null;
+    var newMaxRisk100 = (hasShort && newNetDebit !== null) ? ((shortStrike - rollTo) + newNetDebit) * 100 : null;
+    var marginRow = hasShort
+      ? '<div class="sc-row"><span class="sc-key">Spread margin · per contract</span><span class="sc-val down">$' + fmt(curSpreadMargin100,0) + ' → $' + fmt(newSpreadMargin100,0) + ' (+$' + fmt(addedMargin100,0) + ')</span></div>'
+      : '<div class="sc-row"><span class="sc-key">Added margin · per contract</span><span class="sc-val down">+$' + fmt(addedMargin100,0) + '</span></div>';
+    var maxRiskRow = (curMaxRisk100 !== null && newMaxRisk100 !== null)
+      ? '<div class="sc-row"><span class="sc-key">Max risk (defined) · per contract</span><span class="sc-val ' + (newMaxRisk100 <= curMaxRisk100 ? 'up' : 'down') + '">$' + fmt(curMaxRisk100,0) + ' → $' + fmt(newMaxRisk100,0) + '</span></div>'
+      : '';
     html += '<div class="chain-section"><h3>Paired Roll — Net Effect (both sides → ' + fmtDollar(rollTo) + ')</h3>' +
       '<div class="scenarios"><div class="scenario-card" style="min-width:280px">' +
         '<div class="sc-row"><span class="sc-key">Net cash · per contract</span><span class="sc-val ' + (netCashShare <= 0 ? 'up' : 'down') + '">' + (netCashShare <= 0 ? '+$' + fmt(netCash100,0) + ' credit' : '−$' + fmt(netCash100,0) + ' debit') + '</span></div>' +
-        '<div class="sc-row"><span class="sc-key">Added margin · per contract</span><span class="sc-val down">+$' + fmt(addedMargin100,0) + '</span></div>' +
+        marginRow +
+        maxRiskRow +
         '<div class="sc-row"><span class="sc-key">Breakeven lowered</span><span class="sc-val up">−$' + fmt(totalBEdrop,2) + ' / share</span></div>' +
         '<div class="sc-row"><span class="sc-key">New breakeven</span><span class="sc-val ' + (newBE !== null ? 'up' : '') + '" style="font-weight:800">' + (newBE !== null ? fmtDollar(newBE) : 'enter Current BE above') + '</span></div>' +
       '</div></div>' +
