@@ -2798,7 +2798,10 @@ function buildColCard(ticker, d, strategy, rank, isBestTrade) {
   var pctScore = totalCriteria > 0 ? score / totalCriteria : 0;
   var scoreLbl = score + '/' + totalCriteria;
   // MSL uses weighted score (0-9) for grade band + thesis gate override
-  if (strategy === 'msl' && d.phase < 3) {
+  if (strategy === 'msl' && d.phase < 3 && d.phase3Failed) {
+    // Chain data couldn't be loaded (rate limit / no LEAPS chain) — don't sit on "Scoring…" forever
+    badgeCls = 'badge-notready'; badgeTxt = 'No chain data';
+  } else if (strategy === 'msl' && d.phase < 3) {
     // Chain criteria are scored in phase 3 — show a pending state, not a misleading score
     badgeCls = 'badge-watch'; badgeTxt = 'Scoring…';
   } else if (strategy === 'msl' && d.phase >= 3) {
@@ -2891,7 +2894,7 @@ function buildColCard(ticker, d, strategy, rank, isBestTrade) {
     // MSL: MR≤-2 4H, PutCr≥42%, I/E 50/50, DTE≥365, Net Debit, MSL Risk ≤60% of SL.
     // The chain criteria (P-CR/I/E/DEBIT/RISK) are scored in phase 3 — show '…' until
     // then rather than a misleading pass/fail (and never a stray ✗ for undefined).
-    var mPend = d.phase < 3;
+    var mPend = d.phase < 3 && !d.phase3Failed;
     var mslBox = function(v) { return mPend ? '…' : ((v === null || v === undefined) ? '—' : (v ? '✓' : '✗')); };
     criteriaHtml =
       mb('MR',    d.msl_c1, mrDisp) +
@@ -3465,22 +3468,44 @@ function triggerPhase3() {
   var loaded = tickers.filter(function(t){ return cardData[t] && cardData[t].phase >= 2; });
   if (loaded.length < tickers.length) return; // not all loaded yet
   _phase3Triggered = true;
+  _runPhase3Pass(loaded.slice(), 0);
+}
 
-  // Phase-3 for ALL loaded tickers (not a top-N). The Synth/MSL column sorts can
-  // surface any ticker — especially in a neutral market where gated (Tier-1-fail)
-  // tickers sink and un-scored ones float to the top — so scoring only a top-N left
-  // displayed cards stuck on "Scoring…". Synth+MSL for the same ticker share the same
-  // LEAPS chains, so the fetch cache dedupes the work.
-  var _p3 = loaded.map(function(t){ return function(){ return runSynthPhase3(t); }; })
-    .concat(loaded.map(function(t){ return function(){ return runMslPhase3(t); }; }));
-  var _p3i = 0, _p3active = 0, _P3LIMIT = 3;
-  function _p3next() {
-    while (_p3active < _P3LIMIT && _p3i < _p3.length) {
-      var task = _p3[_p3i++]; _p3active++;
-      Promise.resolve(task()).catch(function(){}).then(function(){ _p3active--; _p3next(); });
+// Run Synth+MSL phase-3 for a list of tickers, then RETRY any that didn't finish.
+// A transient MarketData rate-limit is common right after the Worker's initial scoring
+// burst, which used to leave cards stuck on "Scoring…" forever. Interleaving Synth+MSL
+// per ticker lets each ticker's MSL reuse the LEAPS chains its Synth just fetched.
+function _runPhase3Pass(list, round) {
+  var tasks = [];
+  list.forEach(function(t){
+    tasks.push(function(){ return runSynthPhase3(t); });
+    tasks.push(function(){ return runMslPhase3(t); });
+  });
+  var i = 0, active = 0, LIMIT = 3, finished = false;
+  function done() {
+    if (finished) return; finished = true;
+    var stuck = list.filter(function(t){ return cardData[t] && cardData[t].phase < 3; });
+    if (stuck.length && round < 2) {
+      // back off and retry only the tickers that failed — gives the upstream limit time to clear
+      setTimeout(function(){ _runPhase3Pass(stuck, round + 1); }, 1500 * (round + 1));
+    } else if (stuck.length) {
+      // out of retries — mark so cards show "No chain data" instead of a perpetual "Scoring…"
+      stuck.forEach(function(t){ if (cardData[t]) cardData[t].phase3Failed = true; });
+      renderColumns(); renderMiniRankings('msl'); renderMiniRankings('synth');
     }
   }
-  _p3next();
+  function next() {
+    if (!tasks.length) { done(); return; }
+    while (active < LIMIT && i < tasks.length) {
+      var task = tasks[i++]; active++;
+      Promise.resolve(task()).catch(function(){}).then(function(){
+        active--;
+        if (i >= tasks.length && active === 0) done();
+        else next();
+      });
+    }
+  }
+  next();
 }
 
 // ═══════════════════════════════════════════════════════
