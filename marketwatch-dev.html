@@ -3981,6 +3981,10 @@ async function runCC(forceTicker) {
     var upsidePct = (bestStrike && pd.price) ? ((bestStrike - pd.price) / pd.price * 100) : null;
     var otmOk     = upsidePct !== null ? (upsidePct >= 5 && upsidePct <= 12) : null; // near a resistance level (~8–10%)
     var totalRet  = (upsidePct !== null && premPct !== null) ? (upsidePct + premPct) : null;
+    // Buy-back target: close the short call at 80–90% profit = pay 10–20% of the credit
+    var ccBuybackLo = bestPremium != null ? bestPremium * 0.10 : null; // 90% profit
+    var ccBuybackHi = bestPremium != null ? bestPremium * 0.20 : null; // 80% profit
+    var calledAway  = (bestStrike && bestPremium) ? bestStrike + bestPremium : null; // effective sale if called
 
     var c2 = !isNaN(pd.meanRev) ? pd.meanRev >= 2 : null; // Laura OG: sell into +2 MR (Deeply Overbought) on the 4H IADSS chart
     var c3 = !isNaN(pd.sma200) ? pd.price > pd.sma200 : null;
@@ -3993,9 +3997,13 @@ async function runCC(forceTicker) {
     setStatus('cc-status', 'Done', 'ok');
 
     var html = priceBarHtml(ticker, pd, '4H');
+    html += '<div class="btc-note" style="border-color:var(--accent);color:var(--text);margin-bottom:12px">' +
+      '<strong>Covered Call</strong> — sell 1 call per 100 shares you own, at <strong>+2 MR</strong> near resistance (~9% OTM), 30–45 DTE. If assigned, shares are called away at ' + (bestStrike ? fmtDollar(bestStrike) : 'the strike') + ' and you keep the premium (effective sale ' + (calledAway ? fmtDollar(calledAway) : '—') + '). Buy back at 80–90% profit to free the shares. Never sell naked — infinite risk.' +
+    '</div>';
     html += '<div class="info-box">' +
       '<div class="info-item"><div class="info-label">Upside if Assigned</div><div class="info-val">' + (upsidePct !== null ? '+'+fmt(upsidePct,2)+'%' : '—') + '</div></div>' +
       '<div class="info-item"><div class="info-label">Total Return</div><div class="info-val">' + (totalRet !== null ? '+'+fmt(totalRet,2)+'%' : '—') + '</div></div>' +
+      '<div class="info-item"><div class="info-label">Effective Sale (if Called)</div><div class="info-val">' + (calledAway ? fmtDollar(calledAway) : '—') + '</div></div>' +
       '<div class="info-item"><div class="info-label">Expiry</div><div class="info-val">' + expiryDisplay(bestExpiry) + '</div></div>' +
       '<div class="info-item"><div class="info-label">DTE</div><div class="info-val">' + dte + '</div></div>' +
       '<div class="info-item"><div class="info-label">Target Strike</div><div class="info-val">' + (bestStrike ? fmtDollar(bestStrike) : '—') + '</div></div>' +
@@ -4025,6 +4033,7 @@ async function runCC(forceTicker) {
       tsItem('Margin Req.',     ccMargin ? '$' + fmt(ccMargin,0) : '—', 'ts-neutral', '100 shares already owned') +
       tsItem('Return on Capital', ccROC    ? fmt(ccROC,2) + '%'      : '—', 'ts-neutral', 'Per contract') +
       tsItem('Annualized Return', ccAnnReturn ? fmt(ccAnnReturn,1) + '%' : '—', 'ts-neutral', 'Projected annual') +
+      tsItem('Buy-Back Target', (ccBuybackLo != null ? '$' + fmt(ccBuybackLo,2) + '–$' + fmt(ccBuybackHi,2) : '—'), 'ts-gain', 'Close at 80–90% profit') +
     '</div></div>';
 
     html += '<div class="scorecard"><h3>Covered Call — Score</h3><div class="criteria-list">';
