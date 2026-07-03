@@ -438,11 +438,12 @@ async function mapLimit(items, limit, fn) {
   return results;
 }
 
-// Mean Reversion: Wilder RSI(14) → EMA(9) smooth → (val-50)/25
-// Matches James's InvestAnswers indicator exactly (zones at ±1 = Oversold/OB, ±2 = Deeply OS/OB)
+// Mean Reversion (approximation of the IADSS "Mean-BT"): Wilder RSI(14) → EMA(9) → (val-50)/scale
+// Runs on extended-hours 4H bars; SCALE is calibrated to real Mean-BT readings. Not identical to
+// the private indicator (we can't use its data feed), but tracks the same zones.
 function calcMeanRev(closes) {
   if (!closes || closes.length < 30) return NaN;
-  const period = 14, emaP = 9, scale = 25;
+  const period = 14, emaP = 9, scale = 12; // MR_SCALE — calibrated to IADSS Mean-BT on extended-hours 4H
   const gains = [], losses = [];
   for (let i = 1; i < closes.length; i++) {
     const diff = closes[i] - closes[i - 1];
@@ -547,10 +548,21 @@ async function scoreTicker(ticker, env) {
     return data;
   }
 
-  // Phase 1: price + Mean Reversion + SMA (parallel)
-  const [quoteData, tsData, smaData] = await Promise.all([
+  // MR closes: extended-hours 4H (MarketData.app) to match the IADSS session; fall back to
+  // TwelveData regular-session 4H so MR never fully breaks.
+  async function fetchMRCloses() {
+    try {
+      const md = await cachedFetch('https://api.marketdata.app/v1/stocks/candles/4H/' + ticker + '/?extended=true&countback=80&token=' + env.MD_TOKEN);
+      if (md && Array.isArray(md.c) && md.c.length >= 30) return md.c; // MarketData returns oldest-first
+    } catch (e) { /* fall back */ }
+    const td = await cachedFetch('https://api.twelvedata.com/time_series?symbol=' + ticker + '&interval=4h&outputsize=60&apikey=' + env.TD_KEY);
+    return (td.values || []).map(v => parseFloat(v.close)).reverse(); // TD newest-first → oldest-first
+  }
+
+  // Phase 1: price + MR closes + SMA (parallel)
+  const [quoteData, mrCloses, smaData] = await Promise.all([
     cachedFetch('https://api.twelvedata.com/quote?symbol=' + ticker + '&apikey=' + env.TD_KEY),
-    cachedFetch('https://api.twelvedata.com/time_series?symbol=' + ticker + '&interval=4h&outputsize=60&apikey=' + env.TD_KEY),
+    fetchMRCloses(),
     cachedFetch('https://api.twelvedata.com/sma?symbol=' + ticker + '&interval=1day&time_period=200&outputsize=1&apikey=' + env.TD_KEY), // SMA stays daily (trend filter)
   ]);
 
@@ -559,9 +571,7 @@ async function scoreTicker(ticker, env) {
   const changePct = parseFloat(quoteData.percent_change);
   const week52H = parseFloat(quoteData.fifty_two_week?.high || quoteData.high);
   const week52L = parseFloat(quoteData.fifty_two_week?.low || quoteData.low);
-  // Mean Reversion: Wilder RSI(14) → EMA(9) smooth → (val-50)/25 — matches James's indicator
-  const tsVals = tsData.values || [];
-  const closes = tsVals.map(v => parseFloat(v.close)).reverse(); // oldest-first
+  const closes = mrCloses; // oldest-first extended-hours 4H closes
   const meanRev = calcMeanRev(closes);
   const smaVals = smaData.values || [];
   const sma200 = parseFloat(smaVals.length > 0 ? smaVals[0].sma : (smaData.sma || NaN));
