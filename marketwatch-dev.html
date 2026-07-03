@@ -961,6 +961,11 @@ tbody td:first-child { text-align:left; }
 /* Notice */
 .notice { background:rgba(255,204,0,0.10);border:1px solid var(--yellow);border-radius:8px;padding:10px 14px;font-size:12px;color:var(--yellow);margin-bottom:14px; }
 .btc-note { font-size:11px;color:var(--text-muted);background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:7px 12px;margin-top:8px; }
+
+/* Hide native number-input spinner arrows for a cleaner look */
+input[type=number]::-webkit-inner-spin-button,
+input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+input[type=number] { -moz-appearance: textfield; appearance: textfield; }
 .suggestions-box { margin-top:10px;display:flex;flex-direction:column;gap:6px; }
 .suggestion-item { font-size:12px;padding:9px 14px;border-radius:6px;background:rgba(0,200,255,0.06);border:1px solid rgba(0,200,255,0.2);color:var(--text); line-height:1.5; }
 
