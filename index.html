@@ -2947,11 +2947,20 @@ function renderColumns() {
     return ((cardData[a].weeklyMeanRev != null ? cardData[a].weeklyMeanRev : cardData[a].meanRev) || 999) - ((cardData[b].weeklyMeanRev != null ? cardData[b].weeklyMeanRev : cardData[b].meanRev) || 999);
   });
 
-  // Laura's MSL: gated tickers (Tier-1 fail) sink; then sort by mslWeighted desc, then mslScore desc, ties broken by weekly MR asc (most oversold first)
+  // Laura's MSL ranking tiers (high → low):
+  //   2 = scored + passes all Tier-1 gates (a real setup)
+  //   1 = scored but gated ("wait for setup")
+  //   0 = not scored / ineligible (e.g. no LEAPS chain) → bottom
+  // Within a tier: mslWeighted desc, then mslScore desc, then weekly MR asc (most oversold).
+  function _mslTier(t) {
+    var d = cardData[t];
+    if (d.mslWeighted == null) return 0;   // never completed phase 3 → sink to bottom
+    if (d.mslT1Pass === true) return 2;
+    return 1;
+  }
   mslSorted.sort(function(a, b) {
-    var ga = cardData[a].mslT1Pass === false ? 0 : 1;
-    var gb = cardData[b].mslT1Pass === false ? 0 : 1;
-    if (gb !== ga) return gb - ga;
+    var ta = _mslTier(a), tb = _mslTier(b);
+    if (tb !== ta) return tb - ta;
     var wa = cardData[a].mslWeighted != null ? cardData[a].mslWeighted : -1;
     var wb = cardData[b].mslWeighted != null ? cardData[b].mslWeighted : -1;
     if (wb !== wa) return wb - wa;
