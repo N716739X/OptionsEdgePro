@@ -1715,8 +1715,8 @@ input, textarea, select { -webkit-user-select: text; user-select: text; }
           <option value="">Farthest LEAPS (default)</option>
         </select>
       </label>
-      <label style="display:flex;flex-direction:column;gap:4px;font-size:10px;text-transform:uppercase;letter-spacing:0.6px;color:var(--text-muted)">Current BE <span style="text-transform:none;opacity:0.55">optional</span>
-        <input id="msladj-be" type="number" step="0.5" placeholder="—" onkeydown="if(event.key==='Enter')runMslAdjust()" style="width:110px;padding:7px 9px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:14px" />
+      <label style="display:flex;flex-direction:column;gap:4px;font-size:10px;text-transform:uppercase;letter-spacing:0.6px;color:var(--text-muted)">Current BE <span style="text-transform:none;opacity:0.55">auto · override</span>
+        <input id="msladj-be" type="number" step="0.5" placeholder="auto-est" onkeydown="if(event.key==='Enter')runMslAdjust()" style="width:110px;padding:7px 9px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:14px" />
       </label>
       <button id="msladj-btn" onclick="runMslAdjust()" style="padding:9px 18px;background:var(--accent);border:none;border-radius:6px;color:#03121f;font-size:13px;font-weight:800;cursor:pointer">Scan Roll-Downs</button>
     </div>
@@ -5155,6 +5155,11 @@ async function runMslAdjust() {
     var curCallMid = midAt(callChain, callStrike);
     var curPutMid  = midAt(putChain, putStrike);
     var hasShort   = !isNaN(shortStrike);
+    // Estimate current breakeven from live mids: MSL BE = call strike + net debit,
+    // where net debit = call cost − put-spread credit = callMid − (shortPutMid − longPutMid).
+    var shortPutMid = hasShort ? midAt(putChain, shortStrike) : null;
+    var estBE = (curCallMid !== null && curPutMid !== null && shortPutMid !== null)
+      ? callStrike + (curCallMid - (shortPutMid - curPutMid)) : null;
 
     // ── Scan candidate roll-down strikes for each leg (Laura rolls each vertical independently) ──
     var CALL_MAX = 0.30, PUT_MIN = 0.60; // Laura's rules: call debit ≤30% of width; put credit ≥60% of width
@@ -5278,10 +5283,13 @@ async function runMslAdjust() {
     var netCashShare = (callDebit !== null ? callDebit : 0) - (putCredit !== null ? putCredit : 0); // + = net debit, − = net credit
     var netCash100 = Math.abs(netCashShare) * 100;
     var addedMargin100 = bestPut ? (putStrike - newLongStrike) * 100 : 0; // put roll widens the spread
-    var newBE = !isNaN(curBE) ? (curBE - totalBEdrop) : null;
+    var beEntered = !isNaN(curBE);
+    var effBE = beEntered ? curBE : estBE;   // prefer your actual entry BE; otherwise estimate from current mids
+    var beSource = beEntered ? 'entered' : (estBE !== null ? 'est. from mids' : null);
+    var newBE = (effBE !== null) ? (effBE - totalBEdrop) : null;
     var curSpreadMargin100 = hasShort ? (shortStrike - putStrike) * 100 : null;     // short − long
     var newSpreadMargin100 = hasShort ? (shortStrike - newLongStrike) * 100 : null; // short − new long
-    var curNetDebit  = !isNaN(curBE) ? (curBE - callStrike) : null;                 // BE = call strike + net debit
+    var curNetDebit  = (effBE !== null) ? (effBE - callStrike) : null;              // BE = call strike + net debit
     var curMaxRisk100 = (hasShort && curNetDebit !== null) ? ((shortStrike - putStrike) + curNetDebit) * 100 : null;
     var newNetDebit  = (newBE !== null) ? (newBE - newCallStrike) : null;
     var newMaxRisk100 = (hasShort && newNetDebit !== null) ? ((shortStrike - newLongStrike) + newNetDebit) * 100 : null;
@@ -5300,7 +5308,8 @@ async function runMslAdjust() {
           marginRow +
           maxRiskRow +
           '<div class="sc-row"><span class="sc-key">Breakeven lowered</span><span class="sc-val up">−$' + fmt(totalBEdrop,2) + ' / share</span></div>' +
-          '<div class="sc-row"><span class="sc-key">New breakeven</span><span class="sc-val ' + (newBE !== null ? 'up' : '') + '" style="font-weight:800">' + (newBE !== null ? fmtDollar(newBE) : 'enter Current BE above') + '</span></div>' +
+          '<div class="sc-row"><span class="sc-key">Current breakeven' + (beSource ? ' · ' + beSource : '') + '</span><span class="sc-val">' + (effBE !== null ? fmtDollar(effBE) : 'add short-put strike') + '</span></div>' +
+          '<div class="sc-row"><span class="sc-key">New breakeven</span><span class="sc-val ' + (newBE !== null ? 'up' : '') + '" style="font-weight:800">' + (newBE !== null ? fmtDollar(newBE) : 'add short-put strike or Current BE') + '</span></div>' +
         '</div></div>' +
         '<div class="btc-note" style="text-align:left">Uses each leg\'s ★ recommended strike. The put-roll credit funds the call-roll debit; widening the put spread adds margin. You can roll either side alone. Every roll is a taxable event in non-retirement accounts (pair a winning put roll with a losing call roll to offset). Consult a tax professional.</div>' +
       '</div>';
