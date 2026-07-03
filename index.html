@@ -1715,15 +1715,12 @@ input, textarea, select { -webkit-user-select: text; user-select: text; }
           <option value="">Farthest LEAPS (default)</option>
         </select>
       </label>
-      <label style="display:flex;flex-direction:column;gap:4px;font-size:10px;text-transform:uppercase;letter-spacing:0.6px;color:var(--text-muted)">Roll Down To
-        <input id="msladj-rollto" type="number" step="0.5" placeholder="50" onkeydown="if(event.key==='Enter')runMslAdjust()" style="width:110px;padding:7px 9px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:14px" />
-      </label>
       <label style="display:flex;flex-direction:column;gap:4px;font-size:10px;text-transform:uppercase;letter-spacing:0.6px;color:var(--text-muted)">Current BE <span style="text-transform:none;opacity:0.55">optional</span>
         <input id="msladj-be" type="number" step="0.5" placeholder="—" onkeydown="if(event.key==='Enter')runMslAdjust()" style="width:110px;padding:7px 9px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:14px" />
       </label>
-      <button id="msladj-btn" onclick="runMslAdjust()" style="padding:9px 18px;background:var(--accent);border:none;border-radius:6px;color:#03121f;font-size:13px;font-weight:800;cursor:pointer">Calculate Rolls</button>
+      <button id="msladj-btn" onclick="runMslAdjust()" style="padding:9px 18px;background:var(--accent);border:none;border-radius:6px;color:#03121f;font-size:13px;font-weight:800;cursor:pointer">Scan Roll-Downs</button>
     </div>
-    <div id="msladj-results"><div class="placeholder"><div class="ph-icon">↔</div><p>Enter your current MSL legs and a roll-down strike</p></div></div>
+    <div id="msladj-results"><div class="placeholder"><div class="ph-icon">↔</div><p>Enter your current MSL legs — the tool scans the chain and highlights the best strikes to roll down to</p></div></div>
   </div>
 </div>
 
@@ -5098,17 +5095,13 @@ async function runMslAdjust() {
   var ticker     = (document.getElementById('msladj-ticker').value || '').trim().toUpperCase();
   var callStrike = parseFloat(document.getElementById('msladj-call').value);
   var putStrike  = parseFloat(document.getElementById('msladj-put').value);
-  var rollTo     = parseFloat(document.getElementById('msladj-rollto').value);
   var curBE      = parseFloat(document.getElementById('msladj-be').value); // optional — enables absolute new breakeven
   var shortStrike = parseFloat(document.getElementById('msladj-short').value); // optional — the fixed short-put leg; enables spread-margin & max-risk
   var wantExp    = (document.getElementById('msladj-exp').value || '').trim(); // optional — your position's expiry (YYYY-MM-DD)
   var resEl = document.getElementById('msladj-results');
   if (!ticker) { setStatus('msladj-status', 'Enter a ticker', 'error'); return; }
-  if (isNaN(callStrike) || isNaN(putStrike) || isNaN(rollTo)) {
-    setStatus('msladj-status', 'Enter call strike, long-put strike, and roll-to strike', 'error'); return;
-  }
-  if (rollTo >= callStrike || rollTo >= putStrike) {
-    setStatus('msladj-status', 'Roll-to strike must be below your current strikes (you roll down)', 'error'); return;
+  if (isNaN(callStrike) || isNaN(putStrike)) {
+    setStatus('msladj-status', 'Enter your current call strike and long-put strike', 'error'); return;
   }
   if (!isNaN(shortStrike) && shortStrike <= putStrike) {
     setStatus('msladj-status', 'Short-put strike must be ABOVE the long-put strike (it is the higher, fixed leg)', 'error'); return;
@@ -5160,21 +5153,45 @@ async function runMslAdjust() {
       return null;
     }
     var curCallMid = midAt(callChain, callStrike);
-    var newCallMid = midAt(callChain, rollTo);
     var curPutMid  = midAt(putChain, putStrike);
-    var newPutMid  = midAt(putChain, rollTo);
+    var hasShort   = !isNaN(shortStrike);
 
-    // Left handle — roll the long call DOWN (costs a debit). Viable if debit ≤ 30% of width.
-    var callWidth    = callStrike - rollTo;
-    var callDebit    = (curCallMid !== null && newCallMid !== null) ? (newCallMid - curCallMid) : null;
-    var callMaxDebit = callWidth * 0.30;
-    var callViable   = callDebit !== null ? (callDebit <= callMaxDebit) : null;
+    // ── Scan candidate roll-down strikes for each leg (Laura rolls each vertical independently) ──
+    var CALL_MAX = 0.30, PUT_MIN = 0.60; // Laura's rules: call debit ≤30% of width; put credit ≥60% of width
+    // CALL: roll the long call DOWN for a debit ≤30% of roll width. Lowers breakeven by (width − debit).
+    var callCands = [];
+    if (callChain && callChain.strike && curCallMid !== null) {
+      for (var ci = 0; ci < callChain.strike.length; ci++) {
+        var ck = callChain.strike[ci];
+        if (ck >= callStrike) continue; // must roll down
+        var cm = callChain.mid ? callChain.mid[ci] : null;
+        if (cm === null || isNaN(cm)) continue;
+        var cw = callStrike - ck;
+        var cDebit = cm - curCallMid; // lower strike costs more → debit
+        callCands.push({ strike: ck, width: cw, amount: cDebit, pct: cw > 0 ? (cDebit / cw) * 100 : null, viable: cDebit <= cw * CALL_MAX, beDrop: cw - cDebit });
+      }
+    }
+    callCands.sort(function(a,b){ return b.strike - a.strike; }); // nearest first
+    var bestCall = null; // deepest viable strike = biggest breakeven drop within the ≤30% rule
+    callCands.forEach(function(c){ if (c.viable && (bestCall === null || c.strike < bestCall.strike)) bestCall = c; });
 
-    // Right handle — roll the long put DOWN (brings a credit, widens the spread). Viable if credit ≥ 60% of width.
-    var putWidth     = putStrike - rollTo;
-    var putCredit    = (curPutMid !== null && newPutMid !== null) ? (curPutMid - newPutMid) : null;
-    var putMinCredit = putWidth * 0.60;
-    var putViable    = putCredit !== null ? (putCredit >= putMinCredit) : null;
+    // PUT: roll the long put DOWN for a credit ≥60% of roll width. Widens the spread (more margin), lowers BE by the credit.
+    var putCands = [];
+    if (putChain && putChain.strike && curPutMid !== null) {
+      for (var pi = 0; pi < putChain.strike.length; pi++) {
+        var pk = putChain.strike[pi];
+        if (pk >= putStrike) continue; // must roll down
+        if (hasShort && pk >= shortStrike) continue; // long put stays below the short put
+        var pm = putChain.mid ? putChain.mid[pi] : null;
+        if (pm === null || isNaN(pm)) continue;
+        var pw = putStrike - pk;
+        var pCredit = curPutMid - pm; // sell higher long put, buy lower → credit
+        putCands.push({ strike: pk, width: pw, amount: pCredit, pct: pw > 0 ? (pCredit / pw) * 100 : null, viable: pCredit >= pw * PUT_MIN, beDrop: pCredit });
+      }
+    }
+    putCands.sort(function(a,b){ return b.strike - a.strike; });
+    var bestPut = null; // deepest viable strike = most credit & breakeven drop within the ≥60% rule
+    putCands.forEach(function(p){ if (p.viable && (bestPut === null || p.strike < bestPut.strike)) bestPut = p; });
 
     setStatus('msladj-status', 'Done', 'ok');
 
@@ -5227,81 +5244,88 @@ async function runMslAdjust() {
       '</div>' +
     '</div>';
 
-    function handleCard(title, sub, width, amount, amountLabel, threshLabel, threshStr, viable, note) {
-      var vClass = viable === true ? 'up' : viable === false ? 'down' : '';
-      var vText  = viable === true ? '✅ Viable' : viable === false ? '❌ Not yet' : '— No data';
-      var amtStr = amount !== null ? '$' + fmt(Math.abs(amount),2) : '—';
-      return '<div class="scenario-card" style="min-width:280px">' +
-        '<h4>' + title + '</h4>' +
-        '<div class="sc-row"><span class="sc-key">Roll</span><span class="sc-val">' + sub + ' (width $' + fmt(width,0) + ')</span></div>' +
-        '<div class="sc-row"><span class="sc-key">' + amountLabel + '</span><span class="sc-val ' + (amount !== null && viable !== null ? (viable ? 'up' : 'down') : '') + '">' + amtStr + '</span></div>' +
-        '<div class="sc-row"><span class="sc-key">' + threshLabel + '</span><span class="sc-val">' + threshStr + '</span></div>' +
-        '<div class="sc-row"><span class="sc-key">Verdict</span><span class="sc-val ' + vClass + '" style="font-weight:800">' + vText + '</span></div>' +
-        (note ? '<div class="sc-row"><span class="sc-val" style="font-size:10px;color:var(--text-muted);text-align:left">' + note + '</span></div>' : '') +
+    // ── Scan tables — one per leg, best (deepest viable) strike highlighted ──
+    function scanTable(title, cands, best, amtLabel, pctLabel, ruleText) {
+      if (!cands.length) return '<div class="chain-section"><h3>' + title + '</h3><div class="btc-note" style="text-align:left">No roll-down strikes with live quotes on this expiry.</div></div>';
+      var rows = '';
+      cands.slice(0, 12).forEach(function(c) {
+        var isBest = best && Math.abs(c.strike - best.strike) < 0.001;
+        var okCls = c.viable ? 'up' : 'down';
+        rows += '<tr' + (isBest ? ' class="recommended"' : '') + '>' +
+          '<td style="text-align:left;font-weight:700">' + (isBest ? '★ ' : '') + fmtDollar(c.strike) + '</td>' +
+          '<td>$' + fmt(c.width,0) + '</td>' +
+          '<td>$' + fmt(Math.abs(c.amount),2) + '</td>' +
+          '<td class="' + okCls + '">' + (c.pct !== null ? fmt(c.pct,0) + '%' : '—') + '</td>' +
+          '<td class="' + okCls + '" style="font-weight:800">' + (c.viable ? '✓' : '✗') + '</td>' +
+        '</tr>';
+      });
+      return '<div class="chain-section"><h3>' + title + '</h3>' +
+        '<div class="chain-table-wrap"><table><thead><tr>' +
+          '<th style="text-align:left">Roll To</th><th>Width</th><th>' + amtLabel + '</th><th>' + pctLabel + '</th><th>Rule</th>' +
+        '</tr></thead><tbody>' + rows + '</tbody></table></div>' +
+        '<div class="btc-note" style="text-align:left">' + ruleText + ' ' + (best ? '★ = recommended — deepest strike still passing the rule (biggest breakeven improvement).' : 'No strike passes the rule at this expiry yet — wait for a better print.') + '</div>' +
       '</div>';
     }
+    html += scanTable('Roll Call Down — pick a strike', callCands, bestCall, 'Debit', '% of width (≤30)', 'Roll the long call down for a debit ≤30% of the roll width; lowers breakeven by (width − debit).');
+    html += scanTable('Roll Long Put Down — pick a strike', putCands, bestPut, 'Credit', '% of width (≥60)', 'Roll the long put down for a credit ≥60% of the roll width; widens the spread (more margin) and lowers breakeven by the credit.');
 
-    html += '<div class="chain-section"><h3>The Two Handles</h3><div class="scenarios">';
-    var callSub = fmtDollar(callStrike) + ' → ' + fmtDollar(rollTo) + ' call';
-    var callNote = (curCallMid === null || newCallMid === null)
-      ? 'A call strike isn\'t in the chain — check the strikes.'
-      : (callViable ? 'Debit within Laura\'s ≤30% limit.' : 'Debit exceeds the ≤30% limit — wait for a better price.');
-    html += handleCard('Left Handle — Roll Call Down', callSub, callWidth, callDebit, 'Debit (mid)', 'Max debit (≤30% width)', '$' + fmt(callMaxDebit,2), callViable, callNote);
-
-    var putSub = fmtDollar(putStrike) + ' → ' + fmtDollar(rollTo) + ' put';
-    var putNote = (curPutMid === null || newPutMid === null)
-      ? 'A put strike isn\'t in the chain — check the strikes.'
-      : (putViable ? 'Credit meets the ≥60% floor. Widens spread: +$' + fmt(putWidth*100,0) + ' margin/contract, credit to cash.' : 'Credit below the ≥60% floor — wait for a better price.');
-    html += handleCard('Right Handle — Roll Put Down', putSub, putWidth, putCredit, 'Credit (mid)', 'Min credit (≥60% width)', '$' + fmt(putMinCredit,2), putViable, putNote);
-    html += '</div></div>';
-
-    // ── Paired Roll — combined net effect + new breakeven (put credit funds the call roll) ──
-    var callBEdrop  = (callDebit !== null) ? (callWidth - callDebit) : 0; // call roll lowers BE by (width − debit)
-    var putBEdrop   = (putCredit !== null) ? putCredit : 0;               // put roll lowers BE by the credit received
-    var totalBEdrop = callBEdrop + putBEdrop;
+    // ── Paired Roll — combined net effect using each leg's recommended (★) strike ──
+    var callDebit = bestCall ? bestCall.amount : null;
+    var putCredit = bestPut ? bestPut.amount : null;
+    var newCallStrike = bestCall ? bestCall.strike : callStrike;
+    var newLongStrike = bestPut ? bestPut.strike : putStrike;
+    var totalBEdrop = (bestCall ? bestCall.beDrop : 0) + (bestPut ? bestPut.beDrop : 0);
     var netCashShare = (callDebit !== null ? callDebit : 0) - (putCredit !== null ? putCredit : 0); // + = net debit, − = net credit
-    var netCash100   = Math.abs(netCashShare) * 100;
-    var addedMargin100 = (putCredit !== null) ? putWidth * 100 : 0;       // put roll widens the spread
+    var netCash100 = Math.abs(netCashShare) * 100;
+    var addedMargin100 = bestPut ? (putStrike - newLongStrike) * 100 : 0; // put roll widens the spread
     var newBE = !isNaN(curBE) ? (curBE - totalBEdrop) : null;
-    // Short-put strike (fixed leg) unlocks the real spread margin and defined max risk
-    var hasShort = !isNaN(shortStrike);
-    var curSpreadMargin100 = hasShort ? (shortStrike - putStrike) * 100 : null; // short − long
-    var newSpreadMargin100 = hasShort ? (shortStrike - rollTo)   * 100 : null; // short − new long
-    var curNetDebit  = !isNaN(curBE) ? (curBE - callStrike) : null;            // BE = call strike + net debit
+    var curSpreadMargin100 = hasShort ? (shortStrike - putStrike) * 100 : null;     // short − long
+    var newSpreadMargin100 = hasShort ? (shortStrike - newLongStrike) * 100 : null; // short − new long
+    var curNetDebit  = !isNaN(curBE) ? (curBE - callStrike) : null;                 // BE = call strike + net debit
     var curMaxRisk100 = (hasShort && curNetDebit !== null) ? ((shortStrike - putStrike) + curNetDebit) * 100 : null;
-    var newNetDebit  = (newBE !== null) ? (newBE - rollTo) : null;
-    var newMaxRisk100 = (hasShort && newNetDebit !== null) ? ((shortStrike - rollTo) + newNetDebit) * 100 : null;
-    var marginRow = hasShort
-      ? '<div class="sc-row"><span class="sc-key">Spread margin · per contract</span><span class="sc-val down">$' + fmt(curSpreadMargin100,0) + ' → $' + fmt(newSpreadMargin100,0) + ' (+$' + fmt(addedMargin100,0) + ')</span></div>'
-      : '<div class="sc-row"><span class="sc-key">Added margin · per contract</span><span class="sc-val down">+$' + fmt(addedMargin100,0) + '</span></div>';
-    var maxRiskRow = (curMaxRisk100 !== null && newMaxRisk100 !== null)
-      ? '<div class="sc-row"><span class="sc-key">Max risk (defined) · per contract</span><span class="sc-val ' + (newMaxRisk100 <= curMaxRisk100 ? 'up' : 'down') + '">$' + fmt(curMaxRisk100,0) + ' → $' + fmt(newMaxRisk100,0) + '</span></div>'
-      : '';
-    html += '<div class="chain-section"><h3>Paired Roll — Net Effect (both sides → ' + fmtDollar(rollTo) + ')</h3>' +
-      '<div class="scenarios"><div class="scenario-card" style="min-width:280px">' +
-        '<div class="sc-row"><span class="sc-key">Net cash · per contract</span><span class="sc-val ' + (netCashShare <= 0 ? 'up' : 'down') + '">' + (netCashShare <= 0 ? '+$' + fmt(netCash100,0) + ' credit' : '−$' + fmt(netCash100,0) + ' debit') + '</span></div>' +
-        marginRow +
-        maxRiskRow +
-        '<div class="sc-row"><span class="sc-key">Breakeven lowered</span><span class="sc-val up">−$' + fmt(totalBEdrop,2) + ' / share</span></div>' +
-        '<div class="sc-row"><span class="sc-key">New breakeven</span><span class="sc-val ' + (newBE !== null ? 'up' : '') + '" style="font-weight:800">' + (newBE !== null ? fmtDollar(newBE) : 'enter Current BE above') + '</span></div>' +
-      '</div></div>' +
-      '<div class="btc-note" style="text-align:left">Goal: <strong>lower breakeven</strong> while controlling cost & margin. The put-roll credit funds the call-roll debit; widening the put spread adds $' + fmt(putWidth,0) + '/share of margin per contract. Numbers assume you roll <em>both</em> sides — you can do either alone. Every roll is a taxable event in non-retirement accounts (Laura pairs a winning put roll with a losing call roll in the same period to offset). Consult a tax professional.</div>' +
-    '</div>';
+    var newNetDebit  = (newBE !== null) ? (newBE - newCallStrike) : null;
+    var newMaxRisk100 = (hasShort && newNetDebit !== null) ? ((shortStrike - newLongStrike) + newNetDebit) * 100 : null;
 
-    html += '<div class="chain-section"><h3>Order Tickets — separate verticals</h3>' +
-      '<div class="btc-note" style="text-align:left">' +
-        '<strong>Call roll (' + (callViable === true ? 'viable' : 'not yet') + '):</strong><br>' +
-        '• Sell to close ' + expiry + ' ' + fmtDollar(callStrike) + ' call<br>' +
-        '• Buy to open ' + expiry + ' ' + fmtDollar(rollTo) + ' call<br>' +
-        '• Target debit ' + (callDebit !== null ? '$' + fmt(callDebit,2) : '—') + ' at the midpoint (max $' + fmt(callMaxDebit,2) + ')' +
-      '</div>' +
-      '<div class="btc-note" style="text-align:left;margin-top:8px">' +
-        '<strong>Put roll (' + (putViable === true ? 'viable' : 'not yet') + '):</strong><br>' +
-        '• Sell to close ' + expiry + ' ' + fmtDollar(putStrike) + ' put<br>' +
-        '• Buy to open ' + expiry + ' ' + fmtDollar(rollTo) + ' put<br>' +
-        '• Target credit ' + (putCredit !== null ? '$' + fmt(putCredit,2) : '—') + ' at the midpoint (min $' + fmt(putMinCredit,2) + ')' +
-      '</div>' +
-    '</div>';
+    if (bestCall || bestPut) {
+      var recLabel = (bestCall ? 'call → ' + fmtDollar(bestCall.strike) : 'call → —') + ' · ' + (bestPut ? 'put → ' + fmtDollar(bestPut.strike) : 'put → —');
+      var marginRow = hasShort
+        ? '<div class="sc-row"><span class="sc-key">Spread margin · per contract</span><span class="sc-val down">$' + fmt(curSpreadMargin100,0) + ' → $' + fmt(newSpreadMargin100,0) + ' (+$' + fmt(addedMargin100,0) + ')</span></div>'
+        : '<div class="sc-row"><span class="sc-key">Added margin · per contract</span><span class="sc-val down">+$' + fmt(addedMargin100,0) + '</span></div>';
+      var maxRiskRow = (curMaxRisk100 !== null && newMaxRisk100 !== null)
+        ? '<div class="sc-row"><span class="sc-key">Max risk (defined) · per contract</span><span class="sc-val ' + (newMaxRisk100 <= curMaxRisk100 ? 'up' : 'down') + '">$' + fmt(curMaxRisk100,0) + ' → $' + fmt(newMaxRisk100,0) + '</span></div>'
+        : '';
+      html += '<div class="chain-section"><h3>Paired Roll — Net Effect (' + recLabel + ')</h3>' +
+        '<div class="scenarios"><div class="scenario-card" style="min-width:280px">' +
+          '<div class="sc-row"><span class="sc-key">Net cash · per contract</span><span class="sc-val ' + (netCashShare <= 0 ? 'up' : 'down') + '">' + (netCashShare <= 0 ? '+$' + fmt(netCash100,0) + ' credit' : '−$' + fmt(netCash100,0) + ' debit') + '</span></div>' +
+          marginRow +
+          maxRiskRow +
+          '<div class="sc-row"><span class="sc-key">Breakeven lowered</span><span class="sc-val up">−$' + fmt(totalBEdrop,2) + ' / share</span></div>' +
+          '<div class="sc-row"><span class="sc-key">New breakeven</span><span class="sc-val ' + (newBE !== null ? 'up' : '') + '" style="font-weight:800">' + (newBE !== null ? fmtDollar(newBE) : 'enter Current BE above') + '</span></div>' +
+        '</div></div>' +
+        '<div class="btc-note" style="text-align:left">Uses each leg\'s ★ recommended strike. The put-roll credit funds the call-roll debit; widening the put spread adds margin. You can roll either side alone. Every roll is a taxable event in non-retirement accounts (pair a winning put roll with a losing call roll to offset). Consult a tax professional.</div>' +
+      '</div>';
+
+      html += '<div class="chain-section"><h3>Order Tickets — separate verticals</h3>';
+      if (bestCall) {
+        html += '<div class="btc-note" style="text-align:left">' +
+          '<strong>Call roll:</strong><br>' +
+          '• Sell to close ' + expiry + ' ' + fmtDollar(callStrike) + ' call<br>' +
+          '• Buy to open ' + expiry + ' ' + fmtDollar(bestCall.strike) + ' call<br>' +
+          '• Target debit $' + fmt(bestCall.amount,2) + ' at the midpoint (max $' + fmt(bestCall.width * CALL_MAX,2) + ')' +
+        '</div>';
+      }
+      if (bestPut) {
+        html += '<div class="btc-note" style="text-align:left;margin-top:8px">' +
+          '<strong>Put roll:</strong><br>' +
+          '• Sell to close ' + expiry + ' ' + fmtDollar(putStrike) + ' put<br>' +
+          '• Buy to open ' + expiry + ' ' + fmtDollar(bestPut.strike) + ' put<br>' +
+          '• Target credit $' + fmt(bestPut.amount,2) + ' at the midpoint (min $' + fmt(bestPut.width * PUT_MIN,2) + ')' +
+        '</div>';
+      }
+      html += '</div>';
+    } else {
+      html += '<div class="notice">No roll-down strike passes Laura\'s rules on this expiry yet (call debit ≤30% / put credit ≥60%). Wait for a better print, or try another expiration.</div>';
+    }
 
     resEl.innerHTML = html;
   } catch(e) {
