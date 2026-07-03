@@ -3795,11 +3795,20 @@ async function runPut(forceTicker) {
     var discountPct = (costBasis && pd.price) ? ((pd.price - costBasis) / pd.price * 100) : null;
     var assignProb  = bestDelta !== null ? Math.abs(bestDelta) * 100 : null;
     var assignCap= bestStrike ? bestStrike * 100 : null;
+    // Buffer-to-support (income): how far OTM the strike is, and whether breakeven clears the 200 SMA
+    var otmPct     = (bestStrike && pd.price) ? ((pd.price - bestStrike) / pd.price * 100) : null; // >0 = OTM below price
+    var beAboveSma = (costBasis != null && !isNaN(pd.sma200)) ? (costBasis >= pd.sma200) : null;
+    var beVsSmaPct = (costBasis != null && pd.sma200) ? ((costBasis - pd.sma200) / pd.sma200 * 100) : null;
+    // Buy-back target (income): close at 80–90% profit = pay 10–20% of the credit
+    var buybackLo  = bestPremium != null ? bestPremium * 0.10 : null; // 90% profit
+    var buybackHi  = bestPremium != null ? bestPremium * 0.20 : null; // 80% profit
 
     // Income needs precision entry (−2 MR); accumulation allows a looser entry (Laura's lesson)
     var c2 = !isNaN(pd.meanRev) ? (acq ? pd.meanRev <= -1 : pd.meanRev <= -2) : null;
-    var c3 = !isNaN(pd.sma200) ? pd.price > pd.sma200 : null;
-    var c4 = !earningsRisk;
+    // Income: breakeven must clear the 200 SMA (Laura's buffer-to-support). Accumulation: basic uptrend.
+    var c3 = !isNaN(pd.sma200) ? (acq ? (pd.price > pd.sma200) : (beAboveSma === null ? (pd.price > pd.sma200) : beAboveSma)) : null;
+    // Income must expire before earnings; accumulation is happy to take the shares, so earnings is informational.
+    var c4 = acq ? true : !earningsRisk;
     var c5 = premPct !== null ? premPct > 2 : null;
     var c6 = deltaOk;
     var c7 = acq ? dte >= 60 : (dte >= 30 && dte <= 45);
@@ -3826,7 +3835,11 @@ async function runPut(forceTicker) {
         '<div class="info-item"><div class="info-label">Cost Basis if Assigned</div><div class="info-val">' + (costBasis ? fmtDollar(costBasis) : '—') + '</div></div>' +
         '<div class="info-item"><div class="info-label">Discount vs Price</div><div class="info-val ' + (discountPct > 0 ? 'up' : '') + '">' + (discountPct !== null ? fmt(discountPct,1) + '%' : '—') + '</div></div>' +
         '<div class="info-item"><div class="info-label">Assignment Prob (~Δ)</div><div class="info-val">' + (assignProb !== null ? fmt(assignProb,0) + '%' : '—') + '</div></div>'
-        : '') +
+        :
+        '<div class="info-item"><div class="info-label">Buffer (OTM)</div><div class="info-val ' + (otmPct > 0 ? 'up' : 'down') + '">' + (otmPct !== null ? fmt(otmPct,1) + '%' : '—') + '</div></div>' +
+        '<div class="info-item"><div class="info-label">BE vs 200 SMA</div><div class="info-val ' + (beAboveSma ? 'up' : 'down') + '">' + (beVsSmaPct !== null ? (beVsSmaPct >= 0 ? '+' : '') + fmt(beVsSmaPct,1) + '%' : '—') + '</div></div>' +
+        '<div class="info-item"><div class="info-label">Assignment Risk (~Δ)</div><div class="info-val">' + (assignProb !== null ? fmt(assignProb,0) + '%' : '—') + '</div></div>'
+      ) +
     '</div>';
     // Trade Summary calculations
     var maxGain    = bestPremium ? bestPremium * 100 : null;
@@ -3849,12 +3862,16 @@ async function runPut(forceTicker) {
       tsItem('Margin Req.',     cspMargin ? '$' + fmt(cspMargin,0) : '—', 'ts-neutral', 'Cash secured: strike × 100') +
       tsItem('Return on Capital', roc    ? fmt(roc,2) + '%'      : '—', 'ts-neutral', 'Per contract') +
       tsItem('Annualized Return', annReturn ? fmt(annReturn,1) + '%' : '—', 'ts-neutral', 'Projected annual') +
+      (acq ? '' : tsItem('Buy-Back Target', (buybackLo != null ? '$' + fmt(buybackLo,2) + '–$' + fmt(buybackHi,2) : '—'), 'ts-gain', 'Close at 80–90% profit')) +
     '</div></div>';
 
     html += '<div class="scorecard"><h3>Cash-Secured Put — Score</h3><div class="criteria-list">';
     html += critRow(1, acq ? 'MR · 4H ≤ −1 (looser entry OK for accumulation)' : 'MR · 4H ≤ −2 (Deeply Oversold)', c2, mrZone(pd.meanRev).label);
-    html += critRow(2,'Price Above 200 SMA (Confirmed Uptrend)', c3, pd.sma200 ? fmtDollar(pd.price) + ' vs ' + fmtDollar(pd.sma200) : 'N/A');
-    html += critRow(3,'No Earnings Before Expiry', c4, earningsRisk ? 'Earnings: '+EARNINGS[ticker] : 'Clear');
+    html += critRow(2, acq ? 'Price Above 200 SMA (Confirmed Uptrend)' : 'Breakeven Above 200 SMA (Buffer to Support)', c3,
+      acq ? (pd.sma200 ? fmtDollar(pd.price) + ' vs ' + fmtDollar(pd.sma200) : 'N/A')
+          : (costBasis != null && pd.sma200 ? 'BE ' + fmtDollar(costBasis) + ' vs SMA ' + fmtDollar(pd.sma200) : 'N/A'));
+    html += critRow(3, acq ? 'Earnings (informational — accumulation)' : 'No Earnings Before Expiry', c4,
+      earningsRisk ? 'Earnings: ' + EARNINGS[ticker] + (acq ? ' (OK — you want the shares)' : '') : 'Clear');
     html += critRow(4,'Premium > 2% of Price', c5, premPct !== null ? fmt(premPct,2)+'%' : 'N/A');
     html += critRow(5, acq ? 'Strike ATM · Δ 0.40–0.60 (buy near current price)' : 'Strike Delta 0.15–0.25 (OTM income)', c6, bestDelta !== null ? fmt(bestDelta,2) : 'N/A');
     html += critRow(6, acq ? 'Duration ≥ 60 DTE (longer = bigger credit)' : 'Duration 30–45 DTE', c7, dte+' days');
