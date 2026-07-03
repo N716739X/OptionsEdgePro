@@ -5160,6 +5160,9 @@ async function runMslAdjust() {
     var shortPutMid = hasShort ? midAt(putChain, shortStrike) : null;
     var estBE = (curCallMid !== null && curPutMid !== null && shortPutMid !== null)
       ? callStrike + (curCallMid - (shortPutMid - curPutMid)) : null;
+    var beEntered = !isNaN(curBE) && curBE > 0; // 0 / blank → use the auto-estimate
+    var effBE = beEntered ? curBE : estBE;      // prefer your actual entry BE; else estimate from current mids
+    var beSource = beEntered ? 'entered' : (estBE !== null ? 'est.' : null);
 
     // Surface missing/unavailable data clearly instead of failing silently
     if (!callChain || !putChain) throw new Error('Option chain not available for ' + expiry + ' — try another expiration.');
@@ -5243,6 +5246,7 @@ async function runMslAdjust() {
       '<div class="info-item"><div class="info-label">DTE</div><div class="info-val">' + dte + '</div></div>' +
       '<div class="info-item"><div class="info-label">MR · 4H</div><div class="info-val ' + mrZ.cls + '">' + (hasMR ? fmt(mr,2) + ' · ' + mrZ.short : '—') + '</div></div>' +
       '<div class="info-item"><div class="info-label">vs 200 SMA</div><div class="info-val ' + (atSMA ? 'up' : '') + '">' + (smaDistPct !== null ? (smaDistPct >= 0 ? '+' : '') + fmt(smaDistPct,1) + '%' : '—') + '</div></div>' +
+      '<div class="info-item"><div class="info-label">Current BE' + (beSource === 'est.' ? ' · est' : '') + '</div><div class="info-val">' + (effBE !== null ? fmtDollar(effBE) : '—') + '</div></div>' +
     '</div>';
 
     // Trigger-gate banner
@@ -5292,9 +5296,6 @@ async function runMslAdjust() {
     var netCashShare = (callDebit !== null ? callDebit : 0) - (putCredit !== null ? putCredit : 0); // + = net debit, − = net credit
     var netCash100 = Math.abs(netCashShare) * 100;
     var addedMargin100 = bestPut ? (putStrike - newLongStrike) * 100 : 0; // put roll widens the spread
-    var beEntered = !isNaN(curBE) && curBE > 0; // 0 / blank → fall back to the auto-estimate
-    var effBE = beEntered ? curBE : estBE;   // prefer your actual entry BE; otherwise estimate from current mids
-    var beSource = beEntered ? 'entered' : (estBE !== null ? 'est. from mids' : null);
     var newBE = (effBE !== null) ? (effBE - totalBEdrop) : null;
     var curSpreadMargin100 = hasShort ? (shortStrike - putStrike) * 100 : null;     // short − long
     var newSpreadMargin100 = hasShort ? (shortStrike - newLongStrike) * 100 : null; // short − new long
