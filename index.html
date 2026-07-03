@@ -3211,7 +3211,7 @@ async function runSynthPhase3(ticker) {
     d.ivRank = synthIVRank !== null ? synthIVRank : d.ivRank; // update card's ivRank to match synth expiry
 
     // James-aligned 7 criteria
-    d.synth_c1 = !isNaN(pd.meanRev) ? pd.meanRev <= -1 : null; // MR ≤ -1σ 4H (James scale: Oversold zone entry)
+    d.synth_c1 = !isNaN(pd.meanRev) ? pd.meanRev <= -2 : null; // Laura OG (MM46): synthetic-long entry at MR −2 (Deeply Oversold)
     d.synthMR  = weeklyMR; // store for card rendering
     d.synth_c2 = null; // IV>50% removed
     d.synth_c3 = dte >= 540;                                                     // Duration ≥ 540 DTE
@@ -4009,7 +4009,7 @@ async function runSynth(forceTicker) {
     var beAboveCur = (breakeven !== null && pd.price) ? ((breakeven / pd.price - 1) * 100) : null;
 
     // 4 criteria (IV>50% removed)
-    var c1 = !isNaN(pd.meanRev) ? pd.meanRev <= -1 : null; // MR ≤ -1σ 4H (James scale: Oversold zone entry)
+    var c1 = !isNaN(pd.meanRev) ? pd.meanRev <= -2 : null; // Laura OG (MM46): synthetic-long entry at MR −2 (Deeply Oversold)
     var c3 = dte >= 540;                                                       // Duration ≥ 540 DTE
     var c4 = netCostPct !== null ? netCostPct <= 5 : null;                     // Net Debit ≤ 5% (credit always passes)
     var c7 = (callSpreadPct !== null && putSpreadPct !== null) ? (callSpreadPct <= 10 && putSpreadPct <= 10) : null; // Spreads ≤ 10%
@@ -4109,7 +4109,7 @@ async function runSynth(forceTicker) {
     }
 
     html += '<div class="scorecard"><h3>Synthetic Long — Score</h3><div class="criteria-list">';
-    html += critRow(1,'MR · 4H (Oversold — Buy the Dip)', c1, mrZone(pd.meanRev).label);
+    html += critRow(1,'MR · 4H ≤ −2 (Deeply Oversold — Buy the Dip)', c1, mrZone(pd.meanRev).label);
     html += critRow(2,'Duration ≥ 540 DTE (LEAPS-Length)', c3, dte + ' days');
     html += critRow(3,'Net Debit ≤ 5% (Put Funds the Call)', c4, netCostPct !== null ? fmt(Math.abs(netCostPct),2) + '%' : 'N/A');
     html += critRow(4,'Both Spreads ≤ 10% (Tight)', c7, (callSpreadPct !== null ? fmt(callSpreadPct,1)+'%' : '—')+' / '+(putSpreadPct !== null ? fmt(putSpreadPct,1)+'%' : '—'));
@@ -4118,8 +4118,8 @@ async function runSynth(forceTicker) {
     // ── Contextual suggestions ──
     var suggWarn = [], suggGood = [];
     if (!c1) {
-      if (!isNaN(pd.meanRev) && pd.meanRev < -0.5 && pd.meanRev > -1) {
-        suggWarn.push('💡 <strong>MR approaching:</strong> 4H Mean Reversion is ' + mrZone(pd.meanRev).label + ' — not yet Oversold. Wait for a continued dip before entering.');
+      if (!isNaN(pd.meanRev) && pd.meanRev <= -1 && pd.meanRev > -2) {
+        suggWarn.push('💡 <strong>MR approaching:</strong> 4H Mean Reversion is ' + mrZone(pd.meanRev).label + ' — not yet at the −2 (Deeply Oversold) entry. Wait for a continued dip before entering.');
       } else {
         suggWarn.push('💡 <strong>Not oversold:</strong> 4H Mean Reversion is ' + mrZone(pd.meanRev).label + ' — synthetics work best entered at market lows when put premiums are fattest.');
       }
