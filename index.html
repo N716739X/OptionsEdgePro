@@ -3284,17 +3284,21 @@ async function runMslPhase3(ticker) {
     var expirations = d.expirations || await fetchExpirations(ticker);
     var mslExp = expirations.filter(function(e) { return dteFromStr(e) >= 540; });
     if (mslExp.length === 0) mslExp = expirations.filter(function(e) { return dteFromStr(e) >= 365; });
-    if (mslExp.length === 0) return;
+    if (mslExp.length === 0) { console.warn('[MSLp3]', ticker, 'no LEAPS expiry ≥365 among', expirations.length, 'expiries'); return; }
     mslExp.sort(function(a,b){ return dteFromStr(b) - dteFromStr(a); });
     var bestExpiry = mslExp[0];
     var dte = dteFromStr(bestExpiry);
 
     var results = await Promise.all([
-      fetchChain(ticker, bestExpiry, 'call').catch(function(){return null;}),
-      fetchChain(ticker, bestExpiry, 'put').catch(function(){return null;})
+      fetchChain(ticker, bestExpiry, 'call').catch(function(err){ console.warn('[MSLp3]', ticker, 'call chain error', err && err.message); return null; }),
+      fetchChain(ticker, bestExpiry, 'put').catch(function(err){ console.warn('[MSLp3]', ticker, 'put chain error', err && err.message); return null; })
     ]);
     var callChain = results[0], putChain = results[1];
-    if (!callChain || !callChain.strike || !putChain || !putChain.strike) return;
+    if (!callChain || !callChain.strike || !putChain || !putChain.strike || callChain.strike.length === 0 || putChain.strike.length === 0) {
+      console.warn('[MSLp3]', ticker, 'chain unusable @', bestExpiry, 'calls=', callChain && callChain.strike && callChain.strike.length, 'puts=', putChain && putChain.strike && putChain.strike.length);
+      return;
+    }
+    console.log('[MSLp3]', ticker, 'chains OK @', bestExpiry, 'calls=', callChain.strike.length, 'puts=', putChain.strike.length);
 
     // Laura’s MSL: 3-leg structure
     // Leg 1: Sell ATM put (closest to price)
@@ -3303,7 +3307,7 @@ async function runMslPhase3(ticker) {
       var dist = Math.abs(putChain.strike[sp] - pd.price);
       if (dist < bestPutDist) { bestPutDist = dist; soldPutIdx = sp; }
     }
-    if (soldPutIdx < 0) return;
+    if (soldPutIdx < 0) { console.warn('[MSLp3]', ticker, 'no ATM put found'); return; }
     var soldPutStrike = putChain.strike[soldPutIdx];
     var soldPutMid = putChain.mid ? putChain.mid[soldPutIdx] : null;
 
@@ -3336,7 +3340,7 @@ async function runMslPhase3(ticker) {
         if (Math.abs(cp2 - 50) < closest50) { closest50 = Math.abs(cp2 - 50); boughtPutIdx = bp2; }
       }
     }
-    if (boughtPutIdx < 0) return;
+    if (boughtPutIdx < 0) { console.warn('[MSLp3]', ticker, 'no bought-put leg; soldPutStrike=', soldPutStrike, 'soldPutMid=', soldPutMid); return; }
     var boughtPutStrike = putChain.strike[boughtPutIdx];
     var boughtPutMid = putChain.mid ? putChain.mid[boughtPutIdx] : null;
     var spreadWidth = soldPutStrike - boughtPutStrike;
@@ -3357,7 +3361,7 @@ async function runMslPhase3(ticker) {
       var diff = Math.abs(ratio - 0.50);
       if (diff < bestCallDiff) { bestCallDiff = diff; bestCallIdx = ci; }
     }
-    if (bestCallIdx < 0) return;
+    if (bestCallIdx < 0) { console.warn('[MSLp3]', ticker, 'no deep-ITM call with +extrinsic; price=', pd.price); return; }
     var callStrike = callChain.strike[bestCallIdx];
     var callMid = callChain.mid[bestCallIdx];
     var callIntrinsic = pd.price - callStrike;
@@ -3413,9 +3417,10 @@ async function runMslPhase3(ticker) {
     d.mslT1Pass = (d.msl_c1 === true && d.msl_c2 === true && d.msl_c8 === true && !d.mslOiHardReject);
     d.mslExpiry = bestExpiry; // LEAPS expiry actually scored — for the card subtitle
     d.phase = 3;
+    console.log('[MSLp3]', ticker, 'DONE weighted=', d.mslWeighted, 't1Pass=', d.mslT1Pass);
     renderColumns();
     renderMiniRankings('msl');
-  } catch(e) { /* silently skip */ }
+  } catch(e) { console.warn('[MSLp3]', ticker, 'threw:', e && e.message); }
 }
 
 var _phase3Triggered = false;
