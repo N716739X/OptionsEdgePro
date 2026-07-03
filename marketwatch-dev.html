@@ -1695,11 +1695,11 @@ input, textarea, select { -webkit-user-select: text; user-select: text; }
       <span class="status-msg" id="msladj-status"></span>
     </div>
     <div style="font-size:12px;color:var(--text-muted);margin-bottom:12px;line-height:1.5">
-      Roll an underwater MSL <strong>down</strong> using Laura's two rules. Enter <strong>your expiration</strong> to price the roll on the contract you hold (leave blank to use the farthest LEAPS). Live mid prices. Roll each side as its own vertical — you don't have to roll both.
+      Roll an underwater MSL <strong>down</strong> using Laura's two rules. Pick <strong>your expiration</strong> from the dropdown (auto-filled once you enter a ticker) to price the roll on the contract you hold — or leave it on <em>Farthest LEAPS</em>. Live mid prices. Roll each side as its own vertical — you don't have to roll both.
     </div>
     <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;margin-bottom:16px">
       <label style="display:flex;flex-direction:column;gap:4px;font-size:10px;text-transform:uppercase;letter-spacing:0.6px;color:var(--text-muted)">Ticker
-        <input id="msladj-ticker" type="text" placeholder="SLV" onkeydown="if(event.key==='Enter')runMslAdjust()" style="width:90px;padding:7px 9px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:14px;font-weight:700;text-transform:uppercase" />
+        <input id="msladj-ticker" type="text" placeholder="SLV" onchange="loadMslAdjExpirations()" onkeydown="if(event.key==='Enter')runMslAdjust()" style="width:90px;padding:7px 9px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:14px;font-weight:700;text-transform:uppercase" />
       </label>
       <label style="display:flex;flex-direction:column;gap:4px;font-size:10px;text-transform:uppercase;letter-spacing:0.6px;color:var(--text-muted)">Current Call Strike
         <input id="msladj-call" type="number" step="0.5" placeholder="55" onkeydown="if(event.key==='Enter')runMslAdjust()" style="width:120px;padding:7px 9px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:14px" />
@@ -1710,8 +1710,10 @@ input, textarea, select { -webkit-user-select: text; user-select: text; }
       <label style="display:flex;flex-direction:column;gap:4px;font-size:10px;text-transform:uppercase;letter-spacing:0.6px;color:var(--text-muted)">Current Long-Put Strike
         <input id="msladj-put" type="number" step="0.5" placeholder="55" onkeydown="if(event.key==='Enter')runMslAdjust()" style="width:140px;padding:7px 9px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:14px" />
       </label>
-      <label style="display:flex;flex-direction:column;gap:4px;font-size:10px;text-transform:uppercase;letter-spacing:0.6px;color:var(--text-muted)">Your Expiration <span style="text-transform:none;opacity:0.55">optional</span>
-        <input id="msladj-exp" type="text" placeholder="YYYY-MM-DD" onkeydown="if(event.key==='Enter')runMslAdjust()" style="width:130px;padding:7px 9px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:14px" />
+      <label style="display:flex;flex-direction:column;gap:4px;font-size:10px;text-transform:uppercase;letter-spacing:0.6px;color:var(--text-muted)">Your Expiration
+        <select id="msladj-exp" style="width:180px;padding:7px 9px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:14px">
+          <option value="">Farthest LEAPS (default)</option>
+        </select>
       </label>
       <label style="display:flex;flex-direction:column;gap:4px;font-size:10px;text-transform:uppercase;letter-spacing:0.6px;color:var(--text-muted)">Roll Down To
         <input id="msladj-rollto" type="number" step="0.5" placeholder="50" onkeydown="if(event.key==='Enter')runMslAdjust()" style="width:110px;padding:7px 9px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:14px" />
@@ -5068,6 +5070,30 @@ function renderMiniRankings(strategy, activeTicker) {
 // ═══════════════════════════════════════════════════════
 // MSL ADJUST — ROLL CALCULATOR (Laura's "two handles")
 // ═══════════════════════════════════════════════════════
+// Populate the expiration dropdown with the ticker's real listed expirations
+async function loadMslAdjExpirations() {
+  var ticker = (document.getElementById('msladj-ticker').value || '').trim().toUpperCase();
+  var sel = document.getElementById('msladj-exp');
+  if (!sel) return;
+  var prev = sel.value; // preserve selection if the ticker didn't change
+  if (!ticker) { sel.innerHTML = '<option value="">Farthest LEAPS (default)</option>'; return; }
+  sel.disabled = true;
+  sel.innerHTML = '<option value="">Loading…</option>';
+  try {
+    var exps = await fetchExpirations(ticker);
+    var opts = '<option value="">Farthest LEAPS (default)</option>';
+    (exps || []).forEach(function(e) {
+      var d = dteFromStr(e);
+      opts += '<option value="' + e + '"' + (e === prev ? ' selected' : '') + '>' + e + (d !== null ? ' · ' + d + 'd' : '') + '</option>';
+    });
+    sel.innerHTML = opts;
+  } catch (err) {
+    sel.innerHTML = '<option value="">Farthest LEAPS (default)</option>';
+  } finally {
+    sel.disabled = false;
+  }
+}
+
 async function runMslAdjust() {
   var ticker     = (document.getElementById('msladj-ticker').value || '').trim().toUpperCase();
   var callStrike = parseFloat(document.getElementById('msladj-call').value);
