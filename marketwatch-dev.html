@@ -2813,13 +2813,16 @@ function buildColCard(ticker, d, strategy, rank, isBestTrade) {
     else if (mslW >= 5)        { badgeCls = 'badge-watch';    badgeTxt = 'WATCH · ' + scoreLbl; }
     else                       { badgeCls = 'badge-notready'; badgeTxt = 'WAIT · ' + scoreLbl; }
   } else if (isScored) {
-    // Put: show NO TRADE for low scores
-    if (pctScore >= 0.70)      { badgeCls = 'badge-ideal';    badgeTxt = 'IDEAL · ' + scoreLbl; }
+    // Put: entry-timing gate (Laura sells CSP into MR ≤ −2) overrides the score
+    if (d.put_c2 === false)    { badgeCls = 'badge-wait';     badgeTxt = 'WAIT FOR SETUP · ' + scoreLbl; }
+    else if (pctScore >= 0.70) { badgeCls = 'badge-ideal';    badgeTxt = 'IDEAL · ' + scoreLbl; }
     else if (pctScore >= 0.40) { badgeCls = 'badge-watch';    badgeTxt = 'WATCH · ' + scoreLbl; }
     else                       { badgeCls = 'badge-notready'; badgeTxt = 'NO TRADE · ' + scoreLbl; }
   } else {
-    // CC/LEAPS/Synth: percentage-based
-    if (pctScore >= 0.70)      { badgeCls = 'badge-ideal';    badgeTxt = 'IDEAL · ' + scoreLbl; }
+    // CC (sell into MR ≥ +2) / Synth (enter MR ≤ −2): entry-timing gate overrides the score
+    var _mrEntryFail = (strategy === 'cc') ? (d.cc_c2 === false) : (d.synth_c1 === false);
+    if (_mrEntryFail)          { badgeCls = 'badge-wait';     badgeTxt = 'WAIT FOR SETUP · ' + scoreLbl; }
+    else if (pctScore >= 0.70) { badgeCls = 'badge-ideal';    badgeTxt = 'IDEAL · ' + scoreLbl; }
     else if (pctScore >= 0.40) { badgeCls = 'badge-watch';    badgeTxt = 'WATCH · ' + scoreLbl; }
     else                       { badgeCls = 'badge-notready'; badgeTxt = 'WAIT · ' + scoreLbl; }
   }
