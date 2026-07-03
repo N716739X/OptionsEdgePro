@@ -5161,6 +5161,13 @@ async function runMslAdjust() {
     var estBE = (curCallMid !== null && curPutMid !== null && shortPutMid !== null)
       ? callStrike + (curCallMid - (shortPutMid - curPutMid)) : null;
 
+    // Surface missing/unavailable data clearly instead of failing silently
+    if (!callChain || !putChain) throw new Error('Option chain not available for ' + expiry + ' — try another expiration.');
+    var missingNote = '';
+    if (curCallMid === null) missingNote += 'Call strike ' + fmtDollar(callStrike) + ' isn\'t listed in the ' + expiry + ' chain. ';
+    if (curPutMid === null)  missingNote += 'Long-put strike ' + fmtDollar(putStrike) + ' isn\'t listed in the ' + expiry + ' chain. ';
+    if (hasShort && shortPutMid === null) missingNote += 'Short-put strike ' + fmtDollar(shortStrike) + ' isn\'t listed. ';
+
     // ── Scan candidate roll-down strikes for each leg (Laura rolls each vertical independently) ──
     var CALL_MAX = 0.30, PUT_MIN = 0.60; // Laura's rules: call debit ≤30% of width; put credit ≥60% of width
     // CALL: roll the long call DOWN for a debit ≤30% of roll width. Lowers breakeven by (width − debit).
@@ -5249,6 +5256,8 @@ async function runMslAdjust() {
       '</div>' +
     '</div>';
 
+    if (missingNote) html += '<div class="notice">⚠ ' + missingNote + 'Enter strikes that appear in the chain (check the expiry) — the scan uses live mids at your exact strikes.</div>';
+
     // ── Scan tables — one per leg, best (deepest viable) strike highlighted ──
     function scanTable(title, cands, best, amtLabel, pctLabel, ruleText) {
       if (!cands.length) return '<div class="chain-section"><h3>' + title + '</h3><div class="btc-note" style="text-align:left">No roll-down strikes with live quotes on this expiry.</div></div>';
@@ -5283,7 +5292,7 @@ async function runMslAdjust() {
     var netCashShare = (callDebit !== null ? callDebit : 0) - (putCredit !== null ? putCredit : 0); // + = net debit, − = net credit
     var netCash100 = Math.abs(netCashShare) * 100;
     var addedMargin100 = bestPut ? (putStrike - newLongStrike) * 100 : 0; // put roll widens the spread
-    var beEntered = !isNaN(curBE);
+    var beEntered = !isNaN(curBE) && curBE > 0; // 0 / blank → fall back to the auto-estimate
     var effBE = beEntered ? curBE : estBE;   // prefer your actual entry BE; otherwise estimate from current mids
     var beSource = beEntered ? 'entered' : (estBE !== null ? 'est. from mids' : null);
     var newBE = (effBE !== null) ? (effBE - totalBEdrop) : null;
