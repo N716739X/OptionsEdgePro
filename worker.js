@@ -705,7 +705,7 @@ async function scoreTicker(ticker, env) {
 
   // Synth: James-aligned same-strike synthetic long
   const hasSynthExp = expirations.some(e => dteFromStr(e) >= 540);
-  const synth_c1 = !isNaN(weeklyMeanRev) ? weeklyMeanRev <= -1 : null; // MR ≤ -1σ Weekly (James scale: Oversold zone entry)
+  const synth_c1 = !isNaN(weeklyMeanRev) ? weeklyMeanRev <= -2 : null; // Laura OG (MM46): synthetic-long entry at MR −2 (Deeply Oversold)
   const synth_c2 = ivRank !== null ? ivRank > 50 : null;          // IV > 50%
   const synth_c3 = hasSynthExp;                                   // Duration >= 540 DTE
   const synth_c4 = null;                                          // Net Debit <= 5% (need chain)
