@@ -561,10 +561,28 @@ async function scoreTicker(ticker, env) {
   const changePct = parseFloat(quoteData.percent_change);
   const week52H = parseFloat(quoteData.fifty_two_week?.high || quoteData.high);
   const week52L = parseFloat(quoteData.fifty_two_week?.low || quoteData.low);
-  // Mean Reversion: Wilder RSI(14) → EMA(9) smooth → (val-50)/25 — matches James's indicator
+  // Mean Reversion: Wilder RSI(14) → EMA(9) smooth → (val-50)/12.5 — matches James's indicator
   const tsVals = tsData.values || [];
-  const closes = tsVals.map(v => parseFloat(v.close)).reverse(); // oldest-first
-  const meanRev = calcMeanRev(closes);
+  // Data-quality guard: reject thin or stale series so recently-surged / thinly-covered
+  // names (where TwelveData's history lags the live quote) return NaN instead of a bogus MR.
+  let meanRev = NaN;
+  if (tsVals.length >= 30) {
+    let stale = false;
+    const newestStr = tsVals[0] && tsVals[0].datetime; // TwelveData returns newest-first
+    if (newestStr) {
+      const dp = String(newestStr).slice(0, 10).split('-'); // date only (tz-safe)
+      if (dp.length === 3) {
+        const barUTC   = Date.UTC(parseInt(dp[0]), parseInt(dp[1]) - 1, parseInt(dp[2]));
+        const now      = new Date();
+        const todayUTC = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+        if ((todayUTC - barUTC) / 86400000 > 5) stale = true; // newest bar older than ~5 days
+      }
+    }
+    if (!stale) {
+      const closes = tsVals.map(v => parseFloat(v.close)).reverse(); // oldest-first
+      meanRev = calcMeanRev(closes);
+    }
+  }
   const smaVals = smaData.values || [];
   const sma200 = parseFloat(smaVals.length > 0 ? smaVals[0].sma : (smaData.sma || NaN));
 
