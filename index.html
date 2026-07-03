@@ -1720,9 +1720,6 @@ input, textarea, select { -webkit-user-select: text; user-select: text; }
           <option value="">Farthest LEAPS (default)</option>
         </select>
       </label>
-      <label style="display:flex;flex-direction:column;gap:4px;font-size:10px;text-transform:uppercase;letter-spacing:0.6px;color:var(--text-muted)">Current BE <span style="text-transform:none;opacity:0.55">auto · override</span>
-        <input id="msladj-be" type="number" step="0.5" placeholder="auto-est" onkeydown="if(event.key==='Enter')runMslAdjust()" style="width:110px;padding:7px 9px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:14px" />
-      </label>
       <button id="msladj-btn" onclick="runMslAdjust()" style="padding:9px 18px;background:var(--accent);border:none;border-radius:6px;color:#03121f;font-size:13px;font-weight:800;cursor:pointer">Scan Roll-Downs</button>
     </div>
     <div id="msladj-results"><div class="placeholder"><div class="ph-icon">↔</div><p>Enter your current MSL legs — the tool scans the chain and highlights the best strikes to roll down to</p></div></div>
@@ -5100,7 +5097,6 @@ async function runMslAdjust() {
   var ticker     = (document.getElementById('msladj-ticker').value || '').trim().toUpperCase();
   var callStrike = parseFloat(document.getElementById('msladj-call').value);
   var putStrike  = parseFloat(document.getElementById('msladj-put').value);
-  var curBE      = parseFloat(document.getElementById('msladj-be').value); // optional — enables absolute new breakeven
   var shortStrike = parseFloat(document.getElementById('msladj-short').value); // optional — the fixed short-put leg; enables spread-margin & max-risk
   var wantExp    = (document.getElementById('msladj-exp').value || '').trim(); // optional — your position's expiry (YYYY-MM-DD)
   var resEl = document.getElementById('msladj-results');
@@ -5165,9 +5161,7 @@ async function runMslAdjust() {
     var shortPutMid = hasShort ? midAt(putChain, shortStrike) : null;
     var estBE = (curCallMid !== null && curPutMid !== null && shortPutMid !== null)
       ? callStrike + (curCallMid - (shortPutMid - curPutMid)) : null;
-    var beEntered = !isNaN(curBE) && curBE > 0; // 0 / blank → use the auto-estimate
-    var effBE = beEntered ? curBE : estBE;      // prefer your actual entry BE; else estimate from current mids
-    var beSource = beEntered ? 'entered' : (estBE !== null ? 'est.' : null);
+    var effBE = estBE; // breakeven auto-estimated from current mids
 
     // Surface missing/unavailable data clearly instead of failing silently
     if (!callChain || !putChain) throw new Error('Option chain not available for ' + expiry + ' — try another expiration.');
@@ -5251,7 +5245,7 @@ async function runMslAdjust() {
       '<div class="info-item"><div class="info-label">DTE</div><div class="info-val">' + dte + '</div></div>' +
       '<div class="info-item"><div class="info-label">MR · 4H</div><div class="info-val ' + mrZ.cls + '">' + (hasMR ? fmt(mr,2) + ' · ' + mrZ.short : '—') + '</div></div>' +
       '<div class="info-item"><div class="info-label">vs 200 SMA</div><div class="info-val ' + (atSMA ? 'up' : '') + '">' + (smaDistPct !== null ? (smaDistPct >= 0 ? '+' : '') + fmt(smaDistPct,1) + '%' : '—') + '</div></div>' +
-      '<div class="info-item"><div class="info-label">Current BE' + (beSource === 'est.' ? ' · est' : '') + '</div><div class="info-val">' + (effBE !== null ? fmtDollar(effBE) : '—') + '</div></div>' +
+      '<div class="info-item"><div class="info-label">Current BE' + (effBE !== null ? ' · est' : '') + '</div><div class="info-val">' + (effBE !== null ? fmtDollar(effBE) : '—') + '</div></div>' +
     '</div>';
 
     // Trigger-gate banner
@@ -5323,8 +5317,8 @@ async function runMslAdjust() {
           marginRow +
           maxRiskRow +
           '<div class="sc-row"><span class="sc-key">Breakeven lowered</span><span class="sc-val up">−$' + fmt(totalBEdrop,2) + ' / share</span></div>' +
-          '<div class="sc-row"><span class="sc-key">Current breakeven' + (beSource ? ' · ' + beSource : '') + '</span><span class="sc-val">' + (effBE !== null ? fmtDollar(effBE) : 'add short-put strike') + '</span></div>' +
-          '<div class="sc-row"><span class="sc-key">New breakeven</span><span class="sc-val ' + (newBE !== null ? 'up' : '') + '" style="font-weight:800">' + (newBE !== null ? fmtDollar(newBE) : 'add short-put strike or Current BE') + '</span></div>' +
+          '<div class="sc-row"><span class="sc-key">Current breakeven' + (effBE !== null ? ' · est' : '') + '</span><span class="sc-val">' + (effBE !== null ? fmtDollar(effBE) : 'add short-put strike') + '</span></div>' +
+          '<div class="sc-row"><span class="sc-key">New breakeven</span><span class="sc-val ' + (newBE !== null ? 'up' : '') + '" style="font-weight:800">' + (newBE !== null ? fmtDollar(newBE) : 'add short-put strike') + '</span></div>' +
         '</div></div>' +
         '<div class="btc-note" style="text-align:left">Uses each leg\'s ★ recommended strike. The put-roll credit funds the call-roll debit; widening the put spread adds margin. You can roll either side alone. Every roll is a taxable event in non-retirement accounts (pair a winning put roll with a losing call roll to offset). Consult a tax professional.</div>' +
       '</div>';
