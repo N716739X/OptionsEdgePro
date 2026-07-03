@@ -3777,16 +3777,24 @@ async function runPut(forceTicker) {
     setStatus('put-status', spinner() + 'Put chain…', 'loading');
     var chain = await fetchChain(ticker, bestExpiry, 'put');
 
-    var bestStrike = null, bestDelta = null, bestPremium = null;
+    var bestStrike = null, bestDelta = null, bestPremium = null, bestIdx = -1;
     if (chain && chain.strike) {
       var bd = Infinity;
       for (var i = 0; i < chain.strike.length; i++) {
         var d   = chain.delta ? chain.delta[i] : null;
         if (d === null) continue;
         var dif = Math.abs(d - targetDelta);
-        if (dif < bd) { bd = dif; bestStrike = chain.strike[i]; bestDelta = d; bestPremium = chain.mid ? chain.mid[i] : null; }
+        if (dif < bd) { bd = dif; bestStrike = chain.strike[i]; bestDelta = d; bestPremium = chain.mid ? chain.mid[i] : null; bestIdx = i; }
       }
     }
+    // Liquidity/spread guard — the mid is only trustworthy if the bid-ask is tight and OI is real
+    var bestBid = (bestIdx >= 0 && chain.bid) ? chain.bid[bestIdx] : null;
+    var bestAsk = (bestIdx >= 0 && chain.ask) ? chain.ask[bestIdx] : null;
+    var bestOI  = (bestIdx >= 0 && chain.openInterest) ? chain.openInterest[bestIdx] : null;
+    var spreadAbs = (bestBid != null && bestAsk != null) ? (bestAsk - bestBid) : null;
+    var spreadPct = (spreadAbs != null && bestPremium) ? (spreadAbs / bestPremium * 100) : null;
+    var wideSpread = spreadPct !== null && spreadPct > 15;
+    var thinOI = bestOI !== null && bestOI < 100;
     var premPct  = (bestPremium && pd.price) ? (bestPremium / pd.price * 100) : null;
     var deltaOk  = bestDelta !== null && (acq
       ? (Math.abs(bestDelta) >= 0.40 && Math.abs(bestDelta) <= 0.60)   // ATM/closer for assignment
@@ -3828,6 +3836,7 @@ async function runPut(forceTicker) {
       '<div class="info-item"><div class="info-label">DTE</div><div class="info-val">' + dte + '</div></div>' +
       '<div class="info-item"><div class="info-label">Target Strike</div><div class="info-val">' + (bestStrike ? fmtDollar(bestStrike) : '—') + '</div></div>' +
       '<div class="info-item"><div class="info-label">Premium (Mid)</div><div class="info-val">' + (bestPremium ? fmtDollar(bestPremium) : '—') + '</div></div>' +
+      '<div class="info-item"><div class="info-label">Bid / Ask</div><div class="info-val ' + (wideSpread ? 'down' : '') + '">' + ((bestBid != null && bestAsk != null) ? fmtDollar(bestBid) + ' / ' + fmtDollar(bestAsk) + (spreadPct !== null ? ' · ' + fmt(spreadPct,0) + '%' : '') : '—') + '</div></div>' +
       '<div class="info-item"><div class="info-label">Prem %</div><div class="info-val">' + (premPct !== null ? fmt(premPct,2) + '%' : '—') + '</div></div>' +
       '<div class="info-item"><div class="info-label">200 SMA</div><div class="info-val">' + (pd.sma200 ? fmtDollar(pd.sma200) : '—') + '</div></div>' +
       '<div class="info-item"><div class="info-label">MR · 4H</div><div class="info-val ' + mrZone(pd.meanRev).cls + '">' + (!isNaN(pd.meanRev) ? fmt(pd.meanRev,2) + ' · ' + mrZone(pd.meanRev).short : '—') + '</div></div>' +
@@ -3879,6 +3888,8 @@ async function runPut(forceTicker) {
 
     // ── Contextual suggestions (warnings first, positives last) ──
     var suggWarnP = [], suggGoodP = [];
+    if (wideSpread) suggWarnP.push('⚠ <strong>Wide bid-ask:</strong> the ' + fmtDollar(bestStrike) + ' put is ' + fmt(spreadPct,0) + '% wide (bid ' + fmtDollar(bestBid) + ' / ask ' + fmtDollar(bestAsk) + '). The $' + fmt(bestPremium,2) + ' mid likely won\'t fill — the returns above use the mid, so treat them as optimistic and work your limit toward the bid.');
+    if (thinOI) suggWarnP.push('⚠ <strong>Thin open interest:</strong> only ' + bestOI + ' contracts at the ' + fmtDollar(bestStrike) + ' strike — may be hard to fill at a fair price.');
     if (earningsRisk && c2 && c5) {
       var eDate = EARNINGS[ticker];
       suggWarnP.push('💡 <strong>Earnings workaround:</strong> ' + ticker + ' has earnings on ' + eDate + ' inside your expiry window. Consider a shorter DTE expiring <strong>before ' + eDate + '</strong> to avoid earnings risk while still capturing the oversold setup.');
@@ -3962,7 +3973,7 @@ async function runCC(forceTicker) {
     setStatus('cc-status', spinner() + 'Call chain…', 'loading');
     var chain = await fetchChain(ticker, bestExpiry, 'call');
 
-    var bestStrike = null, bestDelta = null, bestPremium = null;
+    var bestStrike = null, bestDelta = null, bestPremium = null, bestIdxC = -1;
     if (chain && chain.strike) {
       // Laura OG (MM13): sell the call at overhead resistance — she'd sold ~9% OTM
       // and took whatever delta came with it. We anchor on % OTM (resistance proxy)
@@ -3974,9 +3985,17 @@ async function runCC(forceTicker) {
         if (d2 === null) continue;
         if (d2 < 0.10 || d2 > 0.55) continue; // wide band — resistance strike, not a delta target
         var dif2 = Math.abs(chain.strike[i] - targetOTM);
-        if (dif2 < bd2) { bd2 = dif2; bestStrike = chain.strike[i]; bestDelta = d2; bestPremium = chain.mid ? chain.mid[i] : null; }
+        if (dif2 < bd2) { bd2 = dif2; bestStrike = chain.strike[i]; bestDelta = d2; bestPremium = chain.mid ? chain.mid[i] : null; bestIdxC = i; }
       }
     }
+    // Liquidity/spread guard — a wide bid-ask means the mid (and the returns below) won't fill
+    var bestBid = (bestIdxC >= 0 && chain.bid) ? chain.bid[bestIdxC] : null;
+    var bestAsk = (bestIdxC >= 0 && chain.ask) ? chain.ask[bestIdxC] : null;
+    var bestOI  = (bestIdxC >= 0 && chain.openInterest) ? chain.openInterest[bestIdxC] : null;
+    var spreadAbs = (bestBid != null && bestAsk != null) ? (bestAsk - bestBid) : null;
+    var spreadPct = (spreadAbs != null && bestPremium) ? (spreadAbs / bestPremium * 100) : null;
+    var wideSpread = spreadPct !== null && spreadPct > 15;
+    var thinOI = bestOI !== null && bestOI < 100;
     var premPct   = (bestPremium && pd.price) ? (bestPremium / pd.price * 100) : null;
     var upsidePct = (bestStrike && pd.price) ? ((bestStrike - pd.price) / pd.price * 100) : null;
     var otmOk     = upsidePct !== null ? (upsidePct >= 5 && upsidePct <= 12) : null; // near a resistance level (~8–10%)
@@ -4008,6 +4027,7 @@ async function runCC(forceTicker) {
       '<div class="info-item"><div class="info-label">DTE</div><div class="info-val">' + dte + '</div></div>' +
       '<div class="info-item"><div class="info-label">Target Strike</div><div class="info-val">' + (bestStrike ? fmtDollar(bestStrike) : '—') + '</div></div>' +
       '<div class="info-item"><div class="info-label">Premium (Mid)</div><div class="info-val">' + (bestPremium ? fmtDollar(bestPremium) : '—') + '</div></div>' +
+      '<div class="info-item"><div class="info-label">Bid / Ask</div><div class="info-val ' + (wideSpread ? 'down' : '') + '">' + ((bestBid != null && bestAsk != null) ? fmtDollar(bestBid) + ' / ' + fmtDollar(bestAsk) + (spreadPct !== null ? ' · ' + fmt(spreadPct,0) + '%' : '') : '—') + '</div></div>' +
       '<div class="info-item"><div class="info-label">200 SMA</div><div class="info-val">' + (pd.sma200 ? fmtDollar(pd.sma200) : '—') + '</div></div>' +
       '<div class="info-item"><div class="info-label">MR · 4H</div><div class="info-val ' + mrZone(pd.meanRev).cls + '">' + (!isNaN(pd.meanRev) ? fmt(pd.meanRev,2) + ' · ' + mrZone(pd.meanRev).short : '—') + '</div></div>' +
     '</div>';
@@ -4047,6 +4067,8 @@ async function runCC(forceTicker) {
 
     // ── Contextual suggestions (warnings first, positives last) ──
     var suggWarnC = [], suggGoodC = [];
+    if (wideSpread) suggWarnC.push('⚠ <strong>Wide bid-ask:</strong> the ' + fmtDollar(bestStrike) + ' call is ' + fmt(spreadPct,0) + '% wide (bid ' + fmtDollar(bestBid) + ' / ask ' + fmtDollar(bestAsk) + '). The $' + fmt(bestPremium,2) + ' mid likely won\'t fill — the returns above use the mid, so treat them as optimistic and work your limit toward the bid.');
+    if (thinOI) suggWarnC.push('⚠ <strong>Thin open interest:</strong> only ' + bestOI + ' contracts at the ' + fmtDollar(bestStrike) + ' strike — may be hard to fill at a fair price.');
     if (earningsRisk && c2 && c5) {
       var eDate = EARNINGS[ticker];
       suggWarnC.push('💡 <strong>Earnings workaround:</strong> ' + ticker + ' has earnings on ' + eDate + ' inside your expiry window. Consider a shorter DTE expiring <strong>before ' + eDate + '</strong> to avoid the IV crush and gap risk.');
