@@ -1577,6 +1577,7 @@ input, textarea, select { -webkit-user-select: text; user-select: text; }
   <div class="tab" data-tab="cc">Covered Call</div>
   <div class="tab" data-tab="synth">Synthetic Long</div>
   <div class="tab" data-tab="msl">MSL</div>
+  <div class="tab" data-tab="msl-adjust">MSL Adjust</div>
 </div>
 
 <!-- ═══ TICKER STRIP ═══ -->
@@ -1683,6 +1684,35 @@ input, textarea, select { -webkit-user-select: text; user-select: text; }
       <input type="hidden" id="msl-ticker" />
     </div>
     <div id="msl-results"><div class="placeholder"><div class="ph-icon">↑</div><p>Select a ticker above to analyze</p></div></div>
+  </div>
+</div>
+
+<!-- ═══ MSL ADJUST PANEL ═══ -->
+<div id="panel-msl-adjust" class="panel">
+  <div class="analyzer-container">
+    <div class="analyzer-status-row">
+      <span class="analyzer-label">MSL Adjust — Roll Calculator</span>
+      <span class="status-msg" id="msladj-status"></span>
+    </div>
+    <div style="font-size:12px;color:var(--text-muted);margin-bottom:12px;line-height:1.5">
+      Roll an underwater MSL <strong>down</strong> using Laura's two rules. Uses the farthest LEAPS expiry and live mid prices. Roll each side as its own vertical — you don't have to roll both.
+    </div>
+    <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;margin-bottom:16px">
+      <label style="display:flex;flex-direction:column;gap:4px;font-size:10px;text-transform:uppercase;letter-spacing:0.6px;color:var(--text-muted)">Ticker
+        <input id="msladj-ticker" type="text" placeholder="SLV" onkeydown="if(event.key==='Enter')runMslAdjust()" style="width:90px;padding:7px 9px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:14px;font-weight:700;text-transform:uppercase" />
+      </label>
+      <label style="display:flex;flex-direction:column;gap:4px;font-size:10px;text-transform:uppercase;letter-spacing:0.6px;color:var(--text-muted)">Current Call Strike
+        <input id="msladj-call" type="number" step="0.5" placeholder="55" onkeydown="if(event.key==='Enter')runMslAdjust()" style="width:120px;padding:7px 9px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:14px" />
+      </label>
+      <label style="display:flex;flex-direction:column;gap:4px;font-size:10px;text-transform:uppercase;letter-spacing:0.6px;color:var(--text-muted)">Current Long-Put Strike
+        <input id="msladj-put" type="number" step="0.5" placeholder="55" onkeydown="if(event.key==='Enter')runMslAdjust()" style="width:140px;padding:7px 9px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:14px" />
+      </label>
+      <label style="display:flex;flex-direction:column;gap:4px;font-size:10px;text-transform:uppercase;letter-spacing:0.6px;color:var(--text-muted)">Roll Down To
+        <input id="msladj-rollto" type="number" step="0.5" placeholder="50" onkeydown="if(event.key==='Enter')runMslAdjust()" style="width:110px;padding:7px 9px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:14px" />
+      </label>
+      <button id="msladj-btn" onclick="runMslAdjust()" style="padding:9px 18px;background:var(--accent);border:none;border-radius:6px;color:#03121f;font-size:13px;font-weight:800;cursor:pointer">Calculate Rolls</button>
+    </div>
+    <div id="msladj-results"><div class="placeholder"><div class="ph-icon">↔</div><p>Enter your current MSL legs and a roll-down strike</p></div></div>
   </div>
 </div>
 
@@ -4983,6 +5013,133 @@ function renderMiniRankings(strategy, activeTicker) {
   if (!el) return;
   var html = buildMiniRankings(strategy, activeTicker);
   el.innerHTML = html;
+}
+
+// ═══════════════════════════════════════════════════════
+// MSL ADJUST — ROLL CALCULATOR (Laura's "two handles")
+// ═══════════════════════════════════════════════════════
+async function runMslAdjust() {
+  var ticker     = (document.getElementById('msladj-ticker').value || '').trim().toUpperCase();
+  var callStrike = parseFloat(document.getElementById('msladj-call').value);
+  var putStrike  = parseFloat(document.getElementById('msladj-put').value);
+  var rollTo     = parseFloat(document.getElementById('msladj-rollto').value);
+  var resEl = document.getElementById('msladj-results');
+  if (!ticker) { setStatus('msladj-status', 'Enter a ticker', 'error'); return; }
+  if (isNaN(callStrike) || isNaN(putStrike) || isNaN(rollTo)) {
+    setStatus('msladj-status', 'Enter call strike, long-put strike, and roll-to strike', 'error'); return;
+  }
+  if (rollTo >= callStrike || rollTo >= putStrike) {
+    setStatus('msladj-status', 'Roll-to strike must be below your current strikes (you roll down)', 'error'); return;
+  }
+  var btn = document.getElementById('msladj-btn'); if (btn) btn.disabled = true;
+  resEl.innerHTML = '';
+  try {
+    setStatus('msladj-status', spinner() + 'Price & indicators…', 'loading');
+    var pd = await fetchPriceData(ticker, '4h');
+
+    setStatus('msladj-status', spinner() + 'Expirations…', 'loading');
+    var expirations = await fetchExpirations(ticker);
+    // Laura always rolls on the farthest LEAPS expiry
+    var leapsExp = expirations.filter(function(e){ return dteFromStr(e) >= 540; });
+    if (leapsExp.length === 0) leapsExp = expirations.filter(function(e){ return dteFromStr(e) >= 365; });
+    if (leapsExp.length === 0) throw new Error('No LEAPS expirations (365+ days) available for ' + ticker + '.');
+    leapsExp.sort(function(a,b){ return dteFromStr(b) - dteFromStr(a); });
+    var expiry = leapsExp[0];
+    var dte = dteFromStr(expiry);
+
+    setStatus('msladj-status', spinner() + 'Option chains…', 'loading');
+    var chains = await Promise.all([
+      fetchChain(ticker, expiry, 'call').catch(function(){ return null; }),
+      fetchChain(ticker, expiry, 'put').catch(function(){ return null; })
+    ]);
+    var callChain = chains[0], putChain = chains[1];
+
+    function midAt(chain, strike) {
+      if (!chain || !chain.strike) return null;
+      for (var i = 0; i < chain.strike.length; i++) {
+        if (Math.abs(chain.strike[i] - strike) < 0.001) return (chain.mid ? chain.mid[i] : null);
+      }
+      return null;
+    }
+    var curCallMid = midAt(callChain, callStrike);
+    var newCallMid = midAt(callChain, rollTo);
+    var curPutMid  = midAt(putChain, putStrike);
+    var newPutMid  = midAt(putChain, rollTo);
+
+    // Left handle — roll the long call DOWN (costs a debit). Viable if debit ≤ 30% of width.
+    var callWidth    = callStrike - rollTo;
+    var callDebit    = (curCallMid !== null && newCallMid !== null) ? (newCallMid - curCallMid) : null;
+    var callMaxDebit = callWidth * 0.30;
+    var callViable   = callDebit !== null ? (callDebit <= callMaxDebit) : null;
+
+    // Right handle — roll the long put DOWN (brings a credit, widens the spread). Viable if credit ≥ 60% of width.
+    var putWidth     = putStrike - rollTo;
+    var putCredit    = (curPutMid !== null && newPutMid !== null) ? (curPutMid - newPutMid) : null;
+    var putMinCredit = putWidth * 0.60;
+    var putViable    = putCredit !== null ? (putCredit >= putMinCredit) : null;
+
+    setStatus('msladj-status', 'Done', 'ok');
+
+    var mrZ = mrZone(pd.meanRev);
+    var stretched = !isNaN(pd.meanRev) && pd.meanRev <= -1.5;
+    var html = priceBarHtml(ticker, pd, '4H');
+    html += '<div class="info-box">' +
+      '<div class="info-item"><div class="info-label">Expiry (Farthest)</div><div class="info-val">' + expiry + '</div></div>' +
+      '<div class="info-item"><div class="info-label">DTE</div><div class="info-val">' + dte + '</div></div>' +
+      '<div class="info-item"><div class="info-label">MR · 4H</div><div class="info-val ' + mrZ.cls + '">' + (!isNaN(pd.meanRev) ? fmt(pd.meanRev,2) + ' · ' + mrZ.short : '—') + '</div></div>' +
+      '<div class="info-item"><div class="info-label">Timing</div><div class="info-val ' + (stretched ? 'up' : '') + '">' + (stretched ? 'Stretched — OK to work' : 'Not stretched — wait') + '</div></div>' +
+    '</div>';
+
+    html += '<div class="btc-note">📌 Pull the levers only when the market is stretched (Laura adjusts near MR −2; "close enough" around −1.5 to −1.7). Roll each side as its own vertical — you don\'t have to roll both.</div>';
+
+    function handleCard(title, sub, width, amount, amountLabel, threshLabel, threshStr, viable, note) {
+      var vClass = viable === true ? 'up' : viable === false ? 'down' : '';
+      var vText  = viable === true ? '✅ Viable' : viable === false ? '❌ Not yet' : '— No data';
+      var amtStr = amount !== null ? '$' + fmt(Math.abs(amount),2) : '—';
+      return '<div class="scenario-card" style="min-width:280px">' +
+        '<h4>' + title + '</h4>' +
+        '<div class="sc-row"><span class="sc-key">Roll</span><span class="sc-val">' + sub + ' (width $' + fmt(width,0) + ')</span></div>' +
+        '<div class="sc-row"><span class="sc-key">' + amountLabel + '</span><span class="sc-val ' + (amount !== null && viable !== null ? (viable ? 'up' : 'down') : '') + '">' + amtStr + '</span></div>' +
+        '<div class="sc-row"><span class="sc-key">' + threshLabel + '</span><span class="sc-val">' + threshStr + '</span></div>' +
+        '<div class="sc-row"><span class="sc-key">Verdict</span><span class="sc-val ' + vClass + '" style="font-weight:800">' + vText + '</span></div>' +
+        (note ? '<div class="sc-row"><span class="sc-val" style="font-size:10px;color:var(--text-muted);text-align:left">' + note + '</span></div>' : '') +
+      '</div>';
+    }
+
+    html += '<div class="chain-section"><h3>The Two Handles</h3><div class="scenarios">';
+    var callSub = fmtDollar(callStrike) + ' → ' + fmtDollar(rollTo) + ' call';
+    var callNote = (curCallMid === null || newCallMid === null)
+      ? 'A call strike isn\'t in the chain — check the strikes.'
+      : (callViable ? 'Debit within Laura\'s ≤30% limit.' : 'Debit exceeds the ≤30% limit — wait for a better price.');
+    html += handleCard('Left Handle — Roll Call Down', callSub, callWidth, callDebit, 'Debit (mid)', 'Max debit (≤30% width)', '$' + fmt(callMaxDebit,2), callViable, callNote);
+
+    var putSub = fmtDollar(putStrike) + ' → ' + fmtDollar(rollTo) + ' put';
+    var putNote = (curPutMid === null || newPutMid === null)
+      ? 'A put strike isn\'t in the chain — check the strikes.'
+      : (putViable ? 'Credit meets the ≥60% floor. Widens spread: +$' + fmt(putWidth*100,0) + ' margin/contract, credit to cash.' : 'Credit below the ≥60% floor — wait for a better price.');
+    html += handleCard('Right Handle — Roll Put Down', putSub, putWidth, putCredit, 'Credit (mid)', 'Min credit (≥60% width)', '$' + fmt(putMinCredit,2), putViable, putNote);
+    html += '</div></div>';
+
+    html += '<div class="chain-section"><h3>Order Tickets — separate verticals</h3>' +
+      '<div class="btc-note" style="text-align:left">' +
+        '<strong>Call roll (' + (callViable === true ? 'viable' : 'not yet') + '):</strong><br>' +
+        '• Sell to close ' + expiry + ' ' + fmtDollar(callStrike) + ' call<br>' +
+        '• Buy to open ' + expiry + ' ' + fmtDollar(rollTo) + ' call<br>' +
+        '• Target debit ' + (callDebit !== null ? '$' + fmt(callDebit,2) : '—') + ' at the midpoint (max $' + fmt(callMaxDebit,2) + ')' +
+      '</div>' +
+      '<div class="btc-note" style="text-align:left;margin-top:8px">' +
+        '<strong>Put roll (' + (putViable === true ? 'viable' : 'not yet') + '):</strong><br>' +
+        '• Sell to close ' + expiry + ' ' + fmtDollar(putStrike) + ' put<br>' +
+        '• Buy to open ' + expiry + ' ' + fmtDollar(rollTo) + ' put<br>' +
+        '• Target credit ' + (putCredit !== null ? '$' + fmt(putCredit,2) : '—') + ' at the midpoint (min $' + fmt(putMinCredit,2) + ')' +
+      '</div>' +
+    '</div>';
+
+    resEl.innerHTML = html;
+  } catch(e) {
+    setStatus('msladj-status', '✗ ' + e.message, 'error');
+    resEl.innerHTML = '<div class="notice">' + e.message + '</div>';
+  } finally { if (btn) btn.disabled = false; }
 }
 
 function navigateToAnalyzer(ticker, strategy) {
