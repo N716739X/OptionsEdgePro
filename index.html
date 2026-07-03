@@ -2522,17 +2522,26 @@ async function fetchMD(path, params) {
         Object.keys(params).forEach(function(k) { url.searchParams.set(k, params[k]); });
       }
       var headers = _authToken ? { 'Authorization': 'Bearer ' + _authToken } : {};
-      var r = await fetch(url.toString(), { headers: headers });
-      if (checkSessionKicked(r)) throw new Error('session-kicked');
-      if (!r.ok) {
-        var errText = await r.text();
+      var r, errText = '', attempt = 0;
+      for (;;) {
+        r = await fetch(url.toString(), { headers: headers });
+        if (checkSessionKicked(r)) throw new Error('session-kicked');
+        if (r.ok) break;
+        errText = await r.text();
         // 404 with no_data = ticker has no options chain (e.g. ADRs, low-volume OTC)
         if (r.status === 404 && errText.indexOf('no_data') !== -1) {
           var emptyChain = { s: 'no_data', optionSymbol: [], strike: [], bid: [], ask: [], mid: [], delta: [], openInterest: [], expiration: [] };
           mdCacheSet(cacheKey, emptyChain);
           return emptyChain;
         }
-        // 429 quota or 5xx — try stale cache fallback before failing
+        // Retry transient rate-limit / server errors with backoff — phase-3 fires several
+        // chain fetches at once, which can briefly trip the upstream rate limit.
+        if ((r.status === 429 || (r.status >= 500 && r.status < 600)) && attempt < 3) {
+          attempt++;
+          await new Promise(function(res){ setTimeout(res, 400 * attempt); });
+          continue;
+        }
+        // Out of retries — fall back to stale cache before failing
         if (r.status === 429 || (r.status >= 500 && r.status < 600)) {
           var stale = mdCacheGetStale(cacheKey, MD_CACHE_TTL_STALE_ON_QUOTA);
           if (stale) return stale;
@@ -2763,7 +2772,10 @@ function buildColCard(ticker, d, strategy, rank, isBestTrade) {
   var pctScore = totalCriteria > 0 ? score / totalCriteria : 0;
   var scoreLbl = score + '/' + totalCriteria;
   // MSL uses weighted score (0-9) for grade band + thesis gate override
-  if (strategy === 'msl' && d.phase >= 3) {
+  if (strategy === 'msl' && d.phase < 3) {
+    // Chain criteria are scored in phase 3 — show a pending state, not a misleading score
+    badgeCls = 'badge-watch'; badgeTxt = 'Scoring…';
+  } else if (strategy === 'msl' && d.phase >= 3) {
     var mslW = d.mslWeighted != null ? d.mslWeighted : 0;
     // Thesis gate: any Tier-1 fail → WAIT FOR SETUP regardless of total
     if (d.mslT1Pass === false) {
@@ -2850,14 +2862,18 @@ function buildColCard(ticker, d, strategy, rank, isBestTrade) {
       mb('DEBIT', d.synth_c4, d.synth_c4 === null ? '—' : (d.synth_c4 ? '✓' : '✗')) +
       mb('SPRD',  d.synth_c7, d.synth_c7 === null ? '—' : (d.synth_c7 ? '✓' : '✗'));
   } else {
-    // MSL (Modified Synthetic Long): 6 criteria — MR≤-2 4H, PutCr≥42%, I/E 50/50, DTE≥365, Debit≤33%, MSL Risk ≤60% of SL
+    // MSL: MR≤-2 4H, PutCr≥42%, I/E 50/50, DTE≥365, Net Debit, MSL Risk ≤60% of SL.
+    // The chain criteria (P-CR/I/E/DEBIT/RISK) are scored in phase 3 — show '…' until
+    // then rather than a misleading pass/fail (and never a stray ✗ for undefined).
+    var mPend = d.phase < 3;
+    var mslBox = function(v) { return mPend ? '…' : ((v === null || v === undefined) ? '—' : (v ? '✓' : '✗')); };
     criteriaHtml =
       mb('MR',    d.msl_c1, mrDisp) +
-      mb('P-CR',  d.msl_c2, d.msl_c2 === null ? '—' : (d.msl_c2 ? '✓' : '✗')) +
-      mb('I/E',   d.msl_c3, d.msl_c3 === null ? '—' : (d.msl_c3 ? '✓' : '✗')) +
+      mb('P-CR',  d.msl_c2, mslBox(d.msl_c2)) +
+      mb('I/E',   d.msl_c3, mslBox(d.msl_c3)) +
       mb('DUR',   d.msl_c4, d.msl_c4 === true ? '✓' : d.msl_c4 === false ? '✗' : '—') +
-      mb('DEBIT', d.msl_c5, d.msl_c5 === null ? '—' : (d.msl_c5 ? '✓' : '✗')) +
-      mb('RISK',  d.msl_c8, d.msl_c8 === null ? '—' : (d.msl_c8 ? '✓' : '✗'));
+      mb('DEBIT', d.msl_c5, mslBox(d.msl_c5)) +
+      mb('RISK',  d.msl_c8, mslBox(d.msl_c8));
   }
 
   // Footer score / label
@@ -2871,7 +2887,7 @@ function buildColCard(ticker, d, strategy, rank, isBestTrade) {
     '<div class="card-header">' +
       '<div>' +
         '<div class="card-ticker">' + (isBestTrade ? '<span class="top3-star">★</span>' : '') + ticker + '</div>' +
-        '<div class="card-name" style="font-size:9px;color:var(--text-muted)">' + (strategy.toUpperCase()) + (function(){ var ex = (strategy === 'cc' && d.ccExpiry) ? d.ccExpiry : d.expiry; return ex ? ' · ' + expiryDisplay(ex) : ''; })() + '</div>' +
+        '<div class="card-name" style="font-size:9px;color:var(--text-muted)">' + (strategy.toUpperCase()) + (function(){ var ex = (strategy === 'cc' && d.ccExpiry) ? d.ccExpiry : (strategy === 'msl' && d.mslExpiry) ? d.mslExpiry : d.expiry; return ex ? ' · ' + expiryDisplay(ex) : ''; })() + '</div>' +
       '</div>' +
       '<div class="grade-box grade-' + grade + '">' + (grade || '—') + '</div>' +
     '</div>' +
@@ -3395,6 +3411,7 @@ async function runMslPhase3(ticker) {
                         (soldPutOI !== null && soldPutOI < _mslOiFloorPut);
     // Thesis gate: all 3 Tier-1 criteria must pass AND legs must be tradeable; otherwise badge → "WAIT FOR SETUP"
     d.mslT1Pass = (d.msl_c1 === true && d.msl_c2 === true && d.msl_c8 === true && !d.mslOiHardReject);
+    d.mslExpiry = bestExpiry; // LEAPS expiry actually scored — for the card subtitle
     d.phase = 3;
     renderColumns();
     renderMiniRankings('msl');
@@ -3427,9 +3444,19 @@ function triggerPhase3() {
   });
   var mslTop3 = mslSorted.slice(0, 3);
 
-  // Run in parallel — all at once
-  synthTop3.forEach(function(t) { runSynthPhase3(t); });
-  mslTop3.forEach(function(t) { runMslPhase3(t); });
+  // Run phase-3 with bounded concurrency (2 at a time) so the chain fetches don't fire
+  // in one burst and trip the upstream rate limit — that left MSL/Synth cards stuck on
+  // their phase-2 proxy with blank criteria.
+  var _p3 = synthTop3.map(function(t){ return function(){ return runSynthPhase3(t); }; })
+    .concat(mslTop3.map(function(t){ return function(){ return runMslPhase3(t); }; }));
+  var _p3i = 0, _p3active = 0, _P3LIMIT = 2;
+  function _p3next() {
+    while (_p3active < _P3LIMIT && _p3i < _p3.length) {
+      var task = _p3[_p3i++]; _p3active++;
+      Promise.resolve(task()).catch(function(){}).then(function(){ _p3active--; _p3next(); });
+    }
+  }
+  _p3next();
 }
 
 // ═══════════════════════════════════════════════════════
