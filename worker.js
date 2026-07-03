@@ -719,7 +719,7 @@ async function scoreTicker(ticker, env) {
   // c1 uses 4H MR; c4 uses DTE; rest need option chain data (Phase 3 on frontend)
   // MSL uses 4H MR — same as base meanRev (base time series is now 4H)
   const fourHourMR = meanRev;
-  const msl_c1 = !isNaN(fourHourMR) ? fourHourMR <= -1 : null; // MR ≤ -1σ 4H (James scale: Oversold zone entry)
+  const msl_c1 = !isNaN(fourHourMR) ? fourHourMR <= -2 : null; // Laura OG (MM46): entry at MR −2 (Deeply Oversold)
   const msl_c2 = null;     // Put Credit ≥ 45% of width (need chain)
   const msl_c3 = null;     // IV Rank > 50% (computed client-side in phase 3 from put chain)
   const msl_c4 = synth_c3; // Duration >= 540 DTE

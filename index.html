@@ -3337,7 +3337,7 @@ async function runMslPhase3(ticker) {
     var mslRiskRatioPh3 = (slRiskPh3 && slRiskPh3 > 0 && mslRiskPh3 !== null) ? (mslRiskPh3 / slRiskPh3 * 100) : null;
 
     // 6 scored criteria + back-compat fields
-    d.msl_c1 = !isNaN(pd.meanRev) ? pd.meanRev <= -1 : null;
+    d.msl_c1 = !isNaN(pd.meanRev) ? pd.meanRev <= -2 : null; // Laura OG (MM46): entry at MR −2 (Deeply Oversold)
     d.mslMR  = fourHourMR;
     d.msl_c2 = putCreditPct !== null ? putCreditPct >= 42 : null;  // Laura's floor
     d.msl_c3 = (callRatio !== null && !isNaN(callRatio)) ? (callRatio >= 0.40 && callRatio <= 0.60) : null; // 50/50 I/E
@@ -4313,14 +4313,15 @@ async function runMsl(forceTicker) {
     var beAboveCur = (breakeven !== null && pd.price) ? ((breakeven / pd.price - 1) * 100) : null;
 
     // 6 criteria (IV Rank removed; added Call I/E quality and MSL-vs-SL Risk Reduction)
-    var c1 = !isNaN(pd.meanRev) ? pd.meanRev <= -1 : null;
+    var c1 = !isNaN(pd.meanRev) ? pd.meanRev <= -2 : null; // Laura OG (MM46): entry at MR −2 (Deeply Oversold)
     var c2 = putCreditPct !== null ? putCreditPct >= 42 : null;  // Laura's floor; >=50% = ideal (badge)
     var c2Ideal = putCreditPct !== null && putCreditPct >= 50;
     var c3 = (callRatio !== null && !isNaN(callRatio)) ? (callRatio >= 0.40 && callRatio <= 0.60) : null; // 50/50 I/E (40-60 pass, 45-55 ideal)
     var c3Ideal = (callRatio !== null && !isNaN(callRatio)) && (callRatio >= 0.45 && callRatio <= 0.55);
     var c4 = dte >= 365;  // Laura's LEAPS "line in the sand" — ≥540 = ideal (3yr preferred)
     var c4Ideal = dte >= 540;
-    var c5 = netDebitPct !== null ? netDebitPct <= 33 : null;
+    var c5 = netDebitPct !== null ? netDebitPct <= 40 : null;  // soft pass ≤40%; ≤33% = ideal (matches card)
+    var c5Ideal = netDebitPct !== null && netDebitPct <= 33;
     // c8 computed after slMaxRisk below — placeholder so score is in declaration order
     var c8 = null;
     var score = 0; // recomputed after c8 is known
@@ -4621,12 +4622,12 @@ async function runMsl(forceTicker) {
     var pPill1 = '<span class="wt-pill wt-t2" title="Quality criterion — 1 point">+1</span>';
     html += '<div class="scorecard"><h3>MSL — Modified Synthetic Long — Score</h3><div class="criteria-list">';
     // Tier 1 — Thesis gates (2 pts each, must all pass)
-    html += critRow(1,'MR · 4H (Oversold — Buy the Dip) ' + pPill2, c1, mrZone(pd.meanRev).label);
+    html += critRow(1,'MR · 4H ≤ −2 (Deeply Oversold — Buy the Dip) ' + pPill2, c1, mrZone(pd.meanRev).label);
     html += critRow(2,'Put Credit ≥ 42% of Width (≥50% = Ideal) ' + pPill2, c2, putCreditPct !== null ? fmt(putCreditPct,1) + '%' + (c2Ideal ? ' ✨ IDEAL' : '') : 'N/A');
     html += critRow(3,'MSL Risk ≤ 60% of SL Risk (≤50% = Ideal) ' + pPill2, c8, mslRiskRatio !== null ? fmt(mslRiskRatio,0) + '% of SL' + (c8Ideal ? ' ✨ IDEAL' : '') : 'N/A');
     // Tier 2 — Quality (1 pt each)
     html += critRow(4,'Call Intrinsic/Extrinsic 40–60% (45–55% = Ideal) ' + pPill1, c3, (callRatio !== null && !isNaN(callRatio)) ? fmt(callRatio*100,0) + '/' + fmt((1-callRatio)*100,0) + (c3Ideal ? ' ✨ IDEAL' : '') : 'N/A');
-    html += critRow(5,'Net Debit ≤ 33% of Price (~1/3 Rule) ' + pPill1, c5, netDebitPct !== null ? fmt(netDebitPct,1) + '%' : 'N/A');
+    html += critRow(5,'Net Debit ≤ 40% of Price (≤33% = Ideal) ' + pPill1, c5, netDebitPct !== null ? fmt(netDebitPct,1) + '%' + (c5Ideal ? ' ✨ IDEAL' : '') : 'N/A');
     // Tier 3 — Formality (1 pt)
     html += critRow(6,'Duration ≥ 365 DTE (LEAPS — ≥540 = Ideal) ' + pPill1, c4, dte + ' days' + (c4Ideal ? ' ✨ IDEAL' : ''));
     // MSL uses weighted score (0-9) + thesis gate for the summary band
@@ -4683,10 +4684,10 @@ async function runMsl(forceTicker) {
     // Contextual suggestions
     var suggWarn = [], suggGood = [];
     if (!c1) {
-      if (!isNaN(pd.meanRev) && pd.meanRev < -0.5 && pd.meanRev > -1) {
-        suggWarn.push('💡 <strong>MR approaching:</strong> 4H Mean Reversion is ' + mrZone(pd.meanRev).label + ' — not yet Oversold. Wait for a continued dip.');
+      if (!isNaN(pd.meanRev) && pd.meanRev <= -1 && pd.meanRev > -2) {
+        suggWarn.push('💡 <strong>MR approaching:</strong> 4H Mean Reversion is ' + mrZone(pd.meanRev).label + ' — not yet at the −2 (Deeply Oversold) entry. Wait for a continued dip.');
       } else {
-        suggWarn.push('💡 <strong>Not oversold:</strong> 4H Mean Reversion is ' + mrZone(pd.meanRev).label + ' — MSL works best at market lows when put premiums are fattest.');
+        suggWarn.push('💡 <strong>Not oversold:</strong> 4H Mean Reversion is ' + mrZone(pd.meanRev).label + ' — MSL works best at market lows (MR −2) when put premiums are fattest.');
       }
     }
     if (!c2 && putCreditPct !== null) {
