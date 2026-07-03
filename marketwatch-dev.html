@@ -2349,12 +2349,11 @@ function mrZone(val) {
   if (val >= 1)   return { label: 'Overbought',        short: 'OB',   cls: 'up' };
   return { label: 'Neutral', short: 'Ntrl', cls: '' };
 }
-// ── Mean Reversion (approximation of the IADSS "Mean-BT"): Wilder RSI(14) → EMA(9) → (val-50)/scale ──
-// Runs on extended-hours 4H bars; SCALE is calibrated to real Mean-BT readings (tune if needed).
-// Zones: ±1 = Oversold/Overbought, ±2 = Deeply OS/OB. Not identical to the private indicator.
+// ── Mean Reversion: Wilder RSI(14) → EMA(9) smooth → (val-50)/25 ──
+// Matches James's InvestAnswers indicator exactly (zones at ±1 = Oversold/OB, ±2 = Deeply OS/OB)
 function calcMeanRev(closes) {
   if (!closes || closes.length < 30) return NaN;
-  var period = 14, emaP = 9, scale = 12; // MR_SCALE — calibrated to IADSS Mean-BT on extended-hours 4H
+  var period = 14, emaP = 9, scale = 25;
   // Wilder RSI series
   var gains = [], losses = [];
   for (var i = 1; i < closes.length; i++) {
@@ -2381,21 +2380,13 @@ function calcMeanRev(closes) {
   return (ema - 50) / scale;
 }
 
-// Fetch closes for mean-reversion calc.
-// Primary: extended-hours 4H bars from MarketData.app (matches the IADSS session — includes
-// pre/post-market, so the oscillator swings the full ±2 like the real Mean-BT). Falls back to
-// TwelveData regular-session 4H if the candles feed fails, so MR never fully breaks.
+// Fetch daily or weekly closes for mean reversion calc
 async function fetchMeanRev(ticker, interval) {
-  var intv = interval || '4h';
-  if (intv === '4h') {
-    try {
-      var md = await fetchMD('stocks/candles/4H/' + ticker + '/', { extended: 'true', countback: 80 });
-      if (md && md.c && md.c.length >= 30) return calcMeanRev(md.c); // MarketData returns oldest-first
-    } catch (e) { /* fall back to TwelveData */ }
-  }
+  var intv = interval || '4h'; // default 4H — James's scale
   var data = await fetchTD('time_series', { symbol: ticker, interval: intv, outputsize: 60 });
   var vals = data.values || [];
-  var closes = vals.map(function(v) { return parseFloat(v.close); }).reverse(); // TD newest-first → oldest-first
+  // TwelveData returns newest first — reverse to oldest-first
+  var closes = vals.map(function(v) { return parseFloat(v.close); }).reverse();
   return calcMeanRev(closes);
 }
 
