@@ -932,27 +932,6 @@ header {
 .slc-delta.delta-worse  { color: var(--red); }
 .slc-delta.delta-neutral { color: var(--text-muted); }
 
-/* SL vs MSL — "Which should you trade?" verdict panel (Laura's account-type rule) */
-.slv-panel { background: linear-gradient(135deg, rgba(0,180,255,0.06), rgba(0,255,170,0.03)); border:1px solid rgba(0,200,255,0.42); border-radius:12px; padding:14px 18px 16px; margin-bottom:16px; box-shadow:0 0 18px rgba(0,200,255,0.08); }
-.slv-head { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px; margin-bottom:12px; }
-.slv-title { font-size:11px; font-weight:800; color:var(--accent); text-transform:uppercase; letter-spacing:1.4px; display:flex; align-items:center; gap:8px; }
-.slv-title::before { content:''; display:inline-block; width:3px; height:12px; background:var(--accent); border-radius:2px; box-shadow:0 0 6px var(--accent); }
-.slv-toggle { display:inline-flex; border:1px solid var(--border2); border-radius:8px; overflow:hidden; }
-.slv-tab { font:inherit; font-size:10px; font-weight:700; padding:6px 12px; background:transparent; color:var(--text-muted); border:none; cursor:pointer; letter-spacing:0.4px; transition:background 0.12s,color 0.12s; }
-.slv-tab.slv-tab-on { background:var(--accent); color:#02121a; }
-.slv-verdict { padding:12px 14px; border-radius:8px; background:rgba(0,0,0,0.20); border:1px solid rgba(255,255,255,0.06); margin-bottom:12px; }
-.slv-pick { font-size:15px; font-weight:800; color:var(--green); letter-spacing:-0.2px; margin-bottom:6px; }
-.slv-pick .slv-alt { color:var(--text-muted); font-weight:600; font-size:11px; }
-.slv-why { font-size:12px; color:var(--text); line-height:1.55; }
-.slv-why strong { color:var(--accent); }
-.slv-checks { display:grid; grid-template-columns:1fr 1fr; gap:5px 18px; }
-@media (max-width:560px){ .slv-checks { grid-template-columns:1fr; } }
-.slv-chk { display:flex; align-items:flex-start; gap:7px; font-size:11px; color:var(--text-muted); padding:2px 0; }
-.slv-chk-ico { font-size:12px; line-height:1.35; flex-shrink:0; }
-.slv-chk.ok   .slv-chk-ico { color:var(--green); }
-.slv-chk.warn .slv-chk-ico { color:var(--yellow); }
-.slv-chk b { color:var(--text); font-weight:700; }
-
 /* Chain Table */
 .chain-section h3 { font-size:11px;font-weight:800;color:var(--text-muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px; }
 .chain-table-wrap { overflow-x:auto;border-radius:8px;border:1px solid var(--border);margin-bottom:16px; }
@@ -2369,15 +2348,6 @@ function mrZone(val) {
   if (val >= 2)   return { label: 'Deeply Overbought', short: 'D.OB', cls: 'up' };
   if (val >= 1)   return { label: 'Overbought',        short: 'OB',   cls: 'up' };
   return { label: 'Neutral', short: 'Ntrl', cls: '' };
-}
-// SL vs MSL verdict — account-type toggle (Laura's rule: margin → SL, cash/limited → MSL)
-function setSlVsMslAcct(mode) {
-  var mv = document.getElementById('slvMargin'), cv = document.getElementById('slvCash');
-  var mt = document.getElementById('slvTabM'),   ct = document.getElementById('slvTabC');
-  if (mv) mv.style.display = (mode === 'margin') ? 'block' : 'none';
-  if (cv) cv.style.display = (mode === 'cash')   ? 'block' : 'none';
-  if (mt) mt.classList.toggle('slv-tab-on', mode === 'margin');
-  if (ct) ct.classList.toggle('slv-tab-on', mode === 'cash');
 }
 // ── Mean Reversion: Wilder RSI(14) → EMA(9) smooth → (val-50)/12.5 ──
 // Calibrated to James's InvestAnswers IA-Mean-Reversion on 4H/RTH.
@@ -4557,41 +4527,6 @@ async function runMsl(forceTicker) {
                '<div class="slc-tr-cell"><div class="slc-msl-val ' + (mslCls||'') + '">' + mslVal + '</div></div>' +
                '<div class="slc-tr-cell slc-delta ' + (deltaCls||'delta-neutral') + '">' + deltaText + '</div>';
       };
-
-      // ── "Which should you trade?" verdict — Laura's SL-vs-MSL account-type rule ──
-      var slvPct = function(p) { return (p == null) ? '' : (p >= 0 ? '−' + fmt(p,0) : '+' + fmt(-p,0)) + '%'; };
-      var slvChk = function(pass, label, val) {
-        var cls = (pass === true) ? 'ok' : 'warn';
-        return '<div class="slv-chk ' + cls + '"><span class="slv-chk-ico">' + (pass === true ? '✓' : '⚠') + '</span>' +
-               '<span><b>' + label + '</b>' + (val ? ' — ' + val : '') + '</span></div>';
-      };
-      var slvExtraDebit = (netDebit100 !== null && slNetDebit100 !== null) ? netDebit100 - slNetDebit100 : null;
-      var slvChecks =
-        slvChk(c1, 'Entry: MR · 4H ≤ −2', (!isNaN(pd.meanRev) ? fmt(pd.meanRev,2) + ' · ' + mrZone(pd.meanRev).short : '—')) +
-        slvChk(c2, 'Put-spread credit ≥ 42% of width', (putCreditPct !== null ? fmt(putCreditPct,1) + '%' : '—')) +
-        slvChk(c3, 'Call ~50/50 intrinsic/extrinsic', ((callRatio !== null && !isNaN(callRatio)) ? fmt(callRatio*100,0) + '/' + fmt((1-callRatio)*100,0) : '—')) +
-        slvChk(c4, 'LEAPS > 1yr (2–3 preferred)', dte + ' DTE') +
-        slvChk(beWithin10, 'MSL breakeven within 10% of SL', (beDiffPct !== null ? fmt(beDiffPct,1) + '% apart' : '—'));
-      html += '<div class="slv-panel" id="slvPanel">' +
-        '<div class="slv-head">' +
-          '<div class="slv-title">Which should you trade?</div>' +
-          '<div class="slv-toggle">' +
-            '<button type="button" id="slvTabM" class="slv-tab" onclick="setSlVsMslAcct(\'margin\')">Margin account</button>' +
-            '<button type="button" id="slvTabC" class="slv-tab slv-tab-on" onclick="setSlVsMslAcct(\'cash\')">Cash / limited margin</button>' +
-          '</div>' +
-        '</div>' +
-        // Margin account → Synthetic Long (hidden until toggled)
-        '<div class="slv-verdict" id="slvMargin" style="display:none">' +
-          '<div class="slv-pick">Laura&rsquo;s pick: Synthetic Long <span class="slv-alt">— you have the margin</span></div>' +
-          '<div class="slv-why">You can hold the naked short put, so take the <strong>cheaper entry</strong>: SL costs <strong>$' + fmt(slNetDebit100,0) + '</strong> vs $' + fmt(netDebit100,0) + ' for the MSL, using ~<strong>$' + fmt(slMarginOnly,0) + '</strong> margin (50% of the ' + fmtDollar(soldPutStrike) + ' strike). Trade-off: full downside — max risk <strong>$' + fmt(slMaxRisk,0) + '</strong>, unlimited to zero — for maximum leverage.</div>' +
-        '</div>' +
-        // Cash / limited-margin account → MSL (default view)
-        '<div class="slv-verdict" id="slvCash">' +
-          '<div class="slv-pick">Laura&rsquo;s pick: MSL <span class="slv-alt">— cash / limited margin</span></div>' +
-          '<div class="slv-why">MSL turns the short put&rsquo;s unlimited downside into <strong>defined risk</strong>: max <strong>$' + fmt(mslMaxRisk,0) + '</strong> vs SL&rsquo;s $' + fmt(slMaxRisk,0) + ' (' + slvPct(riskReductionPct) + ' risk), and holds only <strong>$' + fmt(mslMarginOnly,0) + '</strong> margin vs SL&rsquo;s $' + fmt(slMarginOnly,0) + ' (' + slvPct(marginSavingsPct) + ' margin). You pay ' + (slvExtraDebit !== null ? '<strong>$' + fmt(Math.abs(slvExtraDebit),0) + '</strong> ' + (slvExtraDebit >= 0 ? 'more' : 'less') : 'a bit more') + ' upfront, and breakeven stays ' + (beDiffPct !== null ? '<strong>' + fmt(beDiffPct,1) + '%</strong>' : 'close') + ' from the SL — so you keep essentially the same upside.</div>' +
-        '</div>' +
-        '<div class="slv-checks">' + slvChecks + '</div>' +
-      '</div>';
 
       html += '<div class="sl-comparison">' +
         '<div class="slc-title">MSL vs Synthetic Long</div>' +
