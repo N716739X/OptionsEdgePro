@@ -1695,7 +1695,7 @@ input, textarea, select { -webkit-user-select: text; user-select: text; }
       <span class="status-msg" id="msladj-status"></span>
     </div>
     <div style="font-size:12px;color:var(--text-muted);margin-bottom:12px;line-height:1.5">
-      Roll an underwater MSL <strong>down</strong> using Laura's two rules. Uses the farthest LEAPS expiry and live mid prices. Roll each side as its own vertical — you don't have to roll both.
+      Roll an underwater MSL <strong>down</strong> using Laura's two rules. Enter <strong>your expiration</strong> to price the roll on the contract you hold (leave blank to use the farthest LEAPS). Live mid prices. Roll each side as its own vertical — you don't have to roll both.
     </div>
     <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;margin-bottom:16px">
       <label style="display:flex;flex-direction:column;gap:4px;font-size:10px;text-transform:uppercase;letter-spacing:0.6px;color:var(--text-muted)">Ticker
@@ -1706,6 +1706,9 @@ input, textarea, select { -webkit-user-select: text; user-select: text; }
       </label>
       <label style="display:flex;flex-direction:column;gap:4px;font-size:10px;text-transform:uppercase;letter-spacing:0.6px;color:var(--text-muted)">Current Long-Put Strike
         <input id="msladj-put" type="number" step="0.5" placeholder="55" onkeydown="if(event.key==='Enter')runMslAdjust()" style="width:140px;padding:7px 9px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:14px" />
+      </label>
+      <label style="display:flex;flex-direction:column;gap:4px;font-size:10px;text-transform:uppercase;letter-spacing:0.6px;color:var(--text-muted)">Your Expiration <span style="text-transform:none;opacity:0.55">optional</span>
+        <input id="msladj-exp" type="text" placeholder="YYYY-MM-DD" onkeydown="if(event.key==='Enter')runMslAdjust()" style="width:130px;padding:7px 9px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:14px" />
       </label>
       <label style="display:flex;flex-direction:column;gap:4px;font-size:10px;text-transform:uppercase;letter-spacing:0.6px;color:var(--text-muted)">Roll Down To
         <input id="msladj-rollto" type="number" step="0.5" placeholder="50" onkeydown="if(event.key==='Enter')runMslAdjust()" style="width:110px;padding:7px 9px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:14px" />
@@ -5068,6 +5071,7 @@ async function runMslAdjust() {
   var putStrike  = parseFloat(document.getElementById('msladj-put').value);
   var rollTo     = parseFloat(document.getElementById('msladj-rollto').value);
   var curBE      = parseFloat(document.getElementById('msladj-be').value); // optional — enables absolute new breakeven
+  var wantExp    = (document.getElementById('msladj-exp').value || '').trim(); // optional — your position's expiry (YYYY-MM-DD)
   var resEl = document.getElementById('msladj-results');
   if (!ticker) { setStatus('msladj-status', 'Enter a ticker', 'error'); return; }
   if (isNaN(callStrike) || isNaN(putStrike) || isNaN(rollTo)) {
@@ -5084,12 +5088,28 @@ async function runMslAdjust() {
 
     setStatus('msladj-status', spinner() + 'Expirations…', 'loading');
     var expirations = await fetchExpirations(ticker);
-    // Laura always rolls on the farthest LEAPS expiry
-    var leapsExp = expirations.filter(function(e){ return dteFromStr(e) >= 540; });
-    if (leapsExp.length === 0) leapsExp = expirations.filter(function(e){ return dteFromStr(e) >= 365; });
-    if (leapsExp.length === 0) throw new Error('No LEAPS expirations (365+ days) available for ' + ticker + '.');
-    leapsExp.sort(function(a,b){ return dteFromStr(b) - dteFromStr(a); });
-    var expiry = leapsExp[0];
+    if (!expirations || expirations.length === 0) throw new Error('No expirations available for ' + ticker + '.');
+    var expiry, expIsYours = false;
+    if (wantExp) {
+      // Price the roll on YOUR position's expiry — match to the nearest listed expiration
+      var wantDays = dteFromStr(wantExp);
+      if (wantDays === null) throw new Error('Expiration must be a date like 2028-06-16.');
+      var nearest = null, nearestGap = Infinity;
+      expirations.forEach(function(e){
+        var g = Math.abs(dteFromStr(e) - wantDays);
+        if (g < nearestGap) { nearestGap = g; nearest = e; }
+      });
+      expiry = nearest;
+      expIsYours = true;
+      if (nearestGap > 7) setStatus('msladj-status', 'Note: no exact expiry — using nearest listed (' + expiry + ')', 'ok');
+    } else {
+      // Fallback: farthest LEAPS expiry (entry-style default when you don't specify your position)
+      var leapsExp = expirations.filter(function(e){ return dteFromStr(e) >= 540; });
+      if (leapsExp.length === 0) leapsExp = expirations.filter(function(e){ return dteFromStr(e) >= 365; });
+      if (leapsExp.length === 0) throw new Error('No LEAPS expirations (365+ days) available for ' + ticker + '. Enter your expiration date to roll a shorter-dated position.');
+      leapsExp.sort(function(a,b){ return dteFromStr(b) - dteFromStr(a); });
+      expiry = leapsExp[0];
+    }
     var dte = dteFromStr(expiry);
 
     setStatus('msladj-status', spinner() + 'Option chains…', 'loading');
@@ -5157,7 +5177,7 @@ async function runMslAdjust() {
 
     var html = priceBarHtml(ticker, pd, '4H');
     html += '<div class="info-box">' +
-      '<div class="info-item"><div class="info-label">Expiry (Farthest)</div><div class="info-val">' + expiry + '</div></div>' +
+      '<div class="info-item"><div class="info-label">Expiry (' + (expIsYours ? 'Yours' : 'Farthest') + ')</div><div class="info-val">' + expiry + '</div></div>' +
       '<div class="info-item"><div class="info-label">DTE</div><div class="info-val">' + dte + '</div></div>' +
       '<div class="info-item"><div class="info-label">MR · 4H</div><div class="info-val ' + mrZ.cls + '">' + (hasMR ? fmt(mr,2) + ' · ' + mrZ.short : '—') + '</div></div>' +
       '<div class="info-item"><div class="info-label">vs 200 SMA</div><div class="info-val ' + (atSMA ? 'up' : '') + '">' + (smaDistPct !== null ? (smaDistPct >= 0 ? '+' : '') + fmt(smaDistPct,1) + '%' : '—') + '</div></div>' +
