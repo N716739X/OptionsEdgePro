@@ -2349,11 +2349,13 @@ function mrZone(val) {
   if (val >= 1)   return { label: 'Overbought',        short: 'OB',   cls: 'up' };
   return { label: 'Neutral', short: 'Ntrl', cls: '' };
 }
-// ── Mean Reversion: Wilder RSI(14) → EMA(9) smooth → (val-50)/25 ──
-// Matches James's InvestAnswers indicator exactly (zones at ±1 = Oversold/OB, ±2 = Deeply OS/OB)
+// ── Mean Reversion: Wilder RSI(14) → EMA(9) smooth → (val-50)/12.5 ──
+// Calibrated to James's InvestAnswers IA-Mean-Reversion on 4H/RTH.
+// scale=12.5 maps RSI to ±4, with OB/OS ±2 bands at RSI 75/25.
+// Fit from live chart pairs (smoothed RSI, MR): MRVL 48.09/-0.149, NVDA 38.05/-0.972 → scale ~12.3-12.8.
 function calcMeanRev(closes) {
   if (!closes || closes.length < 30) return NaN;
-  var period = 14, emaP = 9, scale = 25;
+  var period = 14, emaP = 9, scale = 12.5;
   // Wilder RSI series
   var gains = [], losses = [];
   for (var i = 1; i < closes.length; i++) {
