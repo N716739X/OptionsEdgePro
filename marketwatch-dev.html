@@ -1709,7 +1709,7 @@ input, textarea, select { -webkit-user-select: text; user-select: text; }
       <label style="display:flex;flex-direction:column;gap:4px;font-size:10px;text-transform:uppercase;letter-spacing:0.6px;color:var(--text-muted)">Current Call Strike
         <input id="msladj-call" type="number" step="0.5" placeholder="55" onkeydown="if(event.key==='Enter')runMslAdjust()" style="width:120px;padding:7px 9px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:14px" />
       </label>
-      <label style="display:flex;flex-direction:column;gap:4px;font-size:10px;text-transform:uppercase;letter-spacing:0.6px;color:var(--text-muted)">Short-Put Strike <span style="text-transform:none;opacity:0.55">optional</span>
+      <label style="display:flex;flex-direction:column;gap:4px;font-size:10px;text-transform:uppercase;letter-spacing:0.6px;color:var(--text-muted)">Short-Put Strike
         <input id="msladj-short" type="number" step="0.5" placeholder="fixed leg" onkeydown="if(event.key==='Enter')runMslAdjust()" style="width:120px;padding:7px 9px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:14px" />
       </label>
       <label style="display:flex;flex-direction:column;gap:4px;font-size:10px;text-transform:uppercase;letter-spacing:0.6px;color:var(--text-muted)">Current Long-Put Strike
@@ -5101,10 +5101,10 @@ async function runMslAdjust() {
   var wantExp    = (document.getElementById('msladj-exp').value || '').trim(); // optional — your position's expiry (YYYY-MM-DD)
   var resEl = document.getElementById('msladj-results');
   if (!ticker) { setStatus('msladj-status', 'Enter a ticker', 'error'); return; }
-  if (isNaN(callStrike) || isNaN(putStrike)) {
-    setStatus('msladj-status', 'Enter your current call strike and long-put strike', 'error'); return;
+  if (isNaN(callStrike) || isNaN(shortStrike) || isNaN(putStrike)) {
+    setStatus('msladj-status', 'Enter your call, short-put, and long-put strikes', 'error'); return;
   }
-  if (!isNaN(shortStrike) && shortStrike <= putStrike) {
+  if (shortStrike <= putStrike) {
     setStatus('msladj-status', 'Short-put strike must be ABOVE the long-put strike (it is the higher, fixed leg)', 'error'); return;
   }
   var btn = document.getElementById('msladj-btn'); if (btn) btn.disabled = true;
