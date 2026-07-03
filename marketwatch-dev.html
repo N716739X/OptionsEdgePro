@@ -3471,7 +3471,10 @@ function triggerPhase3() {
   var loaded = tickers.filter(function(t){ return cardData[t] && cardData[t].phase >= 2; });
   if (loaded.length < tickers.length) return; // not all loaded yet
   _phase3Triggered = true;
-  _runPhase3Pass(loaded.slice(), 0);
+  // The Worker now scores the LEAPS chain server-side (phase 3). Only run the client
+  // fallback for any ticker the server couldn't finish (still phase 2).
+  var needy = loaded.filter(function(t){ return cardData[t].phase < 3; });
+  if (needy.length) _runPhase3Pass(needy, 0);
 }
 
 // Run Synth+MSL phase-3 for a list of tickers, then RETRY any that didn't finish.
@@ -3520,7 +3523,9 @@ function applyServerScores(s) {
   var d = {
     ticker:      s.ticker,
     loading:     false,
-    phase:       2,
+    // Server now scores the LEAPS-chain (Synth/MSL) criteria too — go straight to phase 3
+    // when it succeeded; otherwise stay at phase 2 so client phase-3 fills them in as a fallback.
+    phase:       s.chainScored ? 3 : 2,
     price:       s.price,
     change:      s.change,
     changePct:   s.changePct,
@@ -3552,9 +3557,15 @@ function applyServerScores(s) {
     cc_c4:  s.cc.c4,  cc_c5:  s.cc.c5,  cc_c6:  s.cc.c6,  cc_c7: s.cc.c7,
     synth_c1: s.synth.c1, synth_c2: s.synth.c2, synth_c3: s.synth.c3,
     synth_c4: s.synth.c4, synth_c5: s.synth.c5, synth_c6: s.synth.c6, synth_c7: s.synth.c7,
+    synthMR:  s.synth ? s.synth.mr : null,
     mslScore:  s.msl ? s.msl.score : null,
     mslWeighted: s.msl ? s.msl.weighted : null,
     mslT1Pass: s.msl ? s.msl.t1Pass : null,
+    mslExpiry: s.mslExpiry || (s.msl ? s.msl.expiry : null),
+    mslMR:     s.msl ? s.msl.mr : null,
+    mslCallRatio:  s.msl ? s.msl.callRatio : null,
+    mslNetDebitPct: s.msl ? s.msl.netDebitPct : null,
+    mslRiskRatio:  s.msl ? s.msl.riskRatio : null,
     msl_c1: s.msl ? s.msl.c1 : null, msl_c2: s.msl ? s.msl.c2 : null, msl_c3: s.msl ? s.msl.c3 : null,
     msl_c4: s.msl ? s.msl.c4 : null, msl_c5: s.msl ? s.msl.c5 : null, msl_c6: s.msl ? s.msl.c6 : null, msl_c7: s.msl ? s.msl.c7 : null, msl_c8: s.msl ? s.msl.c8 : null,
     // Legacy fields for card rendering
