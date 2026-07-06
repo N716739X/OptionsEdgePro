@@ -295,6 +295,12 @@ header {
 /* ═══════════════════════════════════════════════════════
    DASHBOARD GRID
 ═══════════════════════════════════════════════════════ */
+/* "Ready Now" banner — surfaces tickers at their MR entry trigger */
+.ready-banner { border-radius:10px; padding:11px 16px; margin:0 20px 4px; font-size:13px; line-height:1.55; }
+.ready-banner.ready-go { background:rgba(0,255,170,0.08); border:1px solid var(--green); color:var(--text); box-shadow:0 0 16px rgba(0,255,170,0.10); }
+.ready-banner.ready-none { background:rgba(255,255,255,0.03); border:1px solid var(--border2); color:var(--text-muted); }
+.ready-chip { display:inline-block; background:rgba(0,255,170,0.14); color:var(--green); border:1px solid rgba(0,255,170,0.4); border-radius:6px; padding:2px 9px; margin:3px 5px 0 0; font-weight:700; font-size:12px; }
+
 .dash-columns {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
@@ -1598,6 +1604,7 @@ input, textarea, select { -webkit-user-select: text; user-select: text; }
   <div class="dash-toolbar">
     <div id="refresh-info">Auto-refresh: market hours only</div>
   </div>
+  <div id="ready-banner"></div>
   <div class="dash-columns">
     <!-- CSP Column -->
     <div class="dash-col">
@@ -2775,6 +2782,22 @@ function buildSkeletonRow(ticker) {
   '</div>';
 }
 
+// Plain-English tooltips for the dashboard mini-box abbreviations (Laura's framing)
+var GLOSSARY = {
+  'MR':    'Mean Reversion (4H). ≤ −2 = deeply oversold (buy / sell-put / synthetic / MSL trigger); ≥ +2 = deeply overbought (sell-call trigger).',
+  'SMA':   'Price vs the 200-day moving average — Laura wants price ABOVE it (confirmed uptrend).',
+  'EARN':  'No earnings before expiry — avoids the earnings gap and IV crush.',
+  'PREM':  'Premium collected as a % of the stock price (income yield).',
+  'DELTA': 'Option delta ≈ probability of assignment. Low (~0.20) = OTM income; near 0.50 = ATM (want the shares).',
+  'DTE':   'Days to expiration. Income puts/calls: 30–45. Accumulation: 60–90+. LEAPS: 365+.',
+  'P-CR':  'Put-spread credit as a % of the spread width — Laura wants ≥ 42% (targets 50%).',
+  'I/E':   'Intrinsic vs extrinsic value of the deep-ITM call — target ~50/50.',
+  'DUR':   'Duration (DTE). Synthetic Long / MSL use LEAPS — 540+ days preferred.',
+  'DEBIT': 'Net debit as a % of price — MSL wants ≤ 40% (ideal ≤ 33%).',
+  'SPRD':  'Bid-ask spread ≤ 10% — confirms the option is liquid enough to fill near the mid.',
+  'RISK':  'MSL max risk vs an equivalent Synthetic Long — Laura wants ≤ 60% (about half).'
+};
+
 // Build a full rich card for a dashboard column
 function buildColCard(ticker, d, strategy, rank, isBestTrade) {
   var isScored = (strategy === 'put');
@@ -2864,7 +2887,8 @@ function buildColCard(ticker, d, strategy, rank, isBestTrade) {
 
   function mb(label, pass, val) {
     var cls = pass === true ? 'mini-pass' : pass === false ? 'mini-fail' : 'mini-na';
-    return '<div class="mini-box ' + cls + '"><span class="mini-label">' + label + '</span><span class="mini-val">' + (val !== undefined ? val : (pass === true ? '✓' : pass === false ? '✗' : '?')) + '</span></div>';
+    var tip = GLOSSARY[label] ? ' title="' + GLOSSARY[label].replace(/"/g, '&quot;') + '"' : '';
+    return '<div class="mini-box ' + cls + '"' + tip + '><span class="mini-label">' + label + '</span><span class="mini-val">' + (val !== undefined ? val : (pass === true ? '✓' : pass === false ? '✗' : '?')) + '</span></div>';
   }
 
   var criteriaHtml;
@@ -3051,6 +3075,33 @@ function renderColumns() {
     var activeTicker = activeInput ? (activeInput.value || null) : null;
     renderMiniRankings(tid, activeTicker);
   });
+
+  renderReadyBanner();
+}
+
+// "Ready Now" — surface every ticker/strategy at its MR entry trigger (badge not gated to WAIT FOR SETUP),
+// so a follower instantly sees what's actionable today instead of a wall of WAIT FOR SETUP.
+function renderReadyBanner() {
+  var el = document.getElementById('ready-banner');
+  if (!el) return;
+  var ready = [];
+  tickers.forEach(function(t) {
+    var d = cardData[t];
+    if (!d || d.loading || d.phase < 2) return;
+    if (d.put_c2   === true) ready.push({ t: t, s: 'Cash-Secured Put', mr: d.meanRev });
+    if (d.cc_c2    === true) ready.push({ t: t, s: 'Covered Call',      mr: d.meanRev });
+    if (d.synth_c1 === true) ready.push({ t: t, s: 'Synthetic Long',    mr: (d.synthMR != null ? d.synthMR : d.meanRev) });
+    if (d.mslT1Pass === true) ready.push({ t: t, s: 'MSL',              mr: (d.mslMR != null ? d.mslMR : d.meanRev) });
+  });
+  if (ready.length === 0) {
+    el.innerHTML = '<div class="ready-banner ready-none">⏳ <strong>Nothing at a trigger yet.</strong> Every setup is waiting for its −2 (puts / synthetic / MSL) or +2 (covered calls) Mean-Reversion signal. Patience — Laura only acts at the trigger.</div>';
+    return;
+  }
+  var chips = ready.map(function(r) {
+    return '<span class="ready-chip">' + r.t + ' · ' + r.s + (isNaN(r.mr) ? '' : ' (MR ' + fmt(r.mr, 2) + ')') + '</span>';
+  }).join('');
+  el.innerHTML = '<div class="ready-banner ready-go">🎯 <strong>At a trigger now (' + ready.length + '):</strong> ' + chips +
+    '<div style="font-size:11px;color:var(--text-muted);margin-top:6px">These are at Laura\'s entry signal — open the card\'s analyzer to confirm the rest of the setup.</div></div>';
 }
 
 // Keep renderSorted as a no-op alias so existing call in fetchTickerData still works
