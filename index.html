@@ -3412,18 +3412,19 @@ async function runMslPhase3(ticker) {
     var soldPutStrike = putChain.strike[soldPutIdx];
     var soldPutMid = putChain.mid ? putChain.mid[soldPutIdx] : null;
 
-    // Leg 2: Buy lower put — find width where credit ≥ 50% of spread width
-    var boughtPutIdx = -1, bestCreditPct = 0;
+    // Leg 2: Buy lower put — Laura sells a WIDE spread (~40 pts) that still clears a ≥42% credit.
+    // So among strikes meeting the ≥42% floor, take the WIDEST (deepest) — not the highest credit%,
+    // which would collapse to the narrowest adjacent strike.
+    var boughtPutIdx = -1, bestWidth = 0;
     for (var bp = 0; bp < putChain.strike.length; bp++) {
       if (putChain.strike[bp] >= soldPutStrike) continue;
       var bpMid = putChain.mid ? putChain.mid[bp] : null;
-      if (soldPutMid === null || bpMid === null) continue;
+      if (soldPutMid === null || bpMid === null || bpMid <= 0) continue; // skip no-bid/phantom strikes
       var spreadWidth = soldPutStrike - putChain.strike[bp];
       if (spreadWidth <= 0) continue;
-      var credit = soldPutMid - bpMid;
-      var creditPct = credit / spreadWidth * 100;
-      if (creditPct >= 42 && creditPct > bestCreditPct) {
-        bestCreditPct = creditPct;
+      var creditPct = (soldPutMid - bpMid) / spreadWidth * 100;
+      if (creditPct >= 42 && spreadWidth > bestWidth) {
+        bestWidth = spreadWidth;
         boughtPutIdx = bp;
       }
     }
@@ -4499,17 +4500,19 @@ async function runMsl(forceTicker) {
     var soldPutOI = putChain.openInterest ? putChain.openInterest[soldPutIdx] : null;
 
     // === Leg 2: Buy Lower Put (bull put spread protection) ===
-    var boughtPutIdx = -1, bestCreditPct = 0;
+    // Laura sells a WIDE spread (~40 pts) that still clears ≥42% credit — so among the
+    // strikes meeting the floor, pick the WIDEST (deepest), not the highest credit% (which
+    // collapses to the narrowest adjacent strike).
+    var boughtPutIdx = -1, bestWidth = 0;
     for (var bp = 0; bp < putChain.strike.length; bp++) {
       if (putChain.strike[bp] >= soldPutStrike) continue;
       var bpMid = putChain.mid ? putChain.mid[bp] : null;
-      if (soldPutMid === null || bpMid === null) continue;
+      if (soldPutMid === null || bpMid === null || bpMid <= 0) continue; // skip no-bid/phantom strikes
       var spreadWidth = soldPutStrike - putChain.strike[bp];
       if (spreadWidth <= 0) continue;
-      var credit = soldPutMid - bpMid;
-      var creditPct = credit / spreadWidth * 100;
-      if (creditPct >= 42 && creditPct > bestCreditPct) {
-        bestCreditPct = creditPct;
+      var creditPct = (soldPutMid - bpMid) / spreadWidth * 100;
+      if (creditPct >= 42 && spreadWidth > bestWidth) {
+        bestWidth = spreadWidth;
         boughtPutIdx = bp;
       }
     }
