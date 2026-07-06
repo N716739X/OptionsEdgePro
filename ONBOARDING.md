@@ -79,6 +79,7 @@ Dashboard badges **gate on the MR trigger** → show **WAIT FOR SETUP** until MR
 
 **MSL (Modified Synthetic Long)** — 3 legs: buy deep-ITM call (~50/50 intrinsic/extrinsic), sell ATM put, buy lower put (put credit spread).
 - Put-spread credit **≥42%** of width (target 50%); net debit **≤40%** of price (ideal ≤33%); MSL max risk **≤60%** of the equivalent Synthetic Long; LEAPS ≥365 DTE (prefer ≥540).
+- **Strike selection is open-interest–weighted** (Laura's roll-ability rule): among the strikes that pass each leg's rule (sold put ≤ spot within ~4%; bought put ≥42% credit within ±5% of the ~40pt/20% width target; call inside the 40–60% I/E band), pick the one with the **higher open interest** — usually the round/even strike — so future rolls fill cleanly. Best-fit (closest ATM / width / 50-50) is the tiebreak and the fallback when OI is missing. Lands on Laura's own picks (NVDA @ ~$196 → sell 190P / buy 150P / buy 160C).
 - **MSL Adjust (roll calculator):** roll ONLY on a bottom signal (−2 MR / buy divergence at 200 SMA). Two handles: roll long **call** down for a debit **≤30%** of width (up to ~33% high conviction); roll long **put** down for a credit **≥60%** of width (Laura's lessons cite 55–70% / ≥50%). Short put strike stays fixed. Widening the put spread raises margin.
 
 **Liquidity guard (CSP/CC/Synth):** flags a wide bid-ask (>15% of mid) or thin OI (<100) so users don't trust an unfillable mid.

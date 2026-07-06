@@ -544,25 +544,53 @@ function scoreMslChains(price, mr, expiry, dte, callChain, putChain) {
     c1: !isNaN(mr) ? mr <= -2 : null, c2: null, c3: null, c4: dte >= 365, c5: null, c6: null, c7: null, c8: null,
     weighted: null, t1Pass: null, score: null, callRatio: null, netDebitPct: null, putCreditPct: null, riskRatio: null };
   if (!callChain || !callChain.strike || !putChain || !putChain.strike || !callChain.strike.length || !putChain.strike.length) return out;
-  // Leg 1: sold ATM put (closest strike to price)
-  let bestPutDist = Infinity, soldPutIdx = -1;
-  for (let sp = 0; sp < putChain.strike.length; sp++) { const dd = Math.abs(putChain.strike[sp] - price); if (dd < bestPutDist) { bestPutDist = dd; soldPutIdx = sp; } }
+  // Leg 1: sold ATM put \u2014 among strikes near ATM, prefer higher OI (round/even strike) for
+  // roll-ability; closest-to-price is the tiebreak. Fallback: strict closest-to-price.
+  const atmBand = price * 0.04;
+  let soldPutIdx = -1, bestPutOI = -1, bestPutDist = Infinity;
+  for (let sp = 0; sp < putChain.strike.length; sp++) {
+    if (putChain.strike[sp] > price + 0.001) continue;
+    const d1 = Math.abs(putChain.strike[sp] - price);
+    if (d1 > atmBand) continue;
+    const oi1 = (putChain.openInterest && putChain.openInterest[sp] != null) ? putChain.openInterest[sp] : 0;
+    if (oi1 > bestPutOI || (oi1 === bestPutOI && d1 < bestPutDist)) { bestPutOI = oi1; bestPutDist = d1; soldPutIdx = sp; }
+  }
+  if (soldPutIdx < 0) {
+    bestPutDist = Infinity;
+    for (let sp0 = 0; sp0 < putChain.strike.length; sp0++) { const d0 = Math.abs(putChain.strike[sp0] - price); if (d0 < bestPutDist) { bestPutDist = d0; soldPutIdx = sp0; } }
+  }
   if (soldPutIdx < 0) return out;
   const soldPutStrike = putChain.strike[soldPutIdx];
   const soldPutMid = putChain.mid ? putChain.mid[soldPutIdx] : null;
-  // Leg 2: bought lower put \u2014 target Laura's ~40-point spread (\u224820% of price); among strikes
-  // that still clear the \u226542% credit floor, pick the one whose WIDTH is closest to that target.
-  // Fallback: closest to 50%.
+  // Leg 2: bought lower put \u2014 among strikes \u226542% credit AND within a width tolerance of Laura's
+  // ~40-point (\u224820% of price) target, prefer higher OI; width-fit is the tiebreak.
   const targetWidth = price * 0.20; // her "$40 wide on a ~$200 stock", generalized to price
-  let boughtPutIdx = -1, bestDiff = Infinity;
+  const widthTol = price * 0.05;
+  let boughtPutIdx = -1, bestBpOI = -1, bestDiff = Infinity;
   for (let bp = 0; bp < putChain.strike.length; bp++) {
     if (putChain.strike[bp] >= soldPutStrike) continue;
     const bpMid = putChain.mid ? putChain.mid[bp] : null;
     if (soldPutMid === null || bpMid === null || bpMid <= 0) continue; // skip no-bid/phantom strikes
     const sw = soldPutStrike - putChain.strike[bp]; if (sw <= 0) continue;
     const cp = (soldPutMid - bpMid) / sw * 100;
-    if (cp >= 42) { const wd = Math.abs(sw - targetWidth); if (wd < bestDiff) { bestDiff = wd; boughtPutIdx = bp; } }
+    if (cp < 42) continue;
+    const wd = Math.abs(sw - targetWidth); if (wd > widthTol) continue;
+    const oiBp = (putChain.openInterest && putChain.openInterest[bp] != null) ? putChain.openInterest[bp] : 0;
+    if (oiBp > bestBpOI || (oiBp === bestBpOI && wd < bestDiff)) { bestBpOI = oiBp; bestDiff = wd; boughtPutIdx = bp; }
   }
+  // Fallback 1: nothing within width tolerance \u2192 closest-width among \u226542% credit
+  if (boughtPutIdx < 0) {
+    bestDiff = Infinity;
+    for (let bpf = 0; bpf < putChain.strike.length; bpf++) {
+      if (putChain.strike[bpf] >= soldPutStrike) continue;
+      const bpMidF = putChain.mid ? putChain.mid[bpf] : null;
+      if (soldPutMid === null || bpMidF === null || bpMidF <= 0) continue;
+      const swF = soldPutStrike - putChain.strike[bpf]; if (swF <= 0) continue;
+      const cpF = (soldPutMid - bpMidF) / swF * 100;
+      if (cpF >= 42) { const wdF = Math.abs(swF - targetWidth); if (wdF < bestDiff) { bestDiff = wdF; boughtPutIdx = bpf; } }
+    }
+  }
+  // Fallback 2: closest to 50%
   if (boughtPutIdx < 0) {
     let closest50 = Infinity;
     for (let bp2 = 0; bp2 < putChain.strike.length; bp2++) {
@@ -580,16 +608,32 @@ function scoreMslChains(price, mr, expiry, dte, callChain, putChain) {
   const spreadWidth = soldPutStrike - boughtPutStrike;
   const putSpreadCredit = (soldPutMid !== null && boughtPutMid !== null) ? soldPutMid - boughtPutMid : null;
   const putCreditPct = (putSpreadCredit !== null && spreadWidth > 0) ? (putSpreadCredit / spreadWidth * 100) : null;
-  // Leg 3: deep ITM call ~50/50 intrinsic/extrinsic
-  let bestCallIdx = -1, bestCallDiff = Infinity;
+  // Leg 3: deep ITM call \u2014 among calls in the 40\u201360% I/E band, prefer higher OI; closeness to
+  // 50/50 is the tiebreak. Fallback: pure best-ratio (closest to 50/50).
+  let bestCallIdx = -1, bestCallOI = -1, bestCallDiff = Infinity;
   for (let ci = 0; ci < callChain.strike.length; ci++) {
     if (callChain.strike[ci] >= price) continue;
     const cMid = callChain.mid ? callChain.mid[ci] : null;
     if (cMid === null || cMid <= 0) continue;
     const intrinsic = price - callChain.strike[ci];
     const extrinsic = cMid - intrinsic; if (extrinsic <= 0) continue;
-    const diff = Math.abs((intrinsic / cMid) - 0.50);
-    if (diff < bestCallDiff) { bestCallDiff = diff; bestCallIdx = ci; }
+    const ratioCi = intrinsic / cMid;
+    if (ratioCi < 0.40 || ratioCi > 0.60) continue;
+    const rd = Math.abs(ratioCi - 0.50);
+    const oiCi = (callChain.openInterest && callChain.openInterest[ci] != null) ? callChain.openInterest[ci] : 0;
+    if (oiCi > bestCallOI || (oiCi === bestCallOI && rd < bestCallDiff)) { bestCallOI = oiCi; bestCallDiff = rd; bestCallIdx = ci; }
+  }
+  if (bestCallIdx < 0) {
+    bestCallDiff = Infinity;
+    for (let cif = 0; cif < callChain.strike.length; cif++) {
+      if (callChain.strike[cif] >= price) continue;
+      const cMidF = callChain.mid ? callChain.mid[cif] : null;
+      if (cMidF === null || cMidF <= 0) continue;
+      const intrF = price - callChain.strike[cif];
+      const extrF = cMidF - intrF; if (extrF <= 0) continue;
+      const diffF = Math.abs((intrF / cMidF) - 0.50);
+      if (diffF < bestCallDiff) { bestCallDiff = diffF; bestCallIdx = cif; }
+    }
   }
   if (bestCallIdx < 0) return out;
   const callStrike = callChain.strike[bestCallIdx];
