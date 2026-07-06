@@ -4838,6 +4838,34 @@ async function runMsl(forceTicker) {
       html += '</tbody></table></div></div>';
     }
 
+    // Chain table: the SOLD ATM put (the anchor leg) — shown for parity with the other two legs
+    if (putChain && putChain.strike) {
+      var spStart = Math.max(0, soldPutIdx - 4);
+      var spEnd   = Math.min(putChain.strike.length, soldPutIdx + 5);
+      html += '<div class="chain-section"><h3>Short Put (ATM) <span style="color:var(--text-muted);font-weight:400;font-size:11px">— the anchor leg: sell the strike closest to price, ★ = recommended</span></h3>' +
+        '<div class="leaps-table-wrap"><table><thead><tr>' +
+        '<th>Strike</th><th>Bid</th><th>Ask</th><th>Mid</th><th>Δ</th><th>OI</th><th>Dist from Price</th>' +
+        '</tr></thead><tbody>';
+      for (var sx = spStart; sx < spEnd; sx++) {
+        var spRec = sx === soldPutIdx;
+        var sStr  = putChain.strike[sx];
+        var sBid  = putChain.bid ? putChain.bid[sx] : null;
+        var sAsk  = putChain.ask ? putChain.ask[sx] : null;
+        var sMd   = putChain.mid ? putChain.mid[sx] : null;
+        var sDlt  = putChain.delta ? putChain.delta[sx] : null;
+        var sOi   = putChain.openInterest ? putChain.openInterest[sx] : null;
+        var sDist = pd.price ? ((sStr - pd.price) / pd.price * 100) : null;
+        html += '<tr' + (spRec ? ' class="recommended"' : '') + '>' +
+          '<td class="strike-cell">' + (spRec ? '<span class="star">★</span>' : '') + fmtDollar(sStr) + '</td>' +
+          '<td>' + fmtDollar(sBid) + '</td><td>' + fmtDollar(sAsk) + '</td>' +
+          '<td><strong>' + fmtDollar(sMd) + '</strong></td>' +
+          '<td>' + (sDlt !== null ? fmt(Math.abs(sDlt),2) : '—') + '</td>' +
+          '<td>' + oiSpan(sOi) + '</td>' +
+          '<td>' + (sDist !== null ? (sDist >= 0 ? '+' : '') + fmt(sDist,1) + '%' : '—') + '</td></tr>';
+      }
+      html += '</tbody></table></div></div>';
+    }
+
     // Chain table: put spread strikes
     if (putChain && putChain.strike) {
       var lowerPuts = [];
