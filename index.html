@@ -4721,21 +4721,26 @@ async function runMsl(forceTicker) {
       html += '<div class="sl-comparison">' +
         '<div class="slc-title">MSL vs Synthetic Long</div>' +
         '<div class="slc-subtitle">Comparable SL @ ' + slStrikeDisp + ' ATM · Buy call + Sell put at same strike, same expiry</div>' +
+        '<div style="font-size:10px;color:var(--text-muted);margin:-8px 0 12px;padding-left:11px;line-height:1.55">' +
+          '<strong>Edge</strong> = MSL vs the comparable Synthetic Long — <span style="color:var(--green);font-weight:700">green</span> = MSL better, <span style="color:var(--red);font-weight:700">red</span> = MSL worse. ' +
+          'Note: an MSL <em>intentionally</em> costs more upfront to slash risk &amp; margin, so a higher Net Debit is the expected trade-off, not a flaw. A red <strong>Breakeven</strong> is a real warning — it drifted &gt;10% from the SL (losing upside capture).' +
+        '</div>' +
         '<div class="slc-table">' +
           // Header row
           '<div class="slc-th">Metric</div>' +
           '<div class="slc-th slc-th-sl">Synthetic Long</div>' +
           '<div class="slc-th slc-th-msl">MSL</div>' +
           '<div class="slc-th slc-th-delta">Edge</div>' +
-          // Row 1: Net Debit — lower = better. MSL almost always pays more (cost of structure).
+          // Row 1: Net Debit — an MSL always costs more upfront by design, so this is NEUTRAL
+          // (the expected cost of the risk/margin reduction), not a red "loss".
           slcRow(
             'Net Debit',
-            'What you pay upfront',
+            'What you pay upfront (higher by design)',
             slNetDebit100 !== null ? '$' + fmt(slNetDebit100,0) : '—',
             netDebit100 !== null ? '$' + fmt(netDebit100,0) : '—',
-            netDebit100 < slNetDebit100 ? 'msl-gain' : 'msl-loss',
-            (debitDeltaPct !== null) ? (netDebit100 < slNetDebit100 ? '−' : '+') + '$' + fmt(Math.abs(netDebit100 - slNetDebit100),0) : '—',
-            netDebit100 < slNetDebit100 ? 'delta-better' : 'delta-worse'
+            'msl-neutral',
+            (debitDeltaPct !== null) ? (netDebit100 >= slNetDebit100 ? '+' : '−') + '$' + fmt(Math.abs(netDebit100 - slNetDebit100),0) : '—',
+            'delta-neutral'
           ) +
           // Row 2: Breakeven — within 10% drift goal = green, beyond = red
           slcRow(
