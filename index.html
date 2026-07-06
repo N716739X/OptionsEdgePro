@@ -4726,7 +4726,7 @@ async function runMsl(forceTicker) {
         '<div class="slc-subtitle">Comparable SL @ ' + slStrikeDisp + ' ATM · Buy call + Sell put at same strike, same expiry</div>' +
         '<div style="font-size:10px;color:var(--text-muted);margin:-8px 0 12px;padding-left:11px;line-height:1.55">' +
           '<strong>Edge</strong> = MSL vs the comparable Synthetic Long — <span style="color:var(--green);font-weight:700">green</span> = MSL better, <span style="color:var(--red);font-weight:700">red</span> = MSL worse. ' +
-          'Note: an MSL <em>intentionally</em> costs more upfront to slash risk &amp; margin, so a higher Net Debit is the expected trade-off, not a flaw. A red <strong>Breakeven</strong> is a real warning — it drifted &gt;10% from the SL (losing upside capture).' +
+          'Note: an MSL <em>intentionally</em> costs more upfront to slash risk &amp; margin, so <strong>Net Debit</strong> and <strong>Total Outlay</strong> are shown neutral (grey) — they land near the SL by design and aren\'t the MSL\'s value axis. The real edge is <strong>Max Risk</strong> &amp; <strong>Margin Req.</strong> A red <strong>Breakeven</strong> is a real warning — it drifted &gt;10% from the SL (losing upside capture).' +
         '</div>' +
         '<div class="slc-table">' +
           // Header row
@@ -4775,15 +4775,18 @@ async function runMsl(forceTicker) {
             (marginSavingsPct !== null) ? (marginSavingsPct > 0 ? '−' : '+') + fmt(Math.abs(marginSavingsPct),0) + '%' : '—',
             marginSavingsPct > 0 ? 'delta-better' : 'delta-worse'
           ) +
-          // Row 5: Total Outlay (margin + net debit) — green if MSL ties up less capital
+          // Row 5: Total Outlay (spread margin + call premium) — NEUTRAL. The deep-ITM
+          // call premium dominates, so MSL & SL total cash tied up land ~equal by
+          // construction; the sign here isn't the MSL's value axis (that's Max Risk /
+          // Margin), so we don't color it good/bad — informational only.
           slcRow(
             'Total Outlay',
-            'Margin + net debit',
+            'Cash + margin tied up (~equal by design)',
             slCapital ? '$' + fmt(slCapital,0) : '—',
             mslTotalOutlay ? '$' + fmt(mslTotalOutlay,0) : '—',
-            (savingsPct !== null && savingsPct > 0) ? 'msl-gain' : 'msl-loss',
-            (savingsPct !== null) ? (savingsPct > 0 ? '−' : '+') + fmt(Math.abs(savingsPct),0) + '%' : '—',
-            savingsPct > 0 ? 'delta-better' : 'delta-worse'
+            'msl-neutral',
+            (savingsPct !== null) ? (mslTotalOutlay >= slCapital ? '+' : '−') + '$' + fmt(Math.abs(mslTotalOutlay - slCapital),0) : '—',
+            'delta-neutral'
           ) +
         '</div>' +
       '</div>';
