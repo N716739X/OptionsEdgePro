@@ -550,15 +550,17 @@ function scoreMslChains(price, mr, expiry, dte, callChain, putChain) {
   if (soldPutIdx < 0) return out;
   const soldPutStrike = putChain.strike[soldPutIdx];
   const soldPutMid = putChain.mid ? putChain.mid[soldPutIdx] : null;
-  // Leg 2: bought lower put \u2014 credit >= 42% of width (maximize); fallback closest to 50%
-  let boughtPutIdx = -1, bestCreditPct = 0;
+  // Leg 2: bought lower put \u2014 Laura sells a WIDE spread (~40 pts) that still clears \u226542% credit.
+  // So among strikes meeting the floor, take the WIDEST (deepest), not the highest credit%
+  // (which collapses to the narrowest adjacent strike). Fallback: closest to 50%.
+  let boughtPutIdx = -1, bestWidth = 0;
   for (let bp = 0; bp < putChain.strike.length; bp++) {
     if (putChain.strike[bp] >= soldPutStrike) continue;
     const bpMid = putChain.mid ? putChain.mid[bp] : null;
-    if (soldPutMid === null || bpMid === null) continue;
+    if (soldPutMid === null || bpMid === null || bpMid <= 0) continue; // skip no-bid/phantom strikes
     const sw = soldPutStrike - putChain.strike[bp]; if (sw <= 0) continue;
     const cp = (soldPutMid - bpMid) / sw * 100;
-    if (cp >= 42 && cp > bestCreditPct) { bestCreditPct = cp; boughtPutIdx = bp; }
+    if (cp >= 42 && sw > bestWidth) { bestWidth = sw; boughtPutIdx = bp; }
   }
   if (boughtPutIdx < 0) {
     let closest50 = Infinity;
