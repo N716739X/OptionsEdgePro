@@ -880,8 +880,9 @@ header {
   gap: 12px 14px;
 }
 
+.ts-item { min-width:0; }
 .ts-item .ts-label { font-size:9px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.6px;margin-bottom:3px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
-.ts-item .ts-val   { font-size:15px;font-weight:800;white-space:nowrap;letter-spacing:-0.2px; }
+.ts-item .ts-val   { font-size:15px;font-weight:800;white-space:nowrap;letter-spacing:-0.2px;overflow:hidden;text-overflow:ellipsis; }
 .ts-item .ts-note  { font-size:9.5px;color:var(--text-muted);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
 .ts-gain  { color: var(--green); }
 .ts-loss  { color: var(--red); }
@@ -4365,7 +4366,7 @@ async function runSynth(forceTicker) {
       tsItem('Sell Put',        putCredit100  ? '$' + fmt(putCredit100,2)  : '—', 'ts-gain',    'ATM put premium received') +
       tsItem('Max Gain',        '∞', 'ts-gain', 'Unlimited above breakeven') +
       tsItem('Max Loss',        synthMaxLoss  ? '$' + fmt(synthMaxLoss,2)  : '—', 'ts-loss', 'Strike + net debit (if stock → $0)') +
-      tsItem('Breakeven',       breakeven     ? fmtDollar(breakeven) + (beAboveCur !== null ? ' (' + fmt(beAboveCur,1) + '% away)' : '') : '—', 'ts-neutral', 'Strike + net debit') +
+      tsItem('Breakeven',       breakeven     ? fmtDollar(breakeven) : '—', 'ts-neutral', (beAboveCur !== null ? fmt(beAboveCur,1) + '% away · ' : '') + 'strike + net debit') +
       tsItem('Margin Req.',     synthMargin ? '$' + fmt(synthMargin,0) : '—', 'ts-loss', '50% strike + net debit') +
       tsItem('Assignment Risk', atmStrike ? '$' + fmt(atmStrike * 100,2) : '—', 'ts-neutral', 'Cash if put assigned at strike') +
     '</div></div>';
