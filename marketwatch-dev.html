@@ -4129,7 +4129,10 @@ async function runPut(forceTicker) {
     }
 
     html += '<div class="chain-section"><h3>Put Chain — '+bestExpiry+' ('+dte+' DTE)</h3>';
-    html += buildChainTable(chain, targetDelta, pd.price, true) + '</div>';
+    // Star the analyzer's ACTUAL recommended strike (bestStrike) via match-by-strike, so the
+    // chain-table ★ always equals the Target Strike / Compare "App" strike. (The delta-band
+    // star logic couldn't reach the accumulation −0.50Δ pick and diverged from the summary.)
+    html += buildChainTable(chain, (bestStrike != null ? bestStrike : targetDelta), pd.price, true, bestStrike != null) + '</div>';
 
     // ── Position Scenarios at Expiry (CSP) ──
     if (bestStrike !== null && bestPremium !== null) {
