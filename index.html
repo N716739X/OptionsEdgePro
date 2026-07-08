@@ -3865,6 +3865,85 @@ function setCspIntent(mode) {
   if (t && t.value) runPut(t.value); // re-analyze with the new intent
 }
 
+// Context stashed by the last CSP analysis so "Compare Your Own Strike" can price any strike
+// against the app's recommended strike without re-fetching the chain.
+var _cspCtx = null;
+// Compute the CSP metrics for a single chain index using the stashed context.
+function cspStrikeMetrics(idx) {
+  var c = _cspCtx;
+  if (!c || !c.chain || !c.chain.strike || idx < 0 || idx >= c.chain.strike.length) return null;
+  var ch = c.chain;
+  var strike = ch.strike[idx];
+  var mid = ch.mid ? ch.mid[idx] : null;
+  var bid = ch.bid ? ch.bid[idx] : null;
+  var ask = ch.ask ? ch.ask[idx] : null;
+  var delta = ch.delta ? ch.delta[idx] : null;
+  var oi = ch.openInterest ? ch.openInterest[idx] : null;
+  var premPct = (mid && c.price) ? (mid / c.price * 100) : null;
+  var costBasis = (strike && mid) ? (strike - mid) : null;           // effective cost if assigned / breakeven
+  var discountPct = (costBasis != null && c.price) ? ((c.price - costBasis) / c.price * 100) : null;
+  var otmPct = (strike && c.price) ? ((c.price - strike) / c.price * 100) : null;
+  var assignProb = delta !== null ? Math.abs(delta) * 100 : null;
+  var roc = (mid && strike) ? (mid / strike * 100) : null;           // premium / cash secured
+  var annReturn = (roc && c.dte) ? (roc * 365 / c.dte) : null;
+  var beVsSma = (costBasis != null && c.sma200) ? ((costBasis - c.sma200) / c.sma200 * 100) : null;
+  var spreadAbs = (bid != null && ask != null) ? (ask - bid) : null;
+  var spreadPct = (spreadAbs != null && mid) ? (spreadAbs / mid * 100) : null;
+  return { strike: strike, mid: mid, delta: delta, oi: oi, premPct: premPct, costBasis: costBasis,
+           discountPct: discountPct, otmPct: otmPct, assignProb: assignProb, roc: roc,
+           annReturn: annReturn, beVsSma: beVsSma, spreadPct: spreadPct };
+}
+// Render the App-vs-Yours comparison for the strike typed into the compare box.
+function compareCspStrike() {
+  var out = document.getElementById('csp-compare-out');
+  if (!out) return;
+  var c = _cspCtx;
+  if (!c || !c.chain || !c.chain.strike) { out.innerHTML = '<div class="btc-note">Run an analysis first.</div>'; return; }
+  var inEl = document.getElementById('csp-compare-input');
+  var val = inEl ? parseFloat(inEl.value) : NaN;
+  if (isNaN(val) || val <= 0) { out.innerHTML = '<div class="btc-note">Enter a strike price to compare.</div>'; return; }
+  var ch = c.chain, idx = -1, best = Infinity, i;
+  for (i = 0; i < ch.strike.length; i++) { var dd = Math.abs(ch.strike[i] - val); if (dd < best) { best = dd; idx = i; } }
+  var you = cspStrikeMetrics(idx);
+  if (!you) { out.innerHTML = '<div class="btc-note">No matching strike found in the chain.</div>'; return; }
+  var app = cspStrikeMetrics(c.appIdx);
+  var snapped = Math.abs(ch.strike[idx] - val) > 0.001;
+  var dol = function(x){ return x == null ? '—' : fmtDollar(x); };
+  var pct = function(x, d){ return x == null ? '—' : (fmt(x, d == null ? 1 : d) + '%'); };
+  var sgn = function(x){ return x == null ? '—' : (x >= 0 ? '+' : '') + fmt(x, 1) + '%'; };
+  var row = function(label, a, y){
+    return '<tr>' +
+      '<td style="padding:7px 10px;color:var(--text-muted);font-size:12px">' + label + '</td>' +
+      '<td style="padding:7px 10px;text-align:right;font-weight:700">' + a + '</td>' +
+      '<td style="padding:7px 10px;text-align:right;font-weight:800;color:var(--accent)">' + y + '</td>' +
+    '</tr>';
+  };
+  var appD = app || {};
+  var html = '';
+  if (snapped) html += '<div class="btc-note" style="margin-bottom:8px">Snapped to the nearest listed strike: <strong>' + fmtDollar(you.strike) + '</strong> (you entered $' + fmt(val, 2) + ').</div>';
+  html += '<div class="leaps-table-wrap"><table style="width:100%;border-collapse:collapse">' +
+    '<thead><tr>' +
+      '<th style="text-align:left;padding:7px 10px;font-size:11px">Metric</th>' +
+      '<th style="text-align:right;padding:7px 10px;font-size:11px">App · ' + (appD.strike != null ? fmtDollar(appD.strike) : '—') + '</th>' +
+      '<th style="text-align:right;padding:7px 10px;font-size:11px;color:var(--accent)">Yours · ' + fmtDollar(you.strike) + '</th>' +
+    '</tr></thead><tbody>' +
+    row('Delta',                     appD.delta != null ? fmt(appD.delta, 2) : '—', you.delta != null ? fmt(you.delta, 2) : '—') +
+    row('Assignment prob (~Δ)',      pct(appD.assignProb, 0), pct(you.assignProb, 0)) +
+    row('Premium (mid)',             dol(appD.mid), dol(you.mid)) +
+    row('Premium % of price',        pct(appD.premPct, 2), pct(you.premPct, 2)) +
+    row('Return on capital',         pct(appD.roc, 2), pct(you.roc, 2)) +
+    row('Annualized return',         pct(appD.annReturn, 1), pct(you.annReturn, 1)) +
+    row('Effective cost (strike − credit)', dol(appD.costBasis), dol(you.costBasis)) +
+    row('Discount vs price',         pct(appD.discountPct, 1), pct(you.discountPct, 1)) +
+    row('Buffer (OTM)',              pct(appD.otmPct, 1), pct(you.otmPct, 1)) +
+    row('Breakeven vs 200 SMA',      sgn(appD.beVsSma), sgn(you.beVsSma)) +
+    row('Open interest',             appD.oi != null ? oiSpan(appD.oi) : '—', you.oi != null ? oiSpan(you.oi) : '—') +
+    row('Bid-ask spread',            pct(appD.spreadPct, 0), pct(you.spreadPct, 0)) +
+  '</tbody></table></div>';
+  html += '<div style="font-size:10.5px;color:var(--text-muted);margin-top:8px;line-height:1.5">A <strong>lower strike</strong> = bigger OTM buffer &amp; lower assignment odds but less premium; a <strong>higher/closer strike</strong> = more premium &amp; ROC but a higher chance of assignment. Match the strike to your intent — <strong>Income</strong> wants the buffer, <strong>Accumulation</strong> wants it closer to price.</div>';
+  out.innerHTML = html;
+}
+
 async function runPut(forceTicker) {
   var ticker = forceTicker || document.getElementById('put-ticker').value.trim().toUpperCase();
   if (!ticker) return;
@@ -3928,6 +4007,12 @@ async function runPut(forceTicker) {
     var buybackLo  = bestPremium != null ? bestPremium * 0.10 : null; // 90% profit
     var buybackHi  = bestPremium != null ? bestPremium * 0.20 : null; // 80% profit
 
+    // Stash context so "Compare Your Own Strike" can price any strike vs the app's pick.
+    _cspCtx = (chain && chain.strike && chain.strike.length) ? {
+      chain: chain, price: pd.price, sma200: pd.sma200, dte: dte, acq: acq,
+      appIdx: bestIdx, appStrike: bestStrike, expiry: bestExpiry
+    } : null;
+
     // Income needs precision entry (−2 MR); accumulation allows a looser entry (Laura's lesson)
     var c2 = !isNaN(pd.meanRev) ? (acq ? pd.meanRev <= -1 : pd.meanRev <= -2) : null;
     // Income: breakeven must clear the 200 SMA (Laura's buffer-to-support). Accumulation: basic uptrend.
@@ -3990,6 +4075,21 @@ async function runPut(forceTicker) {
       tsItem('Annualized Return', annReturn ? fmt(annReturn,1) + '%' : '—', 'ts-neutral', 'Projected annual') +
       (acq ? '' : tsItem('Buy-Back Target', (buybackLo != null ? '$' + fmt(buybackLo,2) + '–$' + fmt(buybackHi,2) : '—'), 'ts-gain', 'Close at 80–90% profit')) +
     '</div></div>';
+
+    // ── Compare Your Own Strike — price any strike side-by-side with the app's pick ──
+    if (chain && chain.strike && chain.strike.length) {
+      html += '<div class="chain-section"><h3>Compare Your Own Strike</h3>' +
+        '<div style="font-size:11px;color:var(--text-muted);margin:-4px 0 10px">Enter a strike to see it side-by-side with the app\'s recommended ' + (bestStrike ? fmtDollar(bestStrike) : '') + ' strike (same ' + dte + '-DTE expiry). Snaps to the nearest listed strike.</div>' +
+        '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px">' +
+          '<span style="font-size:13px;font-weight:700;color:var(--text-muted)">Strike $</span>' +
+          '<input id="csp-compare-input" type="number" step="0.5" placeholder="' + (bestStrike || '') + '" ' +
+            'onkeydown="if(event.key===\'Enter\'){event.preventDefault();compareCspStrike();}" ' +
+            'style="padding:8px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);width:120px;font-size:14px;font-weight:700">' +
+          '<button onclick="compareCspStrike()" style="padding:9px 18px;background:var(--accent);border:none;border-radius:6px;color:#03121f;font-size:13px;font-weight:800;cursor:pointer">Compare</button>' +
+        '</div>' +
+        '<div id="csp-compare-out"></div>' +
+      '</div>';
+    }
 
     html += '<div class="scorecard"><h3>Cash-Secured Put — Score</h3><div class="criteria-list">';
     html += critRow(1, acq ? 'MR · 4H ≤ −1 (looser entry OK for accumulation)' : 'MR · 4H ≤ −2 (Deeply Oversold)', c2, mrZone(pd.meanRev).label);
