@@ -1754,8 +1754,9 @@ input, textarea, select { -webkit-user-select: text; user-select: text; }
       <div class="ticker-tags" id="ticker-tags-custom"></div>
       <div class="modal-add-row">
         <input type="text" class="modal-input" id="modal-input" placeholder="ADD TICKER" maxlength="10" />
-        <button class="btn-primary" onclick="addTicker()">Add</button>
+        <button class="btn-primary" id="modal-add-btn" onclick="addTicker()">Add</button>
       </div>
+      <div class="ticker-limit-info" id="ticker-add-msg" style="display:none"></div>
       <div class="ticker-limit-info" id="ticker-limit-info"></div>
     </div>
     <div id="ticker-upgrade-msg" class="ticker-upgrade-msg" style="display:none">
@@ -2246,6 +2247,7 @@ function openTickerModal() {
   document.getElementById('ticker-modal').classList.add('open');
   var inputEl = document.getElementById('modal-input');
   if (inputEl) inputEl.value = '';
+  if (typeof _tickerAddMsg === 'function') _tickerAddMsg('');
 }
 function closeTickerModal() {
   document.getElementById('ticker-modal').classList.remove('open');
@@ -2286,16 +2288,42 @@ function removeTicker(t) {
   tickers = tickers.filter(function(x) { return x !== t; });
   renderTickerTags();
 }
-function addTicker() {
+var _addingTicker = false;
+function _tickerAddMsg(text, kind) {
+  var m = document.getElementById('ticker-add-msg');
+  if (!m) return;
+  if (!text) { m.style.display = 'none'; m.textContent = ''; return; }
+  m.style.display = '';
+  m.style.color = kind === 'ok' ? 'var(--green)' : (kind === 'busy' ? 'var(--text-muted)' : 'var(--red)');
+  m.textContent = text;
+}
+async function addTicker() {
   if (_userTier !== 'trader') return; // only trader can add
-  var val = document.getElementById('modal-input').value.trim().toUpperCase();
+  if (_addingTicker) return;          // guard against double-submit while validating
+  var inputEl = document.getElementById('modal-input');
+  var val = inputEl.value.trim().toUpperCase();
   if (!val) return;
-  if (tickers.includes(val)) { document.getElementById('modal-input').value = ''; return; }
+  if (tickers.includes(val)) { _tickerAddMsg(val + ' is already in your watchlist.', 'err'); inputEl.value = ''; return; }
   var customCount = tickers.filter(function(t) { return !IA11.includes(t); }).length;
-  if (customCount >= 14) { return; } // at limit
+  if (customCount >= 14) { _tickerAddMsg('Custom slot limit reached (14). Remove one first.', 'err'); return; }
+  // Validate against the data feed BEFORE adding — a symbol the feed doesn't recognize
+  // (delisted / unsupported, e.g. SPCX) would otherwise 400 and break the dashboard.
+  _addingTicker = true;
+  var addBtn = document.getElementById('modal-add-btn');
+  if (addBtn) addBtn.disabled = true;
+  _tickerAddMsg('Checking ' + val + '…', 'busy');
+  var ok = false;
+  try {
+    var q = await fetchTD('quote', { symbol: val });
+    ok = !!(q && (q.close != null || q.symbol));
+  } catch (e) { ok = false; }
+  _addingTicker = false;
+  if (addBtn) addBtn.disabled = false;
+  if (!ok) { _tickerAddMsg('“' + val + '” isn’t a supported symbol (no market data). Not added.', 'err'); return; }
   tickers.push(val);
   renderTickerTags();
-  document.getElementById('modal-input').value = '';
+  inputEl.value = '';
+  _tickerAddMsg(val + ' added.', 'ok');
 }
 document.getElementById('modal-input').addEventListener('keydown', function(e) {
   if (e.key === 'Enter') addTicker();
