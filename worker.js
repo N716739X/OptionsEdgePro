@@ -743,11 +743,14 @@ async function scoreTicker(ticker, env) {
     return data;
   }
 
-  // Phase 1: price + Mean Reversion + SMA (parallel)
+  // Phase 1: price + Mean Reversion + SMA (parallel).
+  // &country=United States pins the US listing — some symbols are multi-exchange (e.g. SPCX
+  // lists on NASDAQ + Swiss SIX + Canadian CDRs), and TwelveData 400s on an ambiguous symbol.
+  const TD_COUNTRY = '&country=United%20States';
   const [quoteData, tsData, smaData] = await Promise.all([
-    cachedFetch('https://api.twelvedata.com/quote?symbol=' + ticker + '&apikey=' + env.TD_KEY),
-    cachedFetch('https://api.twelvedata.com/time_series?symbol=' + ticker + '&interval=4h&outputsize=60&apikey=' + env.TD_KEY),
-    cachedFetch('https://api.twelvedata.com/sma?symbol=' + ticker + '&interval=1day&time_period=200&outputsize=1&apikey=' + env.TD_KEY), // SMA stays daily (trend filter)
+    cachedFetch('https://api.twelvedata.com/quote?symbol=' + ticker + TD_COUNTRY + '&apikey=' + env.TD_KEY),
+    cachedFetch('https://api.twelvedata.com/time_series?symbol=' + ticker + '&interval=4h&outputsize=60' + TD_COUNTRY + '&apikey=' + env.TD_KEY),
+    cachedFetch('https://api.twelvedata.com/sma?symbol=' + ticker + '&interval=1day&time_period=200&outputsize=1' + TD_COUNTRY + '&apikey=' + env.TD_KEY), // SMA stays daily (trend filter)
   ]);
 
   const price = parseFloat(quoteData.close || quoteData.price);
@@ -787,7 +790,7 @@ async function scoreTicker(ticker, env) {
   // Phase 2: expirations + ATR (parallel)
   const [expData, atrData] = await Promise.all([
     cachedFetch('https://api.marketdata.app/v1/options/expirations/' + ticker + '/?token=' + env.MD_TOKEN).catch(() => ({ expirations: [] })),
-    cachedFetch('https://api.twelvedata.com/atr?symbol=' + ticker + '&interval=1day&time_period=14&outputsize=30&apikey=' + env.TD_KEY).catch(() => ({ values: [] })),
+    cachedFetch('https://api.twelvedata.com/atr?symbol=' + ticker + '&interval=1day&time_period=14&outputsize=30' + TD_COUNTRY + '&apikey=' + env.TD_KEY).catch(() => ({ values: [] })),
   ]);
 
   const expirations = normalizeExpirations(expData.expirations || []);
