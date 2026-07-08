@@ -3973,14 +3973,26 @@ async function runPut(forceTicker) {
     setStatus('put-status', spinner() + 'Put chain…', 'loading');
     var chain = await fetchChain(ticker, bestExpiry, 'put');
 
+    // Strike anchor differs by intent:
+    //  Income       — anchor to a DELTA (~0.20) for a consistent OTM buffer.
+    //  Accumulation — anchor to the strike NEAREST the current price (Laura's "ATM, buy near
+    //                 current price"). Delta-0.50 drifts deep ITM on high-IV names (e.g. MU 95% IV
+    //                 → 1030 vs a $943 price), which isn't "near price" and kills the wheel, so
+    //                 price is the faithful anchor. Delta is kept only as a readout / sanity gate.
     var bestStrike = null, bestDelta = null, bestPremium = null, bestIdx = -1;
     if (chain && chain.strike) {
       var bd = Infinity;
       for (var i = 0; i < chain.strike.length; i++) {
-        var d   = chain.delta ? chain.delta[i] : null;
-        if (d === null) continue;
-        var dif = Math.abs(d - targetDelta);
-        if (dif < bd) { bd = dif; bestStrike = chain.strike[i]; bestDelta = d; bestPremium = chain.mid ? chain.mid[i] : null; bestIdx = i; }
+        var d = chain.delta ? chain.delta[i] : null;
+        var metric;
+        if (acq) {
+          if (chain.strike[i] == null) continue;
+          metric = Math.abs(chain.strike[i] - pd.price); // nearest the current price (true ATM)
+        } else {
+          if (d === null) continue;
+          metric = Math.abs(d - targetDelta);            // nearest the ~0.20Δ OTM income buffer
+        }
+        if (metric < bd) { bd = metric; bestStrike = chain.strike[i]; bestDelta = d; bestPremium = chain.mid ? chain.mid[i] : null; bestIdx = i; }
       }
     }
     // Liquidity/spread guard — the mid is only trustworthy if the bid-ask is tight and OI is real
@@ -4029,7 +4041,7 @@ async function runPut(forceTicker) {
     var html = priceBarHtml(ticker, pd, '4H');
     html += '<div class="btc-note" style="border-color:var(--accent);color:var(--text);margin-bottom:12px">' +
       '<strong>Mode: ' + (acq ? 'Accumulation' : 'Income') + '</strong> — ' +
-      (acq ? '<strong>want the shares.</strong> ATM/closer strike (~0.50Δ), 60–90+ DTE for a bigger credit and a lower effective buy price. Looser entry OK. Effective cost = strike − credit; if assigned you own at a discount, if not you keep the credit — then sell covered calls (the wheel).'
+      (acq ? '<strong>want the shares.</strong> Sell the at-the-money strike <strong>nearest the current price</strong> (~0.50Δ in normal conditions), 60–90+ DTE for a bigger credit and a lower effective buy price. Looser entry OK. Effective cost = strike − credit; if assigned you own at a discount, if not you keep the credit — then sell covered calls (the wheel).'
            : '<strong>want the premium.</strong> OTM strike with a buffer (~0.20Δ), 30–45 DTE, precision entry at −2 MR near the 200 SMA. Goal: expire worthless or buy back at 80–90% profit.') +
     '</div>';
     html += '<div class="info-box">' +

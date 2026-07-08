@@ -70,7 +70,7 @@ Then open a PR and squash-merge.
 | Strategy | Trigger | Notes |
 |---|---|---|
 | Cash-Secured Put (Income) | MR ≤ −2 | OTM ~0.20Δ, 30–45 DTE, breakeven above 200 SMA (buffer), buy back at 80–90% |
-| Cash-Secured Put (Accumulation) | looser (MR ≤ −1) | ATM ~0.50Δ, **60–90+ DTE**, bigger credit, want assignment; effective buy = strike − credit |
+| Cash-Secured Put (Accumulation) | looser (MR ≤ −1) | ATM = **strike nearest the current price** (~0.50Δ in normal IV; anchored to price, not delta, so high-IV names don't drift ITM), **60–90+ DTE**, bigger credit, want assignment; effective buy = strike − credit |
 | Covered Call | MR ≥ +2 | sell 1 call/100 shares near resistance (~9% OTM), 30–45 DTE, buy back 80–90%, never naked |
 | Synthetic Long | MR ≤ −2 | same-strike ATM call+put, LEAPS ≥540 DTE |
 | MSL | MR ≤ −2 (+ 200 SMA / buy divergence) | 3-leg, LEAPS |
