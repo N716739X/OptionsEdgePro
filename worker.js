@@ -624,23 +624,29 @@ function scoreMslChains(price, mr, expiry, dte, callChain, putChain) {
   const spreadWidth = soldPutStrike - boughtPutStrike;
   const putSpreadCredit = (soldPutMid !== null && boughtPutMid !== null) ? soldPutMid - boughtPutMid : null;
   const putCreditPct = (putSpreadCredit !== null && spreadWidth > 0) ? (putSpreadCredit / spreadWidth * 100) : null;
-  // Leg 3: deep ITM call \u2014 among calls in the 40\u201360% I/E band, prefer higher OI; closeness to
-  // 50/50 is the tiebreak. Fallback: pure best-ratio (closest to 50/50).
-  let bestCallIdx = -1, bestCallOI = -1, bestCallDiff = Infinity;
-  for (let ci = 0; ci < callChain.strike.length; ci++) {
-    if (callChain.strike[ci] >= price) continue;
-    const cMid = callChain.mid ? callChain.mid[ci] : null;
-    if (cMid === null || cMid <= 0) continue;
-    const intrinsic = price - callChain.strike[ci];
-    const extrinsic = cMid - intrinsic; if (extrinsic <= 0) continue;
-    const ratioCi = intrinsic / cMid;
-    if (ratioCi < 0.40 || ratioCi > 0.60) continue;
-    const rd = Math.abs(ratioCi - 0.50);
-    const oiCi = (callChain.openInterest && callChain.openInterest[ci] != null) ? callChain.openInterest[ci] : 0;
-    if (oiCi > bestCallOI || (oiCi === bestCallOI && rd < bestCallDiff)) { bestCallOI = oiCi; bestCallDiff = rd; bestCallIdx = ci; }
-  }
-  if (bestCallIdx < 0) {
-    bestCallDiff = Infinity;
+  // Leg 3: deep ITM call \u2014 prefer higher OI, but only WITHIN the ideal 45\u201355% I/E band first, so
+  // a marginally-more-liquid strike can't drag the pick off 50/50. Widen to the 40\u201360% pass band
+  // only if the ideal band is empty; final fallback = pure closest-to-50/50.
+  const pickCall = (lo, hi) => {
+    let idx = -1, oiBest = -1, dBest = Infinity;
+    for (let ci = 0; ci < callChain.strike.length; ci++) {
+      if (callChain.strike[ci] >= price) continue;
+      const cMid = callChain.mid ? callChain.mid[ci] : null;
+      if (cMid === null || cMid <= 0) continue;
+      const intr = price - callChain.strike[ci];
+      const extr = cMid - intr; if (extr <= 0) continue;
+      const r = intr / cMid;
+      if (r < lo || r > hi) continue;
+      const d = Math.abs(r - 0.50);
+      const oi = (callChain.openInterest && callChain.openInterest[ci] != null) ? callChain.openInterest[ci] : 0;
+      if (oi > oiBest || (oi === oiBest && d < dBest)) { oiBest = oi; dBest = d; idx = ci; }
+    }
+    return idx;
+  };
+  let bestCallIdx = pickCall(0.45, 0.55);                    // ideal band, OI-weighted
+  if (bestCallIdx < 0) bestCallIdx = pickCall(0.40, 0.60);   // widen to pass band, OI-weighted
+  if (bestCallIdx < 0) {                                     // final fallback: pure closest-to-50/50
+    let dBest2 = Infinity;
     for (let cif = 0; cif < callChain.strike.length; cif++) {
       if (callChain.strike[cif] >= price) continue;
       const cMidF = callChain.mid ? callChain.mid[cif] : null;
@@ -648,7 +654,7 @@ function scoreMslChains(price, mr, expiry, dte, callChain, putChain) {
       const intrF = price - callChain.strike[cif];
       const extrF = cMidF - intrF; if (extrF <= 0) continue;
       const diffF = Math.abs((intrF / cMidF) - 0.50);
-      if (diffF < bestCallDiff) { bestCallDiff = diffF; bestCallIdx = cif; }
+      if (diffF < dBest2) { dBest2 = diffF; bestCallIdx = cif; }
     }
   }
   if (bestCallIdx < 0) return out;
