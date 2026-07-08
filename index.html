@@ -3493,24 +3493,30 @@ async function runMslPhase3(ticker) {
     var putSpreadCredit = (soldPutMid !== null && boughtPutMid !== null) ? soldPutMid - boughtPutMid : null;
     var putCreditPct = (putSpreadCredit !== null && spreadWidth > 0) ? (putSpreadCredit / spreadWidth * 100) : null;
 
-    // Leg 3: Buy deep ITM call — among calls in the 40–60% I/E band, prefer higher OI; closeness
-    // to 50/50 is the tiebreak. Fallback: pure best-ratio (closest to 50/50).
-    var bestCallIdx = -1, bestCallOI = -1, bestCallDiff = Infinity;
-    for (var ci = 0; ci < callChain.strike.length; ci++) {
-      if (callChain.strike[ci] >= pd.price) continue;
-      var cMid = callChain.mid ? callChain.mid[ci] : null;
-      if (cMid === null || cMid <= 0) continue;
-      var intrinsic = pd.price - callChain.strike[ci];
-      var extrinsic = cMid - intrinsic;
-      if (extrinsic <= 0) continue;
-      var ratio = intrinsic / cMid;
-      if (ratio < 0.40 || ratio > 0.60) continue;
-      var rDiff = Math.abs(ratio - 0.50);
-      var oiCi = (callChain.openInterest && callChain.openInterest[ci] != null) ? callChain.openInterest[ci] : 0;
-      if (oiCi > bestCallOI || (oiCi === bestCallOI && rDiff < bestCallDiff)) { bestCallOI = oiCi; bestCallDiff = rDiff; bestCallIdx = ci; }
-    }
-    if (bestCallIdx < 0) {
-      bestCallDiff = Infinity;
+    // Leg 3: Buy deep ITM call — prefer higher OI, but only WITHIN the ideal 45–55% I/E band
+    // first, so a marginally-more-liquid strike can't drag the pick off 50/50. Widen to the
+    // 40–60% pass band only if the ideal band is empty; final fallback = pure closest-to-50/50.
+    var pickCall = function(lo, hi) {
+      var idx = -1, oiBest = -1, dBest = Infinity;
+      for (var ci = 0; ci < callChain.strike.length; ci++) {
+        if (callChain.strike[ci] >= pd.price) continue;
+        var cMid = callChain.mid ? callChain.mid[ci] : null;
+        if (cMid === null || cMid <= 0) continue;
+        var intr = pd.price - callChain.strike[ci];
+        var extr = cMid - intr;
+        if (extr <= 0) continue;
+        var r = intr / cMid;
+        if (r < lo || r > hi) continue;
+        var d = Math.abs(r - 0.50);
+        var oi = (callChain.openInterest && callChain.openInterest[ci] != null) ? callChain.openInterest[ci] : 0;
+        if (oi > oiBest || (oi === oiBest && d < dBest)) { oiBest = oi; dBest = d; idx = ci; }
+      }
+      return idx;
+    };
+    var bestCallIdx = pickCall(0.45, 0.55);                     // ideal band, OI-weighted
+    if (bestCallIdx < 0) bestCallIdx = pickCall(0.40, 0.60);    // widen to pass band, OI-weighted
+    if (bestCallIdx < 0) {                                      // final fallback: pure closest-to-50/50
+      var dBest2 = Infinity;
       for (var cif = 0; cif < callChain.strike.length; cif++) {
         if (callChain.strike[cif] >= pd.price) continue;
         var cMidF = callChain.mid ? callChain.mid[cif] : null;
@@ -3518,8 +3524,8 @@ async function runMslPhase3(ticker) {
         var intrF = pd.price - callChain.strike[cif];
         var extrF = cMidF - intrF;
         if (extrF <= 0) continue;
-        var diffF = Math.abs((intrF / cMidF) - 0.50);
-        if (diffF < bestCallDiff) { bestCallDiff = diffF; bestCallIdx = cif; }
+        var d2 = Math.abs((intrF / cMidF) - 0.50);
+        if (d2 < dBest2) { dBest2 = d2; bestCallIdx = cif; }
       }
     }
     if (bestCallIdx < 0) { console.warn('[MSLp3]', ticker, 'no deep-ITM call with +extrinsic; price=', pd.price); return; }
@@ -4651,25 +4657,31 @@ async function runMsl(forceTicker) {
     var putCreditPct = (putSpreadCredit !== null && spreadWidth > 0) ? (putSpreadCredit / spreadWidth * 100) : null;
 
     // === Leg 3: Buy Deep ITM Call (~50/50 intrinsic/extrinsic) ===
-    // Among calls inside the 40–60% I/E pass band, prefer the HIGHER-OI (round/even) strike —
-    // Laura's roll-ability rule; closeness to 50/50 is the tiebreak. Fallback: pure best-ratio.
-    var bestCallIdx = -1, bestCallOI = -1, bestCallDiff = Infinity;
-    for (var ci = 0; ci < callChain.strike.length; ci++) {
-      if (callChain.strike[ci] >= pd.price) continue;
-      var cMid = callChain.mid ? callChain.mid[ci] : null;
-      if (cMid === null || cMid <= 0) continue;
-      var intrinsic = pd.price - callChain.strike[ci];
-      var extrinsic = cMid - intrinsic;
-      if (extrinsic <= 0) continue;
-      var ratio = intrinsic / cMid;
-      if (ratio < 0.40 || ratio > 0.60) continue;
-      var rDiff = Math.abs(ratio - 0.50);
-      var oiCi = (callChain.openInterest && callChain.openInterest[ci] != null) ? callChain.openInterest[ci] : 0;
-      if (oiCi > bestCallOI || (oiCi === bestCallOI && rDiff < bestCallDiff)) { bestCallOI = oiCi; bestCallDiff = rDiff; bestCallIdx = ci; }
-    }
-    // Fallback: no call inside the 40–60% band → pure best-ratio (closest to 50/50)
-    if (bestCallIdx < 0) {
-      bestCallDiff = Infinity;
+    // Prefer the higher-OI (round/even) strike — Laura's roll-ability rule — but only WITHIN the
+    // ideal 45–55% I/E band first, so a marginally-more-liquid strike can't drag the pick off
+    // 50/50. Widen to the 40–60% pass band only if the ideal band is empty; final fallback =
+    // pure closest-to-50/50.
+    var pickCall = function(lo, hi) {
+      var idx = -1, oiBest = -1, dBest = Infinity;
+      for (var ci = 0; ci < callChain.strike.length; ci++) {
+        if (callChain.strike[ci] >= pd.price) continue;
+        var cMid = callChain.mid ? callChain.mid[ci] : null;
+        if (cMid === null || cMid <= 0) continue;
+        var intr = pd.price - callChain.strike[ci];
+        var extr = cMid - intr;
+        if (extr <= 0) continue;
+        var r = intr / cMid;
+        if (r < lo || r > hi) continue;
+        var d = Math.abs(r - 0.50);
+        var oi = (callChain.openInterest && callChain.openInterest[ci] != null) ? callChain.openInterest[ci] : 0;
+        if (oi > oiBest || (oi === oiBest && d < dBest)) { oiBest = oi; dBest = d; idx = ci; }
+      }
+      return idx;
+    };
+    var bestCallIdx = pickCall(0.45, 0.55);                     // ideal band, OI-weighted
+    if (bestCallIdx < 0) bestCallIdx = pickCall(0.40, 0.60);    // widen to pass band, OI-weighted
+    if (bestCallIdx < 0) {                                      // final fallback: pure closest-to-50/50
+      var dBest2 = Infinity;
       for (var cif = 0; cif < callChain.strike.length; cif++) {
         if (callChain.strike[cif] >= pd.price) continue;
         var cMidF = callChain.mid ? callChain.mid[cif] : null;
@@ -4677,8 +4689,8 @@ async function runMsl(forceTicker) {
         var intrF = pd.price - callChain.strike[cif];
         var extrF = cMidF - intrF;
         if (extrF <= 0) continue;
-        var diffF = Math.abs((intrF / cMidF) - 0.50);
-        if (diffF < bestCallDiff) { bestCallDiff = diffF; bestCallIdx = cif; }
+        var d2 = Math.abs((intrF / cMidF) - 0.50);
+        if (d2 < dBest2) { dBest2 = d2; bestCallIdx = cif; }
       }
     }
     if (bestCallIdx < 0) throw new Error('No suitable deep ITM call found with ~50/50 intrinsic/extrinsic.');
