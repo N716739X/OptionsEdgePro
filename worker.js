@@ -544,16 +544,24 @@ function scoreMslChains(price, mr, expiry, dte, callChain, putChain) {
     c1: !isNaN(mr) ? mr <= -2 : null, c2: null, c3: null, c4: dte >= 365, c5: null, c6: null, c7: null, c8: null,
     weighted: null, t1Pass: null, score: null, callRatio: null, netDebitPct: null, putCreditPct: null, riskRatio: null };
   if (!callChain || !callChain.strike || !putChain || !putChain.strike || !callChain.strike.length || !putChain.strike.length) return out;
-  // Leg 1: sold ATM put \u2014 among strikes near ATM, prefer higher OI (round/even strike) for
-  // roll-ability; closest-to-price is the tiebreak. Fallback: strict closest-to-price.
-  const atmBand = price * 0.04;
+  // Leg 1: sold ATM put (anchor) \u2014 pick the strike NEAREST the current price (above OR below).
+  // OI only breaks ties between near-equidistant strikes (within ~1.2% of price), so a thin
+  // strike a hair closer can't beat a far more liquid neighbor and it never drifts off ATM.
+  const atmBand = price * 0.05;
+  let minDist = Infinity;
+  for (let spa = 0; spa < putChain.strike.length; spa++) {
+    const da = Math.abs(putChain.strike[spa] - price);
+    if (da <= atmBand && da < minDist) minDist = da;
+  }
+  const atmTol = price * 0.012;
   let soldPutIdx = -1, bestPutOI = -1, bestPutDist = Infinity;
-  for (let sp = 0; sp < putChain.strike.length; sp++) {
-    if (putChain.strike[sp] > price + 0.001) continue;
-    const d1 = Math.abs(putChain.strike[sp] - price);
-    if (d1 > atmBand) continue;
-    const oi1 = (putChain.openInterest && putChain.openInterest[sp] != null) ? putChain.openInterest[sp] : 0;
-    if (oi1 > bestPutOI || (oi1 === bestPutOI && d1 < bestPutDist)) { bestPutOI = oi1; bestPutDist = d1; soldPutIdx = sp; }
+  if (minDist !== Infinity) {
+    for (let sp = 0; sp < putChain.strike.length; sp++) {
+      const d1 = Math.abs(putChain.strike[sp] - price);
+      if (d1 > minDist + atmTol) continue;
+      const oi1 = (putChain.openInterest && putChain.openInterest[sp] != null) ? putChain.openInterest[sp] : 0;
+      if (oi1 > bestPutOI || (oi1 === bestPutOI && d1 < bestPutDist)) { bestPutOI = oi1; bestPutDist = d1; soldPutIdx = sp; }
+    }
   }
   if (soldPutIdx < 0) {
     bestPutDist = Infinity;

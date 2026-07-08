@@ -3440,16 +3440,24 @@ async function runMslPhase3(ticker) {
     console.log('[MSLp3]', ticker, 'chains OK @', bestExpiry, 'calls=', callChain.strike.length, 'puts=', putChain.strike.length);
 
     // Laura’s MSL: 3-leg structure
-    // Leg 1: Sell ATM put — among strikes near ATM, prefer higher OI (round/even strike) for
-    // roll-ability; closest-to-price is the tiebreak. Fallback: strict closest-to-price.
-    var atmBand = pd.price * 0.04;
+    // Leg 1: Sell ATM put (anchor) — pick the strike NEAREST the current price (above OR below).
+    // OI only breaks ties between near-equidistant strikes (within ~1.2% of price), so a thin
+    // strike a hair closer can't beat a far more liquid neighbor, and it never drifts off ATM.
+    var atmBand = pd.price * 0.05;
+    var minDist = Infinity;
+    for (var spa = 0; spa < putChain.strike.length; spa++) {
+      var da = Math.abs(putChain.strike[spa] - pd.price);
+      if (da <= atmBand && da < minDist) minDist = da;
+    }
+    var atmTol = pd.price * 0.012;
     var soldPutIdx = -1, bestPutOI = -1, bestPutDist = Infinity;
-    for (var sp = 0; sp < putChain.strike.length; sp++) {
-      if (putChain.strike[sp] > pd.price + 0.001) continue;
-      var d1 = Math.abs(putChain.strike[sp] - pd.price);
-      if (d1 > atmBand) continue;
-      var oi1 = (putChain.openInterest && putChain.openInterest[sp] != null) ? putChain.openInterest[sp] : 0;
-      if (oi1 > bestPutOI || (oi1 === bestPutOI && d1 < bestPutDist)) { bestPutOI = oi1; bestPutDist = d1; soldPutIdx = sp; }
+    if (minDist !== Infinity) {
+      for (var sp = 0; sp < putChain.strike.length; sp++) {
+        var d1 = Math.abs(putChain.strike[sp] - pd.price);
+        if (d1 > minDist + atmTol) continue;
+        var oi1 = (putChain.openInterest && putChain.openInterest[sp] != null) ? putChain.openInterest[sp] : 0;
+        if (oi1 > bestPutOI || (oi1 === bestPutOI && d1 < bestPutDist)) { bestPutOI = oi1; bestPutDist = d1; soldPutIdx = sp; }
+      }
     }
     if (soldPutIdx < 0) {
       bestPutDist = Infinity;
@@ -4702,19 +4710,25 @@ async function runMsl(forceTicker) {
     if (!callChain || !callChain.strike || !putChain || !putChain.strike)
       throw new Error('Could not load option chains.');
 
-    // === Leg 1: Sell ATM Put ===
-    // Laura's rule: among strikes near ATM, prefer the one with the HIGHER open interest
-    // (usually the round/even strike) so future rolls & adjustments fill cleanly.
-    // Candidate band = strikes at or just below price (within ~4%) — the standard short-put
-    // anchor; never drift to an ITM put above spot. OI is the selector, closest-to-price the tiebreak.
-    var atmBand = pd.price * 0.04;
+    // === Leg 1: Sell ATM Put (anchor) ===
+    // Sell the strike NEAREST the current price (above OR below). Open interest only breaks ties
+    // between near-equidistant strikes (within ~1.2% of price) so a thin strike a hair closer
+    // can't beat a far more liquid neighbor — and the anchor never drifts off at-the-money.
+    var atmBand = pd.price * 0.05;
+    var minDist = Infinity;
+    for (var spa = 0; spa < putChain.strike.length; spa++) {
+      var da = Math.abs(putChain.strike[spa] - pd.price);
+      if (da <= atmBand && da < minDist) minDist = da;
+    }
+    var atmTol = pd.price * 0.012;
     var soldPutIdx = -1, bestPutOI = -1, bestPutDist = Infinity;
-    for (var sp = 0; sp < putChain.strike.length; sp++) {
-      if (putChain.strike[sp] > pd.price + 0.001) continue;
-      var d1 = Math.abs(putChain.strike[sp] - pd.price);
-      if (d1 > atmBand) continue;
-      var oi1 = (putChain.openInterest && putChain.openInterest[sp] != null) ? putChain.openInterest[sp] : 0;
-      if (oi1 > bestPutOI || (oi1 === bestPutOI && d1 < bestPutDist)) { bestPutOI = oi1; bestPutDist = d1; soldPutIdx = sp; }
+    if (minDist !== Infinity) {
+      for (var sp = 0; sp < putChain.strike.length; sp++) {
+        var d1 = Math.abs(putChain.strike[sp] - pd.price);
+        if (d1 > minDist + atmTol) continue;
+        var oi1 = (putChain.openInterest && putChain.openInterest[sp] != null) ? putChain.openInterest[sp] : 0;
+        if (oi1 > bestPutOI || (oi1 === bestPutOI && d1 < bestPutDist)) { bestPutOI = oi1; bestPutDist = d1; soldPutIdx = sp; }
+      }
     }
     // Fallback: no strike within the ATM band → strict closest-to-price
     if (soldPutIdx < 0) {
