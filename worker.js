@@ -747,10 +747,13 @@ async function scoreTicker(ticker, env) {
   // &country=United States pins the US listing — some symbols are multi-exchange (e.g. SPCX
   // lists on NASDAQ + Swiss SIX + Canadian CDRs), and TwelveData 400s on an ambiguous symbol.
   const TD_COUNTRY = '&country=United%20States';
+  // Quote is essential; time_series (MR) and SMA-200 degrade gracefully. A just-IPO'd stock
+  // (e.g. SPCX) has no 200-day history, so TwelveData errors on the SMA — catch it → no value
+  // (criteria show neutral) instead of failing the whole card.
   const [quoteData, tsData, smaData] = await Promise.all([
     cachedFetch('https://api.twelvedata.com/quote?symbol=' + ticker + TD_COUNTRY + '&apikey=' + env.TD_KEY),
-    cachedFetch('https://api.twelvedata.com/time_series?symbol=' + ticker + '&interval=4h&outputsize=60' + TD_COUNTRY + '&apikey=' + env.TD_KEY),
-    cachedFetch('https://api.twelvedata.com/sma?symbol=' + ticker + '&interval=1day&time_period=200&outputsize=1' + TD_COUNTRY + '&apikey=' + env.TD_KEY), // SMA stays daily (trend filter)
+    cachedFetch('https://api.twelvedata.com/time_series?symbol=' + ticker + '&interval=4h&outputsize=60' + TD_COUNTRY + '&apikey=' + env.TD_KEY).catch(() => ({ values: [] })),
+    cachedFetch('https://api.twelvedata.com/sma?symbol=' + ticker + '&interval=1day&time_period=200&outputsize=1' + TD_COUNTRY + '&apikey=' + env.TD_KEY).catch(() => ({ values: [] })), // SMA stays daily (trend filter)
   ]);
 
   const price = parseFloat(quoteData.close || quoteData.price);

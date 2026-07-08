@@ -2645,10 +2645,13 @@ async function fetchMD(path, params) {
 
 async function fetchPriceData(ticker, tf) {
   var useTF = tf || currentTF; // callers can pin a timeframe; analyzer tabs use currentTF
+  // Quote is essential; SMA-200 and MR degrade gracefully. A just-IPO'd stock (e.g. SPCX) has
+  // no 200-day history, so TwelveData errors on the SMA — catch it → NaN (criteria show N/A)
+  // instead of failing the whole load. Likewise MR falls back to NaN → shows "—".
   var [quoteData, smaData, meanRev] = await Promise.all([
     fetchTD('quote',  { symbol: ticker }),
-    fetchTD('sma',    { symbol: ticker, interval: useTF, time_period: 200, outputsize: 1 }),
-    fetchMeanRev(ticker, useTF)
+    fetchTD('sma',    { symbol: ticker, interval: useTF, time_period: 200, outputsize: 1 }).catch(function(){ return { values: [] }; }),
+    fetchMeanRev(ticker, useTF).catch(function(){ return NaN; })
   ]);
   var price    = parseFloat(quoteData.close || quoteData.price);
   var change   = parseFloat(quoteData.change);
