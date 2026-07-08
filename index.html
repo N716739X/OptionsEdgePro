@@ -2499,6 +2499,12 @@ function setStatus(id, msg, type) {
 // ═══════════════════════════════════════════════════════
 async function fetchTD(endpoint, params) {
   var url = new URL('https://api.twelvedata.com/' + endpoint);
+  // Disambiguate multi-exchange symbols: some tickers list on several venues (e.g. SPCX on
+  // NASDAQ + Swiss SIX + Canadian CDRs), and TwelveData 400s on an ambiguous symbol unless a
+  // country/exchange is given. Default equity requests to the US listing.
+  if (params && params.symbol && !params.country && !params.exchange && !params.mic_code) {
+    params = Object.assign({}, params, { country: 'United States' });
+  }
   // API key injected server-side by Worker proxy
   Object.keys(params).forEach(function(k) { url.searchParams.set(k, params[k]); });
   // Route through proxy with auth token
