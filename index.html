@@ -1790,8 +1790,11 @@ input, textarea, select { -webkit-user-select: text; user-select: text; }
     // Ctrl+S (Save Page)
     if ((e.ctrlKey || e.metaKey) && e.key.toUpperCase() === 'S') { e.preventDefault(); return false; }
   });
-  // Disable drag (prevents drag-to-desktop save)
-  document.addEventListener('dragstart', function(e) { e.preventDefault(); });
+  // Disable drag (prevents drag-to-desktop save) — but allow the watchlist chips to be reordered.
+  document.addEventListener('dragstart', function(e) {
+    if (e.target && e.target.closest && e.target.closest('.ticker-chip')) return; // allow chip reorder
+    e.preventDefault();
+  });
 })();
 
 // ═══════════════════════════════════════════════════════
