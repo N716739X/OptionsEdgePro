@@ -3573,15 +3573,17 @@ async function runMslPhase3(ticker) {
     var netDebit = (callMid !== null && putSpreadCredit !== null) ? callMid - putSpreadCredit : null;
     var netDebitPct = (netDebit !== null && pd.price) ? (netDebit / pd.price * 100) : null;
 
-    // Equivalent SL risk for comparison: ATM call mid - ATM put mid, risk = strike + net debit
-    var slCallIdxPh3 = -1, slCallBestDistPh3 = Infinity;
-    for (var sciPh3 = 0; sciPh3 < callChain.strike.length; sciPh3++) {
-      var sdPh3 = Math.abs(callChain.strike[sciPh3] - soldPutStrike);
-      if (sdPh3 < slCallBestDistPh3) { slCallBestDistPh3 = sdPh3; slCallIdxPh3 = sciPh3; }
+    // Equivalent SL for risk comparison (MM56): the SAME deep-ITM call + a short ATM put (no
+    // protective lower put). Isolates the risk the MSL's protective put removes.
+    var atmPutIdxPh3 = -1, atmPutBestPh3 = Infinity;
+    for (var apiPh3 = 0; apiPh3 < putChain.strike.length; apiPh3++) {
+      var apdPh3 = Math.abs(putChain.strike[apiPh3] - pd.price);
+      if (apdPh3 < atmPutBestPh3) { atmPutBestPh3 = apdPh3; atmPutIdxPh3 = apiPh3; }
     }
-    var slCallMidPh3 = (slCallIdxPh3 >= 0 && callChain.mid) ? callChain.mid[slCallIdxPh3] : null;
-    var slNetDebitPh3 = (slCallMidPh3 !== null && soldPutMid !== null) ? slCallMidPh3 - soldPutMid : null;
-    var slRiskPh3 = (slNetDebitPh3 !== null && soldPutStrike) ? (soldPutStrike + slNetDebitPh3) : null;
+    var slPutStrikePh3 = atmPutIdxPh3 >= 0 ? putChain.strike[atmPutIdxPh3] : null;
+    var slPutMidPh3 = (atmPutIdxPh3 >= 0 && putChain.mid) ? putChain.mid[atmPutIdxPh3] : null;
+    var slNetDebitPh3 = (callMid !== null && slPutMidPh3 !== null) ? callMid - slPutMidPh3 : null;
+    var slRiskPh3 = (slNetDebitPh3 !== null && slPutStrikePh3) ? (slPutStrikePh3 + slNetDebitPh3) : null;
     var mslRiskPh3 = (netDebit !== null && spreadWidth > 0) ? (netDebit + spreadWidth) : null;
     var mslRiskRatioPh3 = (slRiskPh3 && slRiskPh3 > 0 && mslRiskPh3 !== null) ? (mslRiskPh3 / slRiskPh3 * 100) : null;
 
@@ -4900,40 +4902,42 @@ async function runMsl(forceTicker) {
     var mslMaxRisk      = maxRisk;
 
     // ====================================================================
-    // Equivalent SYNTHETIC LONG (apples-to-apples comparison)
-    // Laura's SL: BUY ATM call + SELL ATM put at the SAME strike, same expiry.
-    // To make the comparison fair, we use the ATM strike (same as the MSL sold put)
-    // for BOTH the SL call and SL put — not the MSL deep-ITM call.
+    // Equivalent SYNTHETIC LONG for the risk comparison (Laura MM56):
+    // the SAME deep-ITM call as the MSL + a short ATM put (no protective lower put).
+    // The MSL's only structural difference is the protective long put + OTM anchor, so this
+    // isolates how much risk that buffer removes. (Using the MSL's now-OTM short-put strike
+    // for the SL would understate the SL's risk and inflate the ratio.)
     // ====================================================================
-    // Find the ATM call (call strike closest to the sold ATM put strike)
-    var slCallIdx = -1, slCallBestDist = Infinity;
-    for (var sci = 0; sci < callChain.strike.length; sci++) {
-      var sd = Math.abs(callChain.strike[sci] - soldPutStrike);
-      if (sd < slCallBestDist) { slCallBestDist = sd; slCallIdx = sci; }
+    var atmPutIdx = -1, atmPutBestDist = Infinity;
+    for (var api = 0; api < putChain.strike.length; api++) {
+      var apd = Math.abs(putChain.strike[api] - pd.price);
+      if (apd < atmPutBestDist) { atmPutBestDist = apd; atmPutIdx = api; }
     }
-    var slCallStrike = slCallIdx >= 0 ? callChain.strike[slCallIdx] : null;
-    var slCallMid    = (slCallIdx >= 0 && callChain.mid) ? callChain.mid[slCallIdx] : null;
-    var slCallBid    = (slCallIdx >= 0 && callChain.bid) ? callChain.bid[slCallIdx] : null;
-    var slCallAsk    = (slCallIdx >= 0 && callChain.ask) ? callChain.ask[slCallIdx] : null;
-    // SL net debit = ATM call mid − ATM put mid (same strike, both at the money)
-    var slNetCost  = (slCallMid !== null && soldPutMid !== null) ? slCallMid - soldPutMid : null;
-    // SL margin (Reg T): 50% of short put strike + net debit (call premium)
-    var slCapital  = (soldPutStrike && slNetCost !== null) ? (soldPutStrike * 0.50 + slNetCost) * 100 : null;
+    var slPutStrike = atmPutIdx >= 0 ? putChain.strike[atmPutIdx] : null;
+    var slPutMid    = (atmPutIdx >= 0 && putChain.mid) ? putChain.mid[atmPutIdx] : null;
+    var slCallStrike = callStrike; // same deep-ITM call as the MSL
+    var slCallMid    = callMid;
+    var slCallBid    = callBid;
+    var slCallAsk    = callAsk;
+    // SL net debit = deep-ITM call mid − ATM put mid
+    var slNetCost  = (slCallMid !== null && slPutMid !== null) ? slCallMid - slPutMid : null;
+    // SL margin (Reg T): 50% of the ATM short-put strike + net debit
+    var slCapital  = (slPutStrike && slNetCost !== null) ? (slPutStrike * 0.50 + slNetCost) * 100 : null;
     var savingsPct = (slCapital && mslTotalOutlay) ? (1 - mslTotalOutlay / slCapital) * 100 : null;
     var savingsDollars = (slCapital && mslTotalOutlay) ? slCapital - mslTotalOutlay : null;
-    // SL Max Risk = short put strike + net debit (AMD: $200 + $28 = $228)
-    var slMaxRisk = (soldPutStrike && slNetCost !== null) ? (soldPutStrike + slNetCost) * 100 : null;
+    // SL Max Risk = ATM short-put strike + net debit (stock → 0)
+    var slMaxRisk = (slPutStrike && slNetCost !== null) ? (slPutStrike + slNetCost) * 100 : null;
     // Risk reduction: Laura's goal is for MSL risk to be ~half of SL risk
     var riskReductionPct = (slMaxRisk && mslMaxRisk) ? (1 - mslMaxRisk / slMaxRisk) * 100 : null;
     var riskReductionDollars = (slMaxRisk && mslMaxRisk) ? slMaxRisk - mslMaxRisk : null;
     var riskHalfGoal = riskReductionPct !== null && riskReductionPct >= 45;
-    // c8 — MSL Max Risk ≤ 60% of SL Max Risk (Laura's "goal is half"); ≤50% = ideal
+    // c8 — MSL Max Risk ≤ 60% of SL Max Risk (Laura's "risk less than half"); ≤50% = ideal
     var mslRiskRatio = (slMaxRisk && mslMaxRisk) ? (mslMaxRisk / slMaxRisk * 100) : null;
     c8 = mslRiskRatio !== null ? mslRiskRatio <= 60 : null;
     var c8Ideal = mslRiskRatio !== null && mslRiskRatio <= 50;
     // Final score (recompute now that c8 is known)
     score = [c1,c2,c3,c4,c5,c8].filter(function(x){return x===true;}).length;
-    // SL breakeven = ATM call strike + net debit (call strike == put strike for true SL)
+    // SL breakeven = deep-ITM call strike + SL net debit
     var beMSL  = breakeven; // call strike + net debit (MSL deep-ITM call)
     var beSL   = (slCallStrike !== null && slNetCost !== null) ? slCallStrike + slNetCost : null;
     var beDiffDollars = (beMSL !== null && beSL !== null) ? beMSL - beSL : null;
