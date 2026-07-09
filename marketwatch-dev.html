@@ -999,7 +999,7 @@ input[type=number] { -moz-appearance: textfield; appearance: textfield; }
   font-size: 11px;
   font-weight: 800;
   color: var(--accent);
-  cursor: pointer;
+  cursor: grab;
   transition: all 0.15s;
   letter-spacing: 0.5px;
   white-space: nowrap;
@@ -1007,6 +1007,9 @@ input[type=number] { -moz-appearance: textfield; appearance: textfield; }
   align-items: center;
   gap: 5px;
 }
+.ticker-chip:active { cursor: grabbing; }
+.ticker-chip.dragging { opacity: 0.4; }
+.ticker-chip.drop-target { border-color: var(--accent); box-shadow: -2px 0 0 0 var(--accent); }
 .chip-grade {
   font-size: 9px;
   font-weight: 900;
@@ -5339,11 +5342,53 @@ function renderTickerStrip() {
     }
     var gradeColor = grade ? 'color:var(--grade-' + grade.toLowerCase() + ')' : '';
     var isActive   = t === activeStripTicker;
-    html += '<div class="ticker-chip' + (isActive ? ' active' : '') + '" onclick="stripSelect(\'' + t + '\')">'
+    html += '<div class="ticker-chip' + (isActive ? ' active' : '') + '" draggable="true" data-tk="' + t + '"'
+      + ' onclick="stripSelect(\'' + t + '\')"'
+      + ' ondragstart="stripDragStart(event,\'' + t + '\')"'
+      + ' ondragover="stripDragOver(event,\'' + t + '\')"'
+      + ' ondragleave="stripDragLeave(event)"'
+      + ' ondrop="stripDrop(event,\'' + t + '\')"'
+      + ' ondragend="stripDragEnd()">'
       + t
       + '</div>';
   });
   strip.innerHTML = html;
+}
+
+// ── Watchlist chip reordering (drag-and-drop) — persists to localStorage ──
+var _dragTicker = null;
+function stripDragStart(ev, t) {
+  _dragTicker = t;
+  ev.dataTransfer.effectAllowed = 'move';
+  try { ev.dataTransfer.setData('text/plain', t); } catch (e) {}
+  if (ev.target && ev.target.classList) ev.target.classList.add('dragging');
+}
+function stripDragOver(ev, t) {
+  ev.preventDefault();
+  ev.dataTransfer.dropEffect = 'move';
+  if (_dragTicker && t !== _dragTicker && ev.currentTarget && ev.currentTarget.classList) ev.currentTarget.classList.add('drop-target');
+}
+function stripDragLeave(ev) {
+  if (ev.currentTarget && ev.currentTarget.classList) ev.currentTarget.classList.remove('drop-target');
+}
+function stripDrop(ev, target) {
+  ev.preventDefault();
+  if (ev.currentTarget && ev.currentTarget.classList) ev.currentTarget.classList.remove('drop-target');
+  if (!_dragTicker || _dragTicker === target) return;
+  var from = tickers.indexOf(_dragTicker);
+  if (from < 0) return;
+  tickers.splice(from, 1);                 // remove dragged
+  var to = tickers.indexOf(target);        // target index after removal
+  if (to < 0) { tickers.splice(from, 0, _dragTicker); return; } // safety: put back
+  tickers.splice(to, 0, _dragTicker);      // insert before the target chip
+  localStorage.setItem('owp-tickers', JSON.stringify(tickers));
+  _dragTicker = null;
+  renderTickerStrip();
+}
+function stripDragEnd() {
+  _dragTicker = null;
+  var strip = document.getElementById('ticker-strip');
+  if (strip) { var chips = strip.querySelectorAll('.ticker-chip'); for (var i = 0; i < chips.length; i++) { chips[i].classList.remove('dragging'); chips[i].classList.remove('drop-target'); } }
 }
 
 function stripSelect(ticker) {
