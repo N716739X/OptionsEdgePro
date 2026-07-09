@@ -544,89 +544,85 @@ function scoreMslChains(price, mr, expiry, dte, callChain, putChain) {
     c1: !isNaN(mr) ? mr <= -2 : null, c2: null, c3: null, c4: dte >= 365, c5: null, c6: null, c7: null, c8: null,
     weighted: null, t1Pass: null, score: null, callRatio: null, netDebitPct: null, putCreditPct: null, riskRatio: null };
   if (!callChain || !callChain.strike || !putChain || !putChain.strike || !callChain.strike.length || !putChain.strike.length) return out;
-  // Leg 1: sold ATM put (anchor) \u2014 pick the strike NEAREST the current price (above OR below).
-  // OI only breaks ties between near-equidistant strikes (within ~1.2% of price), so a thin
-  // strike a hair closer can't beat a far more liquid neighbor and it never drifts off ATM.
-  const atmBand = price * 0.05;
-  let minDist = Infinity;
-  for (let spa = 0; spa < putChain.strike.length; spa++) {
-    const da = Math.abs(putChain.strike[spa] - price);
-    if (da <= atmBand && da < minDist) minDist = da;
-  }
-  const atmTol = price * 0.012;
-  let soldPutIdx = -1, bestPutOI = -1, bestPutDist = Infinity;
-  if (minDist !== Infinity) {
-    for (let sp = 0; sp < putChain.strike.length; sp++) {
-      const d1 = Math.abs(putChain.strike[sp] - price);
-      if (d1 > minDist + atmTol) continue;
-      const oi1 = (putChain.openInterest && putChain.openInterest[sp] != null) ? putChain.openInterest[sp] : 0;
-      if (oi1 > bestPutOI || (oi1 === bestPutOI && d1 < bestPutDist)) { bestPutOI = oi1; bestPutDist = d1; soldPutIdx = sp; }
+  // Legs 1 & 2: the bull put spread \u2014 anchored OTM for BUFFER (Laura MM56). Push the SHORT put as
+  // far OTM as possible while the spread still pays ~50% credit. Width ~20% of price up to ~30%
+  // for credit. \u226550% reachable \u2192 furthest-OTM such spread; else highest credit \u226542%.
+  const PUT_TARGET_CR = 50, PUT_FLOOR_CR = 42;
+  const minW = price * 0.18, maxW = price * 0.30;
+  let soldPutIdx = -1, boughtPutIdx = -1;
+  let bpOtm = -Infinity, bpCr = -Infinity, bpOI = -1, bpCrDiff = Infinity;
+  for (let si = 0; si < putChain.strike.length; si++) {
+    const Sk = putChain.strike[si];
+    if (Sk == null || Sk >= price) continue;
+    const Sm = putChain.mid ? putChain.mid[si] : null;
+    if (Sm == null || Sm <= 0) continue;
+    const otm = (price - Sk) / price * 100;
+    const Soi = (putChain.openInterest && putChain.openInterest[si] != null) ? putChain.openInterest[si] : 0;
+    for (let li = 0; li < putChain.strike.length; li++) {
+      const Lk = putChain.strike[li];
+      if (Lk == null || Lk >= Sk) continue;
+      const Lm = putChain.mid ? putChain.mid[li] : null;
+      if (Lm == null || Lm <= 0) continue;
+      const w = Sk - Lk;
+      if (w < minW || w > maxW) continue;
+      const cr = (Sm - Lm) / w * 100;
+      if (cr < PUT_TARGET_CR) continue;
+      const crDiff = Math.abs(cr - PUT_TARGET_CR);
+      if (soldPutIdx < 0 || otm > bpOtm + 1e-9
+          || (Math.abs(otm - bpOtm) < 1e-9 && crDiff < bpCrDiff - 1e-9)
+          || (Math.abs(otm - bpOtm) < 1e-9 && Math.abs(crDiff - bpCrDiff) < 1e-9 && Soi > bpOI)) {
+        bpOtm = otm; bpCrDiff = crDiff; bpOI = Soi; soldPutIdx = si; boughtPutIdx = li;
+      }
     }
   }
   if (soldPutIdx < 0) {
-    bestPutDist = Infinity;
-    for (let sp0 = 0; sp0 < putChain.strike.length; sp0++) { const d0 = Math.abs(putChain.strike[sp0] - price); if (d0 < bestPutDist) { bestPutDist = d0; soldPutIdx = sp0; } }
+    for (let sb = 0; sb < putChain.strike.length; sb++) {
+      const Skb = putChain.strike[sb];
+      if (Skb == null || Skb >= price) continue;
+      const Smb = putChain.mid ? putChain.mid[sb] : null;
+      if (Smb == null || Smb <= 0) continue;
+      const otmb = (price - Skb) / price * 100;
+      const Soib = (putChain.openInterest && putChain.openInterest[sb] != null) ? putChain.openInterest[sb] : 0;
+      for (let lb = 0; lb < putChain.strike.length; lb++) {
+        const Lkb = putChain.strike[lb];
+        if (Lkb == null || Lkb >= Skb) continue;
+        const Lmb = putChain.mid ? putChain.mid[lb] : null;
+        if (Lmb == null || Lmb <= 0) continue;
+        const wb = Skb - Lkb;
+        if (wb < minW || wb > maxW) continue;
+        const crb = (Smb - Lmb) / wb * 100;
+        if (crb < PUT_FLOOR_CR) continue;
+        if (soldPutIdx < 0 || crb > bpCr + 1e-9
+            || (Math.abs(crb - bpCr) < 1e-9 && otmb > bpOtm + 1e-9)
+            || (Math.abs(crb - bpCr) < 1e-9 && Math.abs(otmb - bpOtm) < 1e-9 && Soib > bpOI)) {
+          bpCr = crb; bpOtm = otmb; bpOI = Soib; soldPutIdx = sb; boughtPutIdx = lb;
+        }
+      }
+    }
   }
-  if (soldPutIdx < 0) return out;
+  if (soldPutIdx < 0) {
+    let fbDiff = Infinity;
+    for (let sc = 0; sc < putChain.strike.length; sc++) {
+      const Skc = putChain.strike[sc];
+      if (Skc == null || Skc >= price) continue;
+      const Smc = putChain.mid ? putChain.mid[sc] : null;
+      if (Smc == null || Smc <= 0) continue;
+      for (let lc = 0; lc < putChain.strike.length; lc++) {
+        const Lkc = putChain.strike[lc];
+        if (Lkc == null || Lkc >= Skc) continue;
+        const Lmc = putChain.mid ? putChain.mid[lc] : null;
+        if (Lmc == null || Lmc <= 0) continue;
+        const wc = Skc - Lkc;
+        if (wc < minW || wc > maxW) continue;
+        const crc = (Smc - Lmc) / wc * 100;
+        const dcc = Math.abs(crc - PUT_TARGET_CR);
+        if (dcc < fbDiff) { fbDiff = dcc; soldPutIdx = sc; boughtPutIdx = lc; }
+      }
+    }
+  }
+  if (soldPutIdx < 0 || boughtPutIdx < 0) return out;
   const soldPutStrike = putChain.strike[soldPutIdx];
   const soldPutMid = putChain.mid ? putChain.mid[soldPutIdx] : null;
-  // Leg 2: bought lower put \u2014 among strikes \u226542% credit AND within a width tolerance of Laura's
-  // ~40-point (\u224820% of price) target, prefer higher OI; width-fit is the tiebreak.
-  const targetWidth = price * 0.20; // her "$40 wide on a ~$200 stock", generalized to price
-  const widthTol = price * 0.05;
-  let boughtPutIdx = -1, bestBpOI = -1, bestDiff = Infinity;
-  for (let bp = 0; bp < putChain.strike.length; bp++) {
-    if (putChain.strike[bp] >= soldPutStrike) continue;
-    const bpMid = putChain.mid ? putChain.mid[bp] : null;
-    if (soldPutMid === null || bpMid === null || bpMid <= 0) continue; // skip no-bid/phantom strikes
-    const sw = soldPutStrike - putChain.strike[bp]; if (sw <= 0) continue;
-    const cp = (soldPutMid - bpMid) / sw * 100;
-    if (cp < 42) continue;
-    const wd = Math.abs(sw - targetWidth); if (wd > widthTol) continue;
-    const oiBp = (putChain.openInterest && putChain.openInterest[bp] != null) ? putChain.openInterest[bp] : 0;
-    if (oiBp > bestBpOI || (oiBp === bestBpOI && wd < bestDiff)) { bestBpOI = oiBp; bestDiff = wd; boughtPutIdx = bp; }
-  }
-  // Fallback 1: no \u226542% strike near target width \u2192 prefer HIGHER OI among all \u226542% strikes.
-  if (boughtPutIdx < 0) {
-    bestBpOI = -1; bestDiff = Infinity;
-    for (let bpf = 0; bpf < putChain.strike.length; bpf++) {
-      if (putChain.strike[bpf] >= soldPutStrike) continue;
-      const bpMidF = putChain.mid ? putChain.mid[bpf] : null;
-      if (soldPutMid === null || bpMidF === null || bpMidF <= 0) continue;
-      const swF = soldPutStrike - putChain.strike[bpf]; if (swF <= 0) continue;
-      const cpF = (soldPutMid - bpMidF) / swF * 100;
-      if (cpF < 42) continue;
-      const wdF = Math.abs(swF - targetWidth);
-      const oiF = (putChain.openInterest && putChain.openInterest[bpf] != null) ? putChain.openInterest[bpf] : 0;
-      if (oiF > bestBpOI || (oiF === bestBpOI && wdF < bestDiff)) { bestBpOI = oiF; bestDiff = wdF; boughtPutIdx = bpf; }
-    }
-  }
-  // Fallback 2 (low-IV underlyings <42% credit): among strikes within ~4pts of the best
-  // achievable credit%, prefer HIGHER OI \u2014 never a thin odd-lot strike. Tiebreak: credit \u2192 50%.
-  if (boughtPutIdx < 0) {
-    let bestCredit = -Infinity;
-    for (let bpc = 0; bpc < putChain.strike.length; bpc++) {
-      if (putChain.strike[bpc] >= soldPutStrike) continue;
-      const bpMidC = putChain.mid ? putChain.mid[bpc] : null;
-      if (soldPutMid === null || bpMidC === null || bpMidC <= 0) continue;
-      const swC = soldPutStrike - putChain.strike[bpc]; if (swC <= 0) continue;
-      const cpC = (soldPutMid - bpMidC) / swC * 100;
-      if (cpC > bestCredit) bestCredit = cpC;
-    }
-    bestBpOI = -1; let bestCpDiff = Infinity;
-    for (let bp2 = 0; bp2 < putChain.strike.length; bp2++) {
-      if (putChain.strike[bp2] >= soldPutStrike) continue;
-      const bpMid2 = putChain.mid ? putChain.mid[bp2] : null;
-      if (soldPutMid === null || bpMid2 === null || bpMid2 <= 0) continue;
-      const sw2 = soldPutStrike - putChain.strike[bp2]; if (sw2 <= 0) continue;
-      const cp2 = (soldPutMid - bpMid2) / sw2 * 100;
-      if (cp2 < bestCredit - 4) continue;
-      const cpDiff2 = Math.abs(cp2 - 50);
-      const oi2 = (putChain.openInterest && putChain.openInterest[bp2] != null) ? putChain.openInterest[bp2] : 0;
-      if (oi2 > bestBpOI || (oi2 === bestBpOI && cpDiff2 < bestCpDiff)) { bestBpOI = oi2; bestCpDiff = cpDiff2; boughtPutIdx = bp2; }
-    }
-  }
-  if (boughtPutIdx < 0) return out;
   const boughtPutStrike = putChain.strike[boughtPutIdx];
   const boughtPutMid = putChain.mid ? putChain.mid[boughtPutIdx] : null;
   const spreadWidth = soldPutStrike - boughtPutStrike;
