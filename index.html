@@ -2407,6 +2407,42 @@ function mrZone(val) {
   if (val >= 0.5)   return { label: 'Overbought',        short: 'OB',   cls: 'up' };
   return { label: 'Neutral', short: 'Ntrl', cls: '' };
 }
+
+// Group the analyzer suggestion lines into scannable sections by their leading icon:
+//   ⏳ / ❌ → What's needed (blocking) · ⚠️ 💡 → Watch · ✅ → Strengths · ℹ️ → How it's built (muted)
+// Content is unchanged; this only orders + color-codes them so the panel reads at a glance.
+function renderGroupedSuggestions(suggWarn, suggGood) {
+  var all = (suggWarn || []).concat(suggGood || []);
+  if (!all.length) return '';
+  var groups = { need: [], watch: [], str: [], info: [] };
+  all.forEach(function(s) {
+    var b = 'watch';
+    if (s.indexOf('⏳') === 0 || s.indexOf('❌') === 0) b = 'need';
+    else if (s.indexOf('✅') === 0) b = 'str';
+    else if (s.indexOf('ℹ️') === 0) b = 'info';
+    groups[b].push(s);
+  });
+  var sections = [
+    { key: 'need',  title: "What's needed",  color: '#f5a623' },
+    { key: 'watch', title: 'Watch',          color: '#f5a623' },
+    { key: 'str',   title: 'Strengths',      color: 'var(--green)' },
+    { key: 'info',  title: "How it's built", color: '#8791a6' }
+  ];
+  var out = '<div class="suggestions-box" style="display:flex;flex-direction:column;gap:14px">';
+  sections.forEach(function(sec) {
+    var items = groups[sec.key];
+    if (!items.length) return;
+    out += '<div style="display:flex;flex-direction:column;gap:7px">' +
+      '<div style="font-size:10px;letter-spacing:.15em;text-transform:uppercase;font-weight:700;color:' + sec.color + ';display:flex;align-items:center;gap:7px">' +
+        '<span style="width:7px;height:7px;border-radius:50%;background:' + sec.color + ';display:inline-block"></span>' + sec.title + '</div>' +
+      items.map(function(s) {
+        return '<div class="suggestion-item" style="margin:0;border-left:3px solid ' + sec.color + (sec.key === 'info' ? ';opacity:.82' : '') + '">' + s + '</div>';
+      }).join('') +
+    '</div>';
+  });
+  out += '</div>';
+  return out;
+}
 // ── Mean Reversion: Wilder RSI(14) → EMA(9) smooth → (val-50)/12.5 ──
 // Calibrated to James's InvestAnswers IA-Mean-Reversion on 4H/RTH.
 // scale=12.5 maps RSI to ±4, with OB/OS ±2 bands at RSI 75/25.
@@ -4172,10 +4208,7 @@ async function runPut(forceTicker) {
     if (score === 6) {
       suggGoodP.push('✅ <strong>All criteria met</strong> — this is an ideal setup. Consider entering today with the recommended strike above.');
     }
-    var suggestionsP = suggWarnP.concat(suggGoodP);
-    if (suggestionsP.length > 0) {
-      html += '<div class="suggestions-box">' + suggestionsP.map(function(s){ return '<div class="suggestion-item">' + s + '</div>'; }).join('') + '</div>';
-    }
+    html += renderGroupedSuggestions(suggWarnP, suggGoodP);
 
     html += '<div class="chain-section"><h3>Put Chain — '+bestExpiry+' ('+dte+' DTE)</h3>';
     // Star the analyzer's ACTUAL recommended strike (bestStrike) via match-by-strike, so the
@@ -4357,10 +4390,7 @@ async function runCC(forceTicker) {
     if (score === 6) {
       suggGoodC.push('✅ <strong>All criteria met</strong> — this is an ideal setup. Consider entering today with the recommended strike above.');
     }
-    var suggestionsC = suggWarnC.concat(suggGoodC);
-    if (suggestionsC.length > 0) {
-      html += '<div class="suggestions-box">' + suggestionsC.map(function(s){ return '<div class="suggestion-item">' + s + '</div>'; }).join('') + '</div>';
-    }
+    html += renderGroupedSuggestions(suggWarnC, suggGoodC);
 
     html += '<div class="btc-note">📌 BTC at 80% profit or 21 DTE, whichever comes first.</div>';
 
@@ -4632,10 +4662,7 @@ async function runSynth(forceTicker) {
     if (score >= 4) {
       suggGood.push('✅ <strong>' + (score === 5 ? 'All criteria met' : score + '/5 criteria met') + '</strong> — strong synthetic long setup. Enter as a combo order to avoid leg risk. Hedge later by selling OTM calls after vol spikes.');
     }
-    var suggestions = suggWarn.concat(suggGood);
-    if (suggestions.length > 0) {
-      html += '<div class="suggestions-box">' + suggestions.map(function(s){ return '<div class="suggestion-item">' + s + '</div>'; }).join('') + '</div>';
-    }
+    html += renderGroupedSuggestions(suggWarn, suggGood);
 
     // Same-strike P&L scenarios
     // P&L = Max(0, F - strike) - Max(0, strike - F) - netCost  =  F - strike - netCost
@@ -5173,12 +5200,9 @@ async function runMsl(forceTicker) {
 
     // Contextual suggestions
     var suggWarn = [], suggGood = [];
-    if (!c1) {
-      if (!isNaN(pd.meanRev) && pd.meanRev <= -1 && pd.meanRev > -2) {
-        suggWarn.push('💡 <strong>MR approaching:</strong> 4H Mean Reversion is ' + mrZone(pd.meanRev).label + ' — not yet at the −2 (Deeply Oversold) entry. Wait for a continued dip.');
-      } else {
-        suggWarn.push('💡 <strong>Not oversold:</strong> 4H Mean Reversion is ' + mrZone(pd.meanRev).label + ' — MSL works best at market lows (MR −2) when put premiums are fattest.');
-      }
+    // MR "approaching" is a useful watch; a flatly-neutral MR is covered by the status line below (no dupe).
+    if (!c1 && !isNaN(pd.meanRev) && pd.meanRev <= -1 && pd.meanRev > -2) {
+      suggWarn.push('💡 <strong>MR approaching:</strong> 4H Mean Reversion is ' + mrZone(pd.meanRev).label + ' — not yet at the −2 (Deeply Oversold) entry. Wait for a continued dip.');
     }
     if (!c2 && putCreditPct !== null) {
       suggWarn.push('💡 <strong>Low put credit:</strong> ' + fmt(putCreditPct,1) + '% of spread width — below Laura’s 42% floor. She targets ~50%+ so the spread "pays for itself."');
@@ -5235,7 +5259,12 @@ async function runMsl(forceTicker) {
       if (oiHardReject) {
         suggWarn.push('⏳ <strong>Wait for setup:</strong> Strike liquidity is too thin to trade (' + oiRejReasons.join(', ') + '). MSL math assumes mid-quote fills — when OI is this low, the quote is stale and the spread won\'t fill at the price the analyzer shows.');
       } else {
-        suggWarn.push('⏳ <strong>Wait for setup:</strong> One or more Tier-1 thesis gates (MR Oversold · Put Credit ≥42% · Risk ≤60% of SL) failed. Quality criteria can\'t compensate for a missing thesis — Laura\'s MSL is a mean-reversion play with strict risk math.');
+        var t1Need = [];
+        if (c1 !== true) t1Need.push('MR Oversold (≤ −2)');
+        if (c2 !== true) t1Need.push('Put Credit ≥ 42%');
+        if (c8 !== true) t1Need.push('Risk ≤ 60% of SL');
+        var t1Lbl = t1Need.length === 1 ? t1Need[0] : t1Need.join(' + ');
+        suggWarn.push('⏳ <strong>Waiting on ' + t1Lbl + ':</strong> the ' + (t1Need.length === 1 ? 'one remaining Tier-1 thesis gate' : 'Tier-1 thesis gates') + ' must pass — quality criteria can\'t compensate for a missing thesis. Everything else is set; this is a timing/structure wait, not a flaw.');
       }
     }
     // Laura's MSL goal #1: risk should be ~half of an equivalent SL (ideal ≤50%; acceptable to ~60%).
@@ -5251,10 +5280,7 @@ async function runMsl(forceTicker) {
     if (beMSL !== null && beSL !== null && beMSL > beSL) {
       suggGood.push('ℹ️ <strong>Breakeven trade-off:</strong> MSL ' + fmtDollar(beMSL) + ' vs synthetic-long ' + fmtDollar(beSL) + ' — you give up the first ' + fmtDollar(beMSL - beSL) + ' of upside for the ' + (soldPutOtmPct != null ? fmt(soldPutOtmPct,0) + '% ' : '') + 'downside buffer, lower margin, and the roll levers. Laura\'s deliberate trade-off, not a flaw.');
     }
-    var suggestions = suggWarn.concat(suggGood);
-    if (suggestions.length > 0) {
-      html += '<div class="suggestions-box">' + suggestions.map(function(s){ return '<div class="suggestion-item">' + s + '</div>'; }).join('') + '</div>';
-    }
+    html += renderGroupedSuggestions(suggWarn, suggGood);
 
     // P&L scenarios at expiry
     var scenarioPcts = [-30, -20, -10, 0, 10, 20, 50, 100];
