@@ -5235,17 +5235,18 @@ async function runMsl(forceTicker) {
         suggWarn.push('⏳ <strong>Wait for setup:</strong> One or more Tier-1 thesis gates (MR Oversold · Put Credit ≥42% · Risk ≤60% of SL) failed. Quality criteria can\'t compensate for a missing thesis — Laura\'s MSL is a mean-reversion play with strict risk math.');
       }
     }
-    // Laura's MSL goal #1: risk should be ~half of SL
-    if (riskReductionPct !== null && riskReductionPct >= 45) {
-      suggGood.push('✅ <strong>Risk cut by ' + fmt(riskReductionPct,0) + '%:</strong> MSL risks $' + fmt(mslMaxRisk,0) + ' vs SL\'s $' + fmt(slMaxRisk,0) + '. Same upside, half the risk — Laura\'s exact goal.');
-    } else if (riskReductionPct !== null && riskReductionPct > 0 && riskReductionPct < 45) {
-      suggWarn.push('💡 <strong>Risk reduction only ' + fmt(riskReductionPct,0) + '%:</strong> Laura targets ~50% less risk than SL. Look for a wider bull put spread or tighter call to deepen the discount.');
+    // Laura's MSL goal #1: risk should be ~half of an equivalent SL (ideal ≤50%; acceptable to ~60%).
+    if (riskReductionPct !== null && riskReductionPct >= 50) {
+      suggGood.push('✅ <strong>Risk cut by ' + fmt(riskReductionPct,0) + '%:</strong> MSL risks $' + fmt(mslMaxRisk,0) + ' vs SL\'s $' + fmt(slMaxRisk,0) + ' — at/under half, Laura\'s ideal.');
+    } else if (riskReductionPct !== null && riskReductionPct >= 40) {
+      suggGood.push('✅ <strong>Risk cut by ' + fmt(riskReductionPct,0) + '%:</strong> MSL risks $' + fmt(mslMaxRisk,0) + ' vs SL\'s $' + fmt(slMaxRisk,0) + '. Under Laura\'s ~50% ideal, but expensive options in high IV make a bit less normal — she still takes it for the buffer &amp; the roll levers (MM56).');
+    } else if (riskReductionPct !== null && riskReductionPct > 0 && riskReductionPct < 40) {
+      suggWarn.push('💡 <strong>Risk reduction only ' + fmt(riskReductionPct,0) + '%:</strong> below Laura\'s ~half target — a wider bull put spread or a tighter call deepens the discount.');
     }
-    // Laura's MSL goal #2: breakeven should be within ~10% of SL breakeven
-    if (beDiffPct !== null && beDiffPct <= 10) {
-      suggGood.push('✅ <strong>Breakevens align:</strong> MSL ' + fmtDollar(beMSL) + ' vs SL ' + fmtDollar(beSL) + ' — only ' + fmt(beDiffPct,1) + '% apart. Same recovery threshold, lower risk.');
-    } else if (beDiffPct !== null && beDiffPct > 10) {
-      suggWarn.push('💡 <strong>Breakeven drift:</strong> MSL BE ' + fmtDollar(beMSL) + ' is ' + fmt(beDiffPct,1) + '% from SL BE ' + fmtDollar(beSL) + ' — wider than Laura\'s 10% guideline. The structure may be less comparable to a true SL.');
+    // Breakeven vs the synthetic long: with the short put anchored OTM, the MSL breakeven is HIGHER
+    // by design — that's the deliberate cost of the buffer, lower margin, and adjustment levers (MM56).
+    if (beMSL !== null && beSL !== null && beMSL > beSL) {
+      suggGood.push('ℹ️ <strong>Breakeven trade-off:</strong> MSL ' + fmtDollar(beMSL) + ' vs synthetic-long ' + fmtDollar(beSL) + ' — you give up the first ' + fmtDollar(beMSL - beSL) + ' of upside for the ' + (soldPutOtmPct != null ? fmt(soldPutOtmPct,0) + '% ' : '') + 'downside buffer, lower margin, and the roll levers. Laura\'s deliberate trade-off, not a flaw.');
     }
     var suggestions = suggWarn.concat(suggGood);
     if (suggestions.length > 0) {
