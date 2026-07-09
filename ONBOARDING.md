@@ -62,7 +62,7 @@ Then open a PR and squash-merge.
 
 **Mean Reversion (MR)** — the core indicator. Wilder **RSI(14) → EMA(9) → (value − 50) / 12.5**, on the **4H** timeframe.
 - `scale = 12.5` was calibrated from live IA-Mean-Reversion chart pairs (maps RSI to ±4; OB/OS ±2 bands at RSI 75/25).
-- Zones: ±1 = Overbought/Oversold, ±2 = Deeply OB/OS.
+- Zone labels (display only): ±0.5 = Overbought/Oversold, ±2 = Deeply OB/OS — matches James's IA-Mean-Reversion shading. Entry **triggers** stay at ±2 regardless (the labels don't gate anything).
 - Data guard: rejects thin (<30 bars) or stale (>5 days) TwelveData series → shows `—`.
 - ⚠️ It **cannot** tick-match James's private "Mean-BT" exactly — that's a data-feed/session (RTH vs ETH) difference. 12.5 is the pragmatic best-fit.
 

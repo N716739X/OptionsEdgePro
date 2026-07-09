@@ -2397,11 +2397,14 @@ function spinner() {
 }
 // ── Mean Reversion Zone Labels ──
 function mrZone(val) {
+  // Zone LABELS only (chip text/color). Bands match James's IA-Mean-Reversion shading:
+  // Overbought/Oversold from ±0.5, Deeply OB/OS from ±2. Entry TRIGGERS stay at ±2 (unchanged) —
+  // this is purely the displayed label, it does not gate any strategy.
   if (isNaN(val)) return { label: '—', short: '—', cls: '' };
-  if (val <= -2)  return { label: 'Deeply Oversold',  short: 'D.OS', cls: 'down' };
-  if (val <= -1)  return { label: 'Oversold',         short: 'OS',   cls: 'down' };
-  if (val >= 2)   return { label: 'Deeply Overbought', short: 'D.OB', cls: 'up' };
-  if (val >= 1)   return { label: 'Overbought',        short: 'OB',   cls: 'up' };
+  if (val <= -2)    return { label: 'Deeply Oversold',  short: 'D.OS', cls: 'down' };
+  if (val <= -0.5)  return { label: 'Oversold',         short: 'OS',   cls: 'down' };
+  if (val >= 2)     return { label: 'Deeply Overbought', short: 'D.OB', cls: 'up' };
+  if (val >= 0.5)   return { label: 'Overbought',        short: 'OB',   cls: 'up' };
   return { label: 'Neutral', short: 'Ntrl', cls: '' };
 }
 // ── Mean Reversion: Wilder RSI(14) → EMA(9) smooth → (val-50)/12.5 ──
