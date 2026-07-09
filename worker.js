@@ -669,12 +669,13 @@ function scoreMslChains(price, mr, expiry, dte, callChain, putChain) {
   const soldPutOI = putChain.openInterest ? putChain.openInterest[soldPutIdx] : null;
   const netDebit = (callMid !== null && putSpreadCredit !== null) ? callMid - putSpreadCredit : null;
   const netDebitPct = (netDebit !== null && price) ? (netDebit / price * 100) : null;
-  // SL comparison (ATM call nearest the sold-put strike)
-  let slCallIdx = -1, slBest = Infinity;
-  for (let s = 0; s < callChain.strike.length; s++) { const sd = Math.abs(callChain.strike[s] - soldPutStrike); if (sd < slBest) { slBest = sd; slCallIdx = s; } }
-  const slCallMid = (slCallIdx >= 0 && callChain.mid) ? callChain.mid[slCallIdx] : null;
-  const slNetDebit = (slCallMid !== null && soldPutMid !== null) ? slCallMid - soldPutMid : null;
-  const slRisk = (slNetDebit !== null && soldPutStrike) ? (soldPutStrike + slNetDebit) : null;
+  // SL comparison (MM56): the SAME deep-ITM call + a short ATM put (no protective lower put).
+  let atmPutIdx = -1, atmBest = Infinity;
+  for (let s = 0; s < putChain.strike.length; s++) { const sd = Math.abs(putChain.strike[s] - price); if (sd < atmBest) { atmBest = sd; atmPutIdx = s; } }
+  const slPutStrike = atmPutIdx >= 0 ? putChain.strike[atmPutIdx] : null;
+  const slPutMid = (atmPutIdx >= 0 && putChain.mid) ? putChain.mid[atmPutIdx] : null;
+  const slNetDebit = (callMid !== null && slPutMid !== null) ? callMid - slPutMid : null;
+  const slRisk = (slNetDebit !== null && slPutStrike) ? (slPutStrike + slNetDebit) : null;
   const mslRisk = (netDebit !== null && spreadWidth > 0) ? (netDebit + spreadWidth) : null;
   const riskRatio = (slRisk && slRisk > 0 && mslRisk !== null) ? (mslRisk / slRisk * 100) : null;
   out.c2 = putCreditPct !== null ? putCreditPct >= 42 : null;
