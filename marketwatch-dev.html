@@ -1010,6 +1010,24 @@ input[type=number] { -moz-appearance: textfield; appearance: textfield; }
 .ticker-chip:active { cursor: grabbing; }
 .ticker-chip.dragging { opacity: 0.4; }
 .ticker-chip.drop-target { border-color: var(--accent); box-shadow: -2px 0 0 0 var(--accent); }
+/* MSL mode toggle + Grade-Mine inputs */
+.msl-mode-row { display:flex; gap:6px; margin:2px 0 12px; }
+.msl-mode { background:var(--surface2); border:1px solid var(--border2); color:var(--text-muted);
+  border-radius:7px; padding:6px 14px; font-size:12px; font-weight:800; cursor:pointer; letter-spacing:.4px; }
+.msl-mode.on { background:var(--accent); border-color:var(--accent); color:#03121f; }
+#msl-grade-inputs { display:none; flex-wrap:wrap; gap:10px 12px; align-items:flex-end; margin:0 0 14px;
+  padding:12px 14px; background:var(--surface2); border:1px solid var(--border); border-radius:9px; }
+#msl-grade-inputs label { display:flex; flex-direction:column; gap:4px; font-size:10px;
+  text-transform:uppercase; letter-spacing:.7px; color:var(--text-muted); font-weight:700; }
+#msl-grade-inputs input, #msl-grade-inputs select { background:var(--surface); border:1px solid var(--border);
+  border-radius:6px; color:var(--text); padding:7px 9px; font-size:13px; font-weight:700; width:120px; }
+.msl-grade-go { background:var(--accent); border:none; border-radius:6px; color:#03121f;
+  font-size:13px; font-weight:800; padding:9px 16px; cursor:pointer; }
+.gm-tr { display:grid; grid-template-columns:1.4fr 1fr 1fr; gap:0; }
+.gm-tr > div { padding:7px 10px; border-bottom:1px solid var(--border); font-size:12.5px; }
+.gm-tr .gm-h { font-size:10px; text-transform:uppercase; letter-spacing:.7px; color:var(--text-muted); font-weight:700; }
+.gm-you { font-weight:800; }
+.gm-diff { color:var(--accent); } .gm-ok { color:var(--green); }
 .chip-grade {
   font-size: 9px;
   font-weight: 900;
@@ -1707,6 +1725,17 @@ input, textarea, select { -webkit-user-select: text; user-select: text; }
       <span class="analyzer-label">MSL — Modified Synthetic Long</span>
       <span class="status-msg" id="msl-status"></span>
       <input type="hidden" id="msl-ticker" />
+    </div>
+    <div class="msl-mode-row">
+      <button id="msl-mode-find" class="msl-mode on" onclick="setMslMode('find')">Find Best</button>
+      <button id="msl-mode-grade" class="msl-mode" onclick="setMslMode('grade')">Grade Mine</button>
+    </div>
+    <div id="msl-grade-inputs">
+      <label>Expiry<select id="msl-grade-expiry"></select></label>
+      <label>Buy Call<input id="msl-grade-call" type="number" step="1" placeholder="strike" /></label>
+      <label>Sell Put<input id="msl-grade-soldput" type="number" step="1" placeholder="strike" /></label>
+      <label>Buy Put<input id="msl-grade-boughtput" type="number" step="1" placeholder="strike" /></label>
+      <button class="msl-grade-go" onclick="gradeMsl()">Grade my MSL</button>
     </div>
     <div id="msl-results"><div class="placeholder"><div class="ph-icon">↑</div><p>Select a ticker above to analyze</p></div></div>
   </div>
@@ -4700,6 +4729,248 @@ async function runSynth(forceTicker) {
 }
 
 // ═══════════════════════════════════════════════════════
+// GRADE MY MSL — score a user-entered structure vs Laura's rules
+// ═══════════════════════════════════════════════════════
+// Leg-selection mirrors runMsl / MM56 (call = 50/50-first; put spread = furthest-OTM at ~50%).
+// Kept in sync with runMsl's inline logic; used here to show the "app's recommended" comparison.
+function mslPickCall(callChain, price) {
+  function band(lo, hi) {
+    var idx = -1, oiBest = -1, dBest = Infinity;
+    for (var ci = 0; ci < callChain.strike.length; ci++) {
+      if (callChain.strike[ci] >= price) continue;
+      var cMid = callChain.mid ? callChain.mid[ci] : null;
+      if (cMid == null || cMid <= 0) continue;
+      var intr = price - callChain.strike[ci], extr = cMid - intr;
+      if (extr <= 0) continue;
+      var r = intr / cMid; if (r < lo || r > hi) continue;
+      var d = Math.abs(r - 0.5);
+      var oi = (callChain.openInterest && callChain.openInterest[ci] != null) ? callChain.openInterest[ci] : 0;
+      if (oi > oiBest || (oi === oiBest && d < dBest)) { oiBest = oi; dBest = d; idx = ci; }
+    }
+    return idx;
+  }
+  var idx = band(0.45, 0.55);
+  if (idx < 0) idx = band(0.40, 0.60);
+  if (idx < 0) { var dB = Infinity; for (var c = 0; c < callChain.strike.length; c++) { if (callChain.strike[c] >= price) continue; var m = callChain.mid ? callChain.mid[c] : null; if (m == null || m <= 0) continue; var it = price - callChain.strike[c], ex = m - it; if (ex <= 0) continue; var dd = Math.abs((it / m) - 0.5); if (dd < dB) { dB = dd; idx = c; } } }
+  return idx;
+}
+function mslPickPutSpread(putChain, price) {
+  var TARGET = 50, FLOOR = 42, minW = price * 0.18, maxW = price * 0.30;
+  var sIdx = -1, bIdx = -1, bOtm = -Infinity, bCr = -Infinity, bOI = -1, bCrDiff = Infinity;
+  for (var si = 0; si < putChain.strike.length; si++) {
+    var Sk = putChain.strike[si]; if (Sk == null || Sk >= price) continue;
+    var Sm = putChain.mid ? putChain.mid[si] : null; if (Sm == null || Sm <= 0) continue;
+    var otm = (price - Sk) / price * 100;
+    var Soi = (putChain.openInterest && putChain.openInterest[si] != null) ? putChain.openInterest[si] : 0;
+    for (var li = 0; li < putChain.strike.length; li++) {
+      var Lk = putChain.strike[li]; if (Lk == null || Lk >= Sk) continue;
+      var Lm = putChain.mid ? putChain.mid[li] : null; if (Lm == null || Lm <= 0) continue;
+      var w = Sk - Lk; if (w < minW || w > maxW) continue;
+      var cr = (Sm - Lm) / w * 100; if (cr < TARGET) continue;
+      var crD = Math.abs(cr - TARGET);
+      if (sIdx < 0 || otm > bOtm + 1e-9 || (Math.abs(otm - bOtm) < 1e-9 && crD < bCrDiff - 1e-9) || (Math.abs(otm - bOtm) < 1e-9 && Math.abs(crD - bCrDiff) < 1e-9 && Soi > bOI)) { bOtm = otm; bCrDiff = crD; bOI = Soi; sIdx = si; bIdx = li; }
+    }
+  }
+  if (sIdx < 0) {
+    for (var sb = 0; sb < putChain.strike.length; sb++) {
+      var Skb = putChain.strike[sb]; if (Skb == null || Skb >= price) continue;
+      var Smb = putChain.mid ? putChain.mid[sb] : null; if (Smb == null || Smb <= 0) continue;
+      var otmb = (price - Skb) / price * 100;
+      var Soib = (putChain.openInterest && putChain.openInterest[sb] != null) ? putChain.openInterest[sb] : 0;
+      for (var lb = 0; lb < putChain.strike.length; lb++) {
+        var Lkb = putChain.strike[lb]; if (Lkb == null || Lkb >= Skb) continue;
+        var Lmb = putChain.mid ? putChain.mid[lb] : null; if (Lmb == null || Lmb <= 0) continue;
+        var wb = Skb - Lkb; if (wb < minW || wb > maxW) continue;
+        var crb = (Smb - Lmb) / wb * 100; if (crb < FLOOR) continue;
+        if (sIdx < 0 || crb > bCr + 1e-9 || (Math.abs(crb - bCr) < 1e-9 && otmb > bOtm + 1e-9) || (Math.abs(crb - bCr) < 1e-9 && Math.abs(otmb - bOtm) < 1e-9 && Soib > bOI)) { bCr = crb; bOtm = otmb; bOI = Soib; sIdx = sb; bIdx = lb; }
+      }
+    }
+  }
+  if (sIdx < 0) {
+    var fb = Infinity;
+    for (var sc = 0; sc < putChain.strike.length; sc++) {
+      var Skc = putChain.strike[sc]; if (Skc == null || Skc >= price) continue;
+      var Smc = putChain.mid ? putChain.mid[sc] : null; if (Smc == null || Smc <= 0) continue;
+      for (var lc = 0; lc < putChain.strike.length; lc++) {
+        var Lkc = putChain.strike[lc]; if (Lkc == null || Lkc >= Skc) continue;
+        var Lmc = putChain.mid ? putChain.mid[lc] : null; if (Lmc == null || Lmc <= 0) continue;
+        var wc = Skc - Lkc; if (wc < minW || wc > maxW) continue;
+        var dcc = Math.abs((Smc - Lmc) / wc * 100 - TARGET);
+        if (dcc < fb) { fb = dcc; sIdx = sc; bIdx = lc; }
+      }
+    }
+  }
+  return { soldPutIdx: sIdx, boughtPutIdx: bIdx };
+}
+// Metrics + the six criteria for a specific (call, sold-put, bought-put) index set.
+function mslComputeGrade(pd, callChain, putChain, cIdx, sIdx, bIdx, dte) {
+  if (cIdx < 0 || sIdx < 0 || bIdx < 0) return null;
+  var price = pd.price;
+  var callStrike = callChain.strike[cIdx], callMid = callChain.mid ? callChain.mid[cIdx] : null;
+  var callOI = callChain.openInterest ? callChain.openInterest[cIdx] : null;
+  var callDelta = callChain.delta ? callChain.delta[cIdx] : null;
+  var soldPutStrike = putChain.strike[sIdx], soldPutMid = putChain.mid ? putChain.mid[sIdx] : null;
+  var soldPutOI = putChain.openInterest ? putChain.openInterest[sIdx] : null;
+  var boughtPutStrike = putChain.strike[bIdx], boughtPutMid = putChain.mid ? putChain.mid[bIdx] : null;
+  var boughtPutOI = putChain.openInterest ? putChain.openInterest[bIdx] : null;
+  var spreadWidth = soldPutStrike - boughtPutStrike;
+  var putSpreadCredit = (soldPutMid != null && boughtPutMid != null) ? soldPutMid - boughtPutMid : null;
+  var putCreditPct = (putSpreadCredit != null && spreadWidth > 0) ? putSpreadCredit / spreadWidth * 100 : null;
+  var callIntr = price - callStrike;
+  var callRatio = (callMid && callMid > 0) ? callIntr / callMid : null;
+  var netDebit = (callMid != null && putSpreadCredit != null) ? callMid - putSpreadCredit : null;
+  var netDebitPct = (netDebit != null && price) ? netDebit / price * 100 : null;
+  var breakeven = netDebit != null ? callStrike + netDebit : null;
+  var soldPutOtmPct = (soldPutStrike && price) ? (price - soldPutStrike) / price * 100 : null;
+  var mslMaxRisk = (netDebit != null && spreadWidth > 0) ? (netDebit + spreadWidth) * 100 : null;
+  // Comparable SL: same deep-ITM call + short ATM put (no protective put)
+  var atmIdx = -1, ab = Infinity;
+  for (var i = 0; i < putChain.strike.length; i++) { var d = Math.abs(putChain.strike[i] - price); if (d < ab) { ab = d; atmIdx = i; } }
+  var slPutStrike = atmIdx >= 0 ? putChain.strike[atmIdx] : null;
+  var slPutMid = (atmIdx >= 0 && putChain.mid) ? putChain.mid[atmIdx] : null;
+  var slNetCost = (callMid != null && slPutMid != null) ? callMid - slPutMid : null;
+  var slMaxRisk = (slPutStrike && slNetCost != null) ? (slPutStrike + slNetCost) * 100 : null;
+  var riskRatio = (slMaxRisk && mslMaxRisk) ? mslMaxRisk / slMaxRisk * 100 : null;
+  var m = {
+    callStrike: callStrike, callMid: callMid, callOI: callOI, callDelta: callDelta, callRatio: callRatio,
+    soldPutStrike: soldPutStrike, soldPutMid: soldPutMid, soldPutOI: soldPutOI,
+    boughtPutStrike: boughtPutStrike, boughtPutMid: boughtPutMid, boughtPutOI: boughtPutOI,
+    spreadWidth: spreadWidth, putSpreadCredit: putSpreadCredit, putCreditPct: putCreditPct,
+    netDebit: netDebit, netDebitPct: netDebitPct, breakeven: breakeven, soldPutOtmPct: soldPutOtmPct,
+    mslMaxRisk: mslMaxRisk, slMaxRisk: slMaxRisk, riskRatio: riskRatio,
+    riskReductionPct: riskRatio != null ? 100 - riskRatio : null
+  };
+  m.c1 = !isNaN(pd.meanRev) ? pd.meanRev <= -2 : null;
+  m.c2 = putCreditPct != null ? putCreditPct >= 42 : null;
+  m.c3 = (callRatio != null && !isNaN(callRatio)) ? (callRatio >= 0.40 && callRatio <= 0.60) : null;
+  m.c4 = dte >= 365;
+  m.c5 = netDebitPct != null ? netDebitPct <= 40 : null;
+  m.c8 = riskRatio != null ? riskRatio <= 60 : null;
+  m.score = [m.c1, m.c2, m.c3, m.c4, m.c5, m.c8].filter(function(x) { return x === true; }).length;
+  m.weighted = (m.c1 === true ? 2 : 0) + (m.c2 === true ? 2 : 0) + (m.c8 === true ? 2 : 0) + (m.c3 === true ? 1 : 0) + (m.c5 === true ? 1 : 0) + (m.c4 === true ? 1 : 0);
+  m.t1Pass = m.c1 === true && m.c2 === true && m.c8 === true;
+  return m;
+}
+
+var _mslMode = 'find';
+function setMslMode(mode) {
+  _mslMode = mode;
+  var mf = document.getElementById('msl-mode-find'), mg = document.getElementById('msl-mode-grade'), gi = document.getElementById('msl-grade-inputs');
+  if (mf) mf.classList.toggle('on', mode === 'find');
+  if (mg) mg.classList.toggle('on', mode === 'grade');
+  if (gi) gi.style.display = mode === 'grade' ? 'flex' : 'none';
+  var t = document.getElementById('msl-ticker').value;
+  if (mode === 'grade') {
+    if (t) mslGradePrep(t);
+    else document.getElementById('msl-results').innerHTML = '<div class="placeholder"><div class="ph-icon">✎</div><p>Pick a ticker in the watchlist, choose an expiry, enter your Buy Call / Sell Put / Buy Put strikes, then <strong>Grade my MSL</strong>.</p></div>';
+  } else if (t) {
+    runMsl(t);
+  }
+}
+// Fill the expiry dropdown (LEAPS ≥365 DTE, farthest first) for the selected ticker.
+function mslGradePrep(ticker) {
+  var sel = document.getElementById('msl-grade-expiry');
+  if (sel) sel.innerHTML = '<option>loading…</option>';
+  fetchExpirations(ticker).then(function(exps) {
+    if (!sel) return;
+    var leaps = (exps || []).filter(function(e) { return dteFromStr(e) >= 365; }).sort(function(a, b) { return dteFromStr(b) - dteFromStr(a); });
+    if (!leaps.length) leaps = (exps || []).slice().sort(function(a, b) { return dteFromStr(b) - dteFromStr(a); });
+    sel.innerHTML = leaps.map(function(e) { return '<option value="' + e + '">' + expiryDisplay(e) + ' · ' + dteFromStr(e) + 'd</option>'; }).join('');
+  }).catch(function() { if (sel) sel.innerHTML = '<option value="">(no expirations)</option>'; });
+}
+
+async function gradeMsl() {
+  var ticker = document.getElementById('msl-ticker').value.trim().toUpperCase();
+  if (!ticker) { setStatus('msl-status', 'Pick a ticker in the watchlist first', 'error'); return; }
+  var expiry = document.getElementById('msl-grade-expiry').value;
+  var cS = parseFloat(document.getElementById('msl-grade-call').value);
+  var sS = parseFloat(document.getElementById('msl-grade-soldput').value);
+  var bS = parseFloat(document.getElementById('msl-grade-boughtput').value);
+  if (!expiry) { setStatus('msl-status', 'Choose an expiry', 'error'); return; }
+  if (isNaN(cS) || isNaN(sS) || isNaN(bS)) { document.getElementById('msl-results').innerHTML = '<div class="notice">Enter all three strikes: Buy Call, Sell Put, and Buy Put.</div>'; return; }
+  if (!(cS < sS && bS < sS)) { document.getElementById('msl-results').innerHTML = '<div class="notice">Check your legs: the deep-ITM <strong>Buy Call</strong> and the protective <strong>Buy Put</strong> should both be <em>below</em> the <strong>Sell Put</strong> strike.</div>'; return; }
+  try {
+    setStatus('msl-status', spinner() + 'Grading your MSL…', 'loading');
+    var pd = await fetchPriceData(ticker, '4h');
+    try { pd.meanRev = await fetchMeanRev(ticker, '4h'); } catch (e) {}
+    var dte = dteFromStr(expiry);
+    var chains = await Promise.all([fetchChain(ticker, expiry, 'call'), fetchChain(ticker, expiry, 'put')]);
+    var callChain = chains[0], putChain = chains[1];
+    if (!callChain || !callChain.strike || !putChain || !putChain.strike) throw new Error('Could not load option chains for ' + expiry + '.');
+    function nearest(chain, k) { var idx = -1, best = Infinity; for (var i = 0; i < chain.strike.length; i++) { var d = Math.abs(chain.strike[i] - k); if (d < best) { best = d; idx = i; } } return idx; }
+    var uc = nearest(callChain, cS), us = nearest(putChain, sS), ub = nearest(putChain, bS);
+    var um = mslComputeGrade(pd, callChain, putChain, uc, us, ub, dte);
+    if (!um) throw new Error('Could not price your legs from the chain.');
+    var rec = mslPickPutSpread(putChain, pd.price);
+    var rc = mslPickCall(callChain, pd.price);
+    var rm = mslComputeGrade(pd, callChain, putChain, rc, rec.soldPutIdx, rec.boughtPutIdx, dte);
+    setStatus('msl-status', 'Done', 'ok');
+
+    var snapped = (Math.abs(callChain.strike[uc] - cS) > 0.001) || (Math.abs(putChain.strike[us] - sS) > 0.001) || (Math.abs(putChain.strike[ub] - bS) > 0.001);
+    var grade = scoreToGrade(um.score, 6);
+    var html = priceBarHtml(ticker, pd, '4H');
+    html += '<div style="display:flex;gap:14px;align-items:center;padding:8px 14px;margin-bottom:10px;background:var(--surface2);border-radius:8px;border:1px solid var(--border);font-size:11px">' +
+      '<span style="color:var(--text-muted);text-transform:uppercase;letter-spacing:.8px;font-weight:700">Your legs</span>' +
+      '<span style="color:var(--accent);font-weight:800">' + fmtDollar(um.callStrike) + 'C / ' + fmtDollar(um.soldPutStrike) + 'P / ' + fmtDollar(um.boughtPutStrike) + 'P</span>' +
+      '<span style="color:var(--text-muted);text-transform:uppercase;letter-spacing:.8px;font-weight:700;margin-left:8px">Expiry</span><span style="color:var(--accent);font-weight:800">' + expiryDisplay(expiry) + ' · ' + dte + 'd</span>' +
+      (snapped ? '<span style="color:var(--text-muted);margin-left:8px">(snapped to nearest listed strikes)</span>' : '') +
+    '</div>';
+
+    // Scorecard on the USER's legs
+    html += '<div class="scorecard"><h3>Your MSL — Grade</h3><div class="criteria-list">';
+    html += critRow(1, 'MR · 4H ≤ −2 (Deeply Oversold — Buy the Dip)', um.c1, !isNaN(pd.meanRev) ? mrZone(pd.meanRev).label : 'N/A');
+    html += critRow(2, 'Put Credit ≥ 42% of Width (≥50% = Ideal)', um.c2, um.putCreditPct != null ? fmt(um.putCreditPct, 1) + '%' : 'N/A');
+    html += critRow(3, 'MSL Risk ≤ 60% of SL Risk (≤50% = Ideal)', um.c8, um.riskRatio != null ? fmt(um.riskRatio, 0) + '% of SL' : 'N/A');
+    html += critRow(4, 'Call Intrinsic/Extrinsic 40–60% (45–55% = Ideal)', um.c3, um.callRatio != null ? fmt(um.callRatio * 100, 0) + '/' + fmt((1 - um.callRatio) * 100, 0) : 'N/A');
+    html += critRow(5, 'Net Debit ≤ 40% of Price (≤33% = Ideal)', um.c5, um.netDebitPct != null ? fmt(um.netDebitPct, 1) + '%' : 'N/A');
+    html += critRow(6, 'Duration ≥ 365 DTE (LEAPS — ≥540 = Ideal)', um.c4, dte + ' days');
+    html += '</div>' + scoreSummaryHtml(um.score, 6) + '</div>';
+
+    // Side-by-side: your legs vs the app's recommended pick
+    if (rm) {
+      var gmRow = function(label, you, app, flag) {
+        var appCls = flag === 'diff' ? 'gm-diff' : (flag === 'ok' ? 'gm-ok' : '');
+        return '<div>' + label + '</div><div class="gm-you">' + you + '</div><div class="' + appCls + '">' + app + '</div>';
+      };
+      var ieU = um.callRatio != null ? fmt(um.callRatio * 100, 0) + '/' + fmt((1 - um.callRatio) * 100, 0) : '—';
+      var ieR = rm.callRatio != null ? fmt(rm.callRatio * 100, 0) + '/' + fmt((1 - rm.callRatio) * 100, 0) : '—';
+      html += '<div class="chain-section"><h3>Your legs vs the app\'s recommended <span style="color:var(--text-muted);font-weight:400;font-size:11px">— same ticker &amp; expiry</span></h3>' +
+        '<div class="gm-tr">' +
+          '<div class="gm-h">Metric</div><div class="gm-h">Yours</div><div class="gm-h">App picks</div>' +
+          gmRow('Buy Call (deep ITM)', fmtDollar(um.callStrike) + ' · ' + ieU + ' I/E', fmtDollar(rm.callStrike) + ' · ' + ieR + ' I/E', um.callStrike === rm.callStrike ? 'ok' : 'diff') +
+          gmRow('Sell Put (OTM anchor)', fmtDollar(um.soldPutStrike) + ' · ' + (um.soldPutOtmPct != null ? fmt(um.soldPutOtmPct, 0) + '% OTM' : '—'), fmtDollar(rm.soldPutStrike) + ' · ' + (rm.soldPutOtmPct != null ? fmt(rm.soldPutOtmPct, 0) + '% OTM' : '—'), um.soldPutStrike === rm.soldPutStrike ? 'ok' : 'diff') +
+          gmRow('Buy Put (lower)', fmtDollar(um.boughtPutStrike), fmtDollar(rm.boughtPutStrike), um.boughtPutStrike === rm.boughtPutStrike ? 'ok' : 'diff') +
+          gmRow('Put-spread credit', um.putCreditPct != null ? fmt(um.putCreditPct, 1) + '%' : '—', rm.putCreditPct != null ? fmt(rm.putCreditPct, 1) + '%' : '—', '') +
+          gmRow('Net debit', um.netDebitPct != null ? fmt(um.netDebitPct, 1) + '% of price' : '—', rm.netDebitPct != null ? fmt(rm.netDebitPct, 1) + '% of price' : '—', '') +
+          gmRow('Downside buffer', um.soldPutOtmPct != null ? fmt(um.soldPutOtmPct, 1) + '% OTM' : '—', rm.soldPutOtmPct != null ? fmt(rm.soldPutOtmPct, 1) + '% OTM' : '—', '') +
+          gmRow('Risk vs synthetic long', um.riskRatio != null ? fmt(um.riskRatio, 0) + '%' : '—', rm.riskRatio != null ? fmt(rm.riskRatio, 0) + '%' : '—', '') +
+          gmRow('Breakeven', um.breakeven != null ? fmtDollar(um.breakeven) : '—', rm.breakeven != null ? fmtDollar(rm.breakeven) : '—', '') +
+        '</div>' +
+        '<div style="font-size:10.5px;color:var(--text-muted);margin-top:8px;line-height:1.5">Cyan = your leg differs from the app\'s pick. Matching the app\'s strikes isn\'t mandatory — it\'s the buffer-first structure Laura\'s rules point to for this expiry.</div>' +
+      '</div>';
+    }
+
+    // Compact "what to tweak" from any failed criteria
+    var sw = [], sg = [];
+    if (um.c1 !== true) sw.push('💡 <strong>Not at the −2 MR trigger:</strong> MSL is a mean-reversion play — best entered at a 4H low. This is a timing gate, independent of your strikes.');
+    if (um.c2 !== true && um.putCreditPct != null) sw.push('⚠️ <strong>Put credit ' + fmt(um.putCreditPct, 1) + '% (< 42%):</strong> move the short put further OTM or widen the spread until the credit reaches ~50% (app picks ' + fmtDollar(rm ? rm.soldPutStrike : um.soldPutStrike) + ').');
+    if (um.c8 !== true && um.riskRatio != null) sw.push('⚠️ <strong>Risk ' + fmt(um.riskRatio, 0) + '% of SL (> 60%):</strong> a wider bull-put spread or a tighter (deeper) call lowers the max risk toward Laura\'s ≤half.');
+    if (um.c3 !== true && um.callRatio != null) sw.push('💡 <strong>Call I/E off 50/50 (' + fmt(um.callRatio * 100, 0) + '/' + fmt((1 - um.callRatio) * 100, 0) + '):</strong> ' + (um.callRatio > 0.60 ? 'too deep — try a higher strike' : 'not deep enough — try a lower strike') + ' (app picks ' + (rm ? fmtDollar(rm.callStrike) : '—') + ').');
+    if (um.c5 !== true && um.netDebitPct != null) sw.push('💡 <strong>Net debit ' + fmt(um.netDebitPct, 1) + '% (> 40%):</strong> the put-spread credit isn\'t offsetting enough of the call cost.');
+    if (um.c4 !== true) sw.push('💡 <strong>Under 365 DTE:</strong> Laura anchors MSLs in LEAPS — prefer ≥540 days.');
+    if (um.t1Pass && um.weighted >= 7) sg.push('✅ <strong>Strong structure (' + um.weighted + '/9):</strong> all Tier-1 gates pass. Only timing/entry remains.');
+    else if (um.t1Pass) sg.push('✅ <strong>Tier-1 thesis passes:</strong> credit, risk, and MR structure all clear.');
+    if (um.c2 === true && um.putCreditPct != null && um.putCreditPct >= 50) sg.push('✅ <strong>Excellent put credit (' + fmt(um.putCreditPct, 1) + '%):</strong> the spread more than pays for itself.');
+    html += renderGroupedSuggestions(sw, sg);
+
+    document.getElementById('msl-results').innerHTML = html;
+  } catch (e) {
+    setStatus('msl-status', '✗ ' + e.message, 'error');
+    document.getElementById('msl-results').innerHTML = '<div class="notice">' + e.message + '</div>';
+  }
+}
+
+// ═══════════════════════════════════════════════════════
 // MSL DETAIL ANALYZER
 // ═══════════════════════════════════════════════════════
 async function runMsl(forceTicker) {
@@ -5421,7 +5692,7 @@ function stripSelect(ticker) {
   if (tabId === 'put')   runPut(ticker);
   else if (tabId === 'cc')    runCC(ticker);
   else if (tabId === 'synth') runSynth(ticker);
-  else if (tabId === 'msl')   runMsl(ticker);
+  else if (tabId === 'msl')   { if (typeof _mslMode !== 'undefined' && _mslMode === 'grade') mslGradePrep(ticker); else runMsl(ticker); }
 }
 
 // Re-render columns + strip whenever card data updates
@@ -5890,7 +6161,7 @@ function navigateToAnalyzer(ticker, strategy) {
       if (id === 'put-ticker')   runPut();
       if (id === 'cc-ticker')    runCC();
       if (id === 'synth-ticker') runSynth();
-      if (id === 'msl-ticker')   runMsl();
+      if (id === 'msl-ticker')   { if (typeof _mslMode !== 'undefined' && _mslMode === 'grade') mslGradePrep(document.getElementById('msl-ticker').value); else runMsl(); }
     }
   });
 });
