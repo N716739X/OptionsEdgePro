@@ -3440,98 +3440,85 @@ async function runMslPhase3(ticker) {
     console.log('[MSLp3]', ticker, 'chains OK @', bestExpiry, 'calls=', callChain.strike.length, 'puts=', putChain.strike.length);
 
     // Laura’s MSL: 3-leg structure
-    // Leg 1: Sell ATM put (anchor) — pick the strike NEAREST the current price (above OR below).
-    // OI only breaks ties between near-equidistant strikes (within ~1.2% of price), so a thin
-    // strike a hair closer can't beat a far more liquid neighbor, and it never drifts off ATM.
-    var atmBand = pd.price * 0.05;
-    var minDist = Infinity;
-    for (var spa = 0; spa < putChain.strike.length; spa++) {
-      var da = Math.abs(putChain.strike[spa] - pd.price);
-      if (da <= atmBand && da < minDist) minDist = da;
-    }
-    var atmTol = pd.price * 0.012;
-    var soldPutIdx = -1, bestPutOI = -1, bestPutDist = Infinity;
-    if (minDist !== Infinity) {
-      for (var sp = 0; sp < putChain.strike.length; sp++) {
-        var d1 = Math.abs(putChain.strike[sp] - pd.price);
-        if (d1 > minDist + atmTol) continue;
-        var oi1 = (putChain.openInterest && putChain.openInterest[sp] != null) ? putChain.openInterest[sp] : 0;
-        if (oi1 > bestPutOI || (oi1 === bestPutOI && d1 < bestPutDist)) { bestPutOI = oi1; bestPutDist = d1; soldPutIdx = sp; }
+    // Legs 1 & 2: the bull put spread — anchored OTM for BUFFER (Laura MM56). Push the SHORT put
+    // as far OTM as possible while the spread still pays ~50% credit. Width ~20% of price up to
+    // ~30% for credit. ≥50% reachable → furthest-OTM such spread; else highest credit ≥42%.
+    var PUT_TARGET_CR = 50, PUT_FLOOR_CR = 42;
+    var minW = pd.price * 0.18, maxW = pd.price * 0.30;
+    var soldPutIdx = -1, boughtPutIdx = -1;
+    var bpOtm = -Infinity, bpCr = -Infinity, bpOI = -1, bpCrDiff = Infinity;
+    for (var si = 0; si < putChain.strike.length; si++) {
+      var Sk = putChain.strike[si];
+      if (Sk == null || Sk >= pd.price) continue;
+      var Sm = putChain.mid ? putChain.mid[si] : null;
+      if (Sm == null || Sm <= 0) continue;
+      var otm = (pd.price - Sk) / pd.price * 100;
+      var Soi = (putChain.openInterest && putChain.openInterest[si] != null) ? putChain.openInterest[si] : 0;
+      for (var li = 0; li < putChain.strike.length; li++) {
+        var Lk = putChain.strike[li];
+        if (Lk == null || Lk >= Sk) continue;
+        var Lm = putChain.mid ? putChain.mid[li] : null;
+        if (Lm == null || Lm <= 0) continue;
+        var w = Sk - Lk;
+        if (w < minW || w > maxW) continue;
+        var cr = (Sm - Lm) / w * 100;
+        if (cr < PUT_TARGET_CR) continue;
+        var crDiff = Math.abs(cr - PUT_TARGET_CR);
+        if (soldPutIdx < 0 || otm > bpOtm + 1e-9
+            || (Math.abs(otm - bpOtm) < 1e-9 && crDiff < bpCrDiff - 1e-9)
+            || (Math.abs(otm - bpOtm) < 1e-9 && Math.abs(crDiff - bpCrDiff) < 1e-9 && Soi > bpOI)) {
+          bpOtm = otm; bpCrDiff = crDiff; bpOI = Soi; soldPutIdx = si; boughtPutIdx = li;
+        }
       }
     }
     if (soldPutIdx < 0) {
-      bestPutDist = Infinity;
-      for (var sp0 = 0; sp0 < putChain.strike.length; sp0++) {
-        var d0 = Math.abs(putChain.strike[sp0] - pd.price);
-        if (d0 < bestPutDist) { bestPutDist = d0; soldPutIdx = sp0; }
+      for (var sb = 0; sb < putChain.strike.length; sb++) {
+        var Skb = putChain.strike[sb];
+        if (Skb == null || Skb >= pd.price) continue;
+        var Smb = putChain.mid ? putChain.mid[sb] : null;
+        if (Smb == null || Smb <= 0) continue;
+        var otmb = (pd.price - Skb) / pd.price * 100;
+        var Soib = (putChain.openInterest && putChain.openInterest[sb] != null) ? putChain.openInterest[sb] : 0;
+        for (var lb = 0; lb < putChain.strike.length; lb++) {
+          var Lkb = putChain.strike[lb];
+          if (Lkb == null || Lkb >= Skb) continue;
+          var Lmb = putChain.mid ? putChain.mid[lb] : null;
+          if (Lmb == null || Lmb <= 0) continue;
+          var wb = Skb - Lkb;
+          if (wb < minW || wb > maxW) continue;
+          var crb = (Smb - Lmb) / wb * 100;
+          if (crb < PUT_FLOOR_CR) continue;
+          if (soldPutIdx < 0 || crb > bpCr + 1e-9
+              || (Math.abs(crb - bpCr) < 1e-9 && otmb > bpOtm + 1e-9)
+              || (Math.abs(crb - bpCr) < 1e-9 && Math.abs(otmb - bpOtm) < 1e-9 && Soib > bpOI)) {
+            bpCr = crb; bpOtm = otmb; bpOI = Soib; soldPutIdx = sb; boughtPutIdx = lb;
+          }
+        }
       }
     }
-    if (soldPutIdx < 0) { console.warn('[MSLp3]', ticker, 'no ATM put found'); return; }
+    if (soldPutIdx < 0) {
+      var fbDiff = Infinity;
+      for (var sc = 0; sc < putChain.strike.length; sc++) {
+        var Skc = putChain.strike[sc];
+        if (Skc == null || Skc >= pd.price) continue;
+        var Smc = putChain.mid ? putChain.mid[sc] : null;
+        if (Smc == null || Smc <= 0) continue;
+        for (var lc = 0; lc < putChain.strike.length; lc++) {
+          var Lkc = putChain.strike[lc];
+          if (Lkc == null || Lkc >= Skc) continue;
+          var Lmc = putChain.mid ? putChain.mid[lc] : null;
+          if (Lmc == null || Lmc <= 0) continue;
+          var wc = Skc - Lkc;
+          if (wc < minW || wc > maxW) continue;
+          var crc = (Smc - Lmc) / wc * 100;
+          var dcc = Math.abs(crc - PUT_TARGET_CR);
+          if (dcc < fbDiff) { fbDiff = dcc; soldPutIdx = sc; boughtPutIdx = lc; }
+        }
+      }
+    }
+    if (soldPutIdx < 0 || boughtPutIdx < 0) { console.warn('[MSLp3]', ticker, 'no OTM put spread found'); return; }
     var soldPutStrike = putChain.strike[soldPutIdx];
     var soldPutMid = putChain.mid ? putChain.mid[soldPutIdx] : null;
-
-    // Leg 2: Buy lower put — among strikes ≥42% credit AND within a width tolerance of Laura's
-    // ~40-point (≈20% of price) target, prefer higher OI; width-fit is the tiebreak.
-    var targetWidth = pd.price * 0.20; // her "$40 wide on a ~$200 stock", generalized to price
-    var widthTol = pd.price * 0.05;
-    var boughtPutIdx = -1, bestBpOI = -1, bestDiff = Infinity;
-    for (var bp = 0; bp < putChain.strike.length; bp++) {
-      if (putChain.strike[bp] >= soldPutStrike) continue;
-      var bpMid = putChain.mid ? putChain.mid[bp] : null;
-      if (soldPutMid === null || bpMid === null || bpMid <= 0) continue; // skip no-bid/phantom strikes
-      var spreadWidth = soldPutStrike - putChain.strike[bp];
-      if (spreadWidth <= 0) continue;
-      var creditPct = (soldPutMid - bpMid) / spreadWidth * 100;
-      if (creditPct < 42) continue;
-      var wDiff = Math.abs(spreadWidth - targetWidth);
-      if (wDiff > widthTol) continue;
-      var oiBp = (putChain.openInterest && putChain.openInterest[bp] != null) ? putChain.openInterest[bp] : 0;
-      if (oiBp > bestBpOI || (oiBp === bestBpOI && wDiff < bestDiff)) { bestBpOI = oiBp; bestDiff = wDiff; boughtPutIdx = bp; }
-    }
-    // Fallback 1: no ≥42% strike near target width → prefer HIGHER OI among all ≥42% strikes.
-    if (boughtPutIdx < 0) {
-      bestBpOI = -1; bestDiff = Infinity;
-      for (var bpf = 0; bpf < putChain.strike.length; bpf++) {
-        if (putChain.strike[bpf] >= soldPutStrike) continue;
-        var bpMidF = putChain.mid ? putChain.mid[bpf] : null;
-        if (soldPutMid === null || bpMidF === null || bpMidF <= 0) continue;
-        var swF = soldPutStrike - putChain.strike[bpf];
-        if (swF <= 0) continue;
-        var cpF = (soldPutMid - bpMidF) / swF * 100;
-        if (cpF < 42) continue;
-        var wDiffF = Math.abs(swF - targetWidth);
-        var oiF = (putChain.openInterest && putChain.openInterest[bpf] != null) ? putChain.openInterest[bpf] : 0;
-        if (oiF > bestBpOI || (oiF === bestBpOI && wDiffF < bestDiff)) { bestBpOI = oiF; bestDiff = wDiffF; boughtPutIdx = bpf; }
-      }
-    }
-    // Fallback 2 (low-IV underlyings <42% credit): among strikes within ~4pts of the best
-    // achievable credit%, prefer HIGHER OI — never a thin odd-lot strike. Tiebreak: credit → 50%.
-    if (boughtPutIdx < 0) {
-      var bestCredit = -Infinity;
-      for (var bpc = 0; bpc < putChain.strike.length; bpc++) {
-        if (putChain.strike[bpc] >= soldPutStrike) continue;
-        var bpMidC = putChain.mid ? putChain.mid[bpc] : null;
-        if (soldPutMid === null || bpMidC === null || bpMidC <= 0) continue;
-        var swC = soldPutStrike - putChain.strike[bpc];
-        if (swC <= 0) continue;
-        var cpC = (soldPutMid - bpMidC) / swC * 100;
-        if (cpC > bestCredit) bestCredit = cpC;
-      }
-      bestBpOI = -1; var bestCpDiff = Infinity;
-      for (var bp2 = 0; bp2 < putChain.strike.length; bp2++) {
-        if (putChain.strike[bp2] >= soldPutStrike) continue;
-        var bpMid2 = putChain.mid ? putChain.mid[bp2] : null;
-        if (soldPutMid === null || bpMid2 === null || bpMid2 <= 0) continue;
-        var sw2 = soldPutStrike - putChain.strike[bp2];
-        if (sw2 <= 0) continue;
-        var cp2 = (soldPutMid - bpMid2) / sw2 * 100;
-        if (cp2 < bestCredit - 4) continue;
-        var cpDiff2 = Math.abs(cp2 - 50);
-        var oi2 = (putChain.openInterest && putChain.openInterest[bp2] != null) ? putChain.openInterest[bp2] : 0;
-        if (oi2 > bestBpOI || (oi2 === bestBpOI && cpDiff2 < bestCpDiff)) { bestBpOI = oi2; bestCpDiff = cpDiff2; boughtPutIdx = bp2; }
-      }
-    }
-    if (boughtPutIdx < 0) { console.warn('[MSLp3]', ticker, 'no bought-put leg; soldPutStrike=', soldPutStrike, 'soldPutMid=', soldPutMid); return; }
     var boughtPutStrike = putChain.strike[boughtPutIdx];
     var boughtPutMid = putChain.mid ? putChain.mid[boughtPutIdx] : null;
     var spreadWidth = soldPutStrike - boughtPutStrike;
@@ -4710,108 +4697,95 @@ async function runMsl(forceTicker) {
     if (!callChain || !callChain.strike || !putChain || !putChain.strike)
       throw new Error('Could not load option chains.');
 
-    // === Leg 1: Sell ATM Put (anchor) ===
-    // Sell the strike NEAREST the current price (above OR below). Open interest only breaks ties
-    // between near-equidistant strikes (within ~1.2% of price) so a thin strike a hair closer
-    // can't beat a far more liquid neighbor — and the anchor never drifts off at-the-money.
-    var atmBand = pd.price * 0.05;
-    var minDist = Infinity;
-    for (var spa = 0; spa < putChain.strike.length; spa++) {
-      var da = Math.abs(putChain.strike[spa] - pd.price);
-      if (da <= atmBand && da < minDist) minDist = da;
-    }
-    var atmTol = pd.price * 0.012;
-    var soldPutIdx = -1, bestPutOI = -1, bestPutDist = Infinity;
-    if (minDist !== Infinity) {
-      for (var sp = 0; sp < putChain.strike.length; sp++) {
-        var d1 = Math.abs(putChain.strike[sp] - pd.price);
-        if (d1 > minDist + atmTol) continue;
-        var oi1 = (putChain.openInterest && putChain.openInterest[sp] != null) ? putChain.openInterest[sp] : 0;
-        if (oi1 > bestPutOI || (oi1 === bestPutOI && d1 < bestPutDist)) { bestPutOI = oi1; bestPutDist = d1; soldPutIdx = sp; }
+    // === Legs 1 & 2: the bull put spread — anchored OTM for BUFFER (Laura MM56) ===
+    // Push the SHORT put as far OTM as possible while the spread still pays ~50% credit. Width
+    // baseline ~20% of price, allowed up to ~30% to bring in credit ("2 dollars of credit bought
+    // me 30 points of wiggle room"). If ≥50% credit is reachable, take the FURTHEST-OTM such
+    // spread (max buffer). If not, take the highest credit available (≥42% floor) — i.e. the
+    // near-ATM spread. Self-adjusts: ~20% OTM in high IV, near-ATM in low IV.
+    var PUT_TARGET_CR = 50, PUT_FLOOR_CR = 42;
+    var minW = pd.price * 0.18, maxW = pd.price * 0.30; // Laura's ~20% baseline, up to ~30% for credit
+    var soldPutIdx = -1, boughtPutIdx = -1;
+    var bpOtm = -Infinity, bpCr = -Infinity, bpOI = -1, bpCrDiff = Infinity;
+    // Pass A — credit ≥ 50%: maximise buffer (short-put % OTM); tiebreak credit→50%, then OI.
+    for (var si = 0; si < putChain.strike.length; si++) {
+      var Sk = putChain.strike[si];
+      if (Sk == null || Sk >= pd.price) continue;               // short put must be OTM
+      var Sm = putChain.mid ? putChain.mid[si] : null;
+      if (Sm == null || Sm <= 0) continue;
+      var otm = (pd.price - Sk) / pd.price * 100;
+      var Soi = (putChain.openInterest && putChain.openInterest[si] != null) ? putChain.openInterest[si] : 0;
+      for (var li = 0; li < putChain.strike.length; li++) {
+        var Lk = putChain.strike[li];
+        if (Lk == null || Lk >= Sk) continue;
+        var Lm = putChain.mid ? putChain.mid[li] : null;
+        if (Lm == null || Lm <= 0) continue;
+        var w = Sk - Lk;
+        if (w < minW || w > maxW) continue;
+        var cr = (Sm - Lm) / w * 100;
+        if (cr < PUT_TARGET_CR) continue;
+        var crDiff = Math.abs(cr - PUT_TARGET_CR);
+        if (soldPutIdx < 0 || otm > bpOtm + 1e-9
+            || (Math.abs(otm - bpOtm) < 1e-9 && crDiff < bpCrDiff - 1e-9)
+            || (Math.abs(otm - bpOtm) < 1e-9 && Math.abs(crDiff - bpCrDiff) < 1e-9 && Soi > bpOI)) {
+          bpOtm = otm; bpCrDiff = crDiff; bpOI = Soi; soldPutIdx = si; boughtPutIdx = li;
+        }
       }
     }
-    // Fallback: no strike within the ATM band → strict closest-to-price
+    // Pass B — nothing hit 50%: take the highest credit ≥42% (closest to target); tiebreak OTM, OI.
     if (soldPutIdx < 0) {
-      bestPutDist = Infinity;
-      for (var sp0 = 0; sp0 < putChain.strike.length; sp0++) {
-        var d0 = Math.abs(putChain.strike[sp0] - pd.price);
-        if (d0 < bestPutDist) { bestPutDist = d0; soldPutIdx = sp0; }
+      for (var sb = 0; sb < putChain.strike.length; sb++) {
+        var Skb = putChain.strike[sb];
+        if (Skb == null || Skb >= pd.price) continue;
+        var Smb = putChain.mid ? putChain.mid[sb] : null;
+        if (Smb == null || Smb <= 0) continue;
+        var otmb = (pd.price - Skb) / pd.price * 100;
+        var Soib = (putChain.openInterest && putChain.openInterest[sb] != null) ? putChain.openInterest[sb] : 0;
+        for (var lb = 0; lb < putChain.strike.length; lb++) {
+          var Lkb = putChain.strike[lb];
+          if (Lkb == null || Lkb >= Skb) continue;
+          var Lmb = putChain.mid ? putChain.mid[lb] : null;
+          if (Lmb == null || Lmb <= 0) continue;
+          var wb = Skb - Lkb;
+          if (wb < minW || wb > maxW) continue;
+          var crb = (Smb - Lmb) / wb * 100;
+          if (crb < PUT_FLOOR_CR) continue;
+          if (soldPutIdx < 0 || crb > bpCr + 1e-9
+              || (Math.abs(crb - bpCr) < 1e-9 && otmb > bpOtm + 1e-9)
+              || (Math.abs(crb - bpCr) < 1e-9 && Math.abs(otmb - bpOtm) < 1e-9 && Soib > bpOI)) {
+            bpCr = crb; bpOtm = otmb; bpOI = Soib; soldPutIdx = sb; boughtPutIdx = lb;
+          }
+        }
       }
     }
-    if (soldPutIdx < 0) throw new Error('No ATM put strike found.');
+    // Pass C — even the 42% floor is unreachable: closest-to-50% spread within the width band.
+    if (soldPutIdx < 0) {
+      var fbDiff = Infinity;
+      for (var sc = 0; sc < putChain.strike.length; sc++) {
+        var Skc = putChain.strike[sc];
+        if (Skc == null || Skc >= pd.price) continue;
+        var Smc = putChain.mid ? putChain.mid[sc] : null;
+        if (Smc == null || Smc <= 0) continue;
+        for (var lc = 0; lc < putChain.strike.length; lc++) {
+          var Lkc = putChain.strike[lc];
+          if (Lkc == null || Lkc >= Skc) continue;
+          var Lmc = putChain.mid ? putChain.mid[lc] : null;
+          if (Lmc == null || Lmc <= 0) continue;
+          var wc = Skc - Lkc;
+          if (wc < minW || wc > maxW) continue;
+          var crc = (Smc - Lmc) / wc * 100;
+          var dc = Math.abs(crc - PUT_TARGET_CR);
+          if (dc < fbDiff) { fbDiff = dc; soldPutIdx = sc; boughtPutIdx = lc; }
+        }
+      }
+    }
+    if (soldPutIdx < 0 || boughtPutIdx < 0) throw new Error('No suitable OTM put spread found.');
     var soldPutStrike = putChain.strike[soldPutIdx];
     var soldPutMid = putChain.mid ? putChain.mid[soldPutIdx] : null;
     var soldPutBid = putChain.bid ? putChain.bid[soldPutIdx] : null;
     var soldPutAsk = putChain.ask ? putChain.ask[soldPutIdx] : null;
     var soldPutDelta = putChain.delta ? putChain.delta[soldPutIdx] : null;
     var soldPutOI = putChain.openInterest ? putChain.openInterest[soldPutIdx] : null;
-
-    // === Leg 2: Buy Lower Put (bull put spread protection) ===
-    // Target Laura's ~40-point spread (≈20% of price); among strikes that clear the ≥42%
-    // credit floor AND sit within a width tolerance of that target, prefer the HIGHER-OI
-    // (round/even) strike — her roll-ability rule. Width-fit is only the tiebreak.
-    var targetWidth = pd.price * 0.20; // her "$40 wide on a ~$200 stock", generalized to price
-    var widthTol = pd.price * 0.05;    // ±~10pts on a ~$200 stock — stay near the 40pt target
-    var boughtPutIdx = -1, bestBpOI = -1, bestDiff = Infinity;
-    for (var bp = 0; bp < putChain.strike.length; bp++) {
-      if (putChain.strike[bp] >= soldPutStrike) continue;
-      var bpMid = putChain.mid ? putChain.mid[bp] : null;
-      if (soldPutMid === null || bpMid === null || bpMid <= 0) continue; // skip no-bid/phantom strikes
-      var spreadWidth = soldPutStrike - putChain.strike[bp];
-      if (spreadWidth <= 0) continue;
-      var creditPct = (soldPutMid - bpMid) / spreadWidth * 100;
-      if (creditPct < 42) continue;
-      var wDiff = Math.abs(spreadWidth - targetWidth);
-      if (wDiff > widthTol) continue;
-      var oiBp = (putChain.openInterest && putChain.openInterest[bp] != null) ? putChain.openInterest[bp] : 0;
-      if (oiBp > bestBpOI || (oiBp === bestBpOI && wDiff < bestDiff)) { bestBpOI = oiBp; bestDiff = wDiff; boughtPutIdx = bp; }
-    }
-    // Fallback 1: no ≥42% strike near the target width → still prefer HIGHER OI among all
-    // strikes that clear 42% credit (width-fit is the tiebreak). Keeps liquidity first.
-    if (boughtPutIdx < 0) {
-      bestBpOI = -1; bestDiff = Infinity;
-      for (var bpf = 0; bpf < putChain.strike.length; bpf++) {
-        if (putChain.strike[bpf] >= soldPutStrike) continue;
-        var bpMidF = putChain.mid ? putChain.mid[bpf] : null;
-        if (soldPutMid === null || bpMidF === null || bpMidF <= 0) continue;
-        var swF = soldPutStrike - putChain.strike[bpf];
-        if (swF <= 0) continue;
-        var cpF = (soldPutMid - bpMidF) / swF * 100;
-        if (cpF < 42) continue;
-        var wDiffF = Math.abs(swF - targetWidth);
-        var oiF = (putChain.openInterest && putChain.openInterest[bpf] != null) ? putChain.openInterest[bpf] : 0;
-        if (oiF > bestBpOI || (oiF === bestBpOI && wDiffF < bestDiff)) { bestBpOI = oiF; bestDiff = wDiffF; boughtPutIdx = bpf; }
-      }
-    }
-    // Fallback 2 (low-IV underlyings that can't reach 42% credit, e.g. index ETFs): among the
-    // strikes within ~4 pts of the BEST achievable credit%, prefer HIGHER OI — never a thin
-    // odd-lot strike just because its credit is marginally closer to 50%. Tiebreak: credit → 50%.
-    if (boughtPutIdx < 0) {
-      var bestCredit = -Infinity;
-      for (var bpc = 0; bpc < putChain.strike.length; bpc++) {
-        if (putChain.strike[bpc] >= soldPutStrike) continue;
-        var bpMidC = putChain.mid ? putChain.mid[bpc] : null;
-        if (soldPutMid === null || bpMidC === null || bpMidC <= 0) continue;
-        var swC = soldPutStrike - putChain.strike[bpc];
-        if (swC <= 0) continue;
-        var cpC = (soldPutMid - bpMidC) / swC * 100;
-        if (cpC > bestCredit) bestCredit = cpC;
-      }
-      bestBpOI = -1; var bestCpDiff = Infinity;
-      for (var bp2 = 0; bp2 < putChain.strike.length; bp2++) {
-        if (putChain.strike[bp2] >= soldPutStrike) continue;
-        var bpMid2 = putChain.mid ? putChain.mid[bp2] : null;
-        if (soldPutMid === null || bpMid2 === null || bpMid2 <= 0) continue;
-        var sw2 = soldPutStrike - putChain.strike[bp2];
-        if (sw2 <= 0) continue;
-        var cp2 = (soldPutMid - bpMid2) / sw2 * 100;
-        if (cp2 < bestCredit - 4) continue;
-        var cpDiff2 = Math.abs(cp2 - 50);
-        var oi2 = (putChain.openInterest && putChain.openInterest[bp2] != null) ? putChain.openInterest[bp2] : 0;
-        if (oi2 > bestBpOI || (oi2 === bestBpOI && cpDiff2 < bestCpDiff)) { bestBpOI = oi2; bestCpDiff = cpDiff2; boughtPutIdx = bp2; }
-      }
-    }
-    if (boughtPutIdx < 0) throw new Error('No suitable lower put strike found for bull put spread.');
     var boughtPutStrike = putChain.strike[boughtPutIdx];
     var boughtPutMid = putChain.mid ? putChain.mid[boughtPutIdx] : null;
     var boughtPutBid = putChain.bid ? putChain.bid[boughtPutIdx] : null;
@@ -4821,6 +4795,7 @@ async function runMsl(forceTicker) {
     var spreadWidth = soldPutStrike - boughtPutStrike;
     var putSpreadCredit = (soldPutMid !== null && boughtPutMid !== null) ? soldPutMid - boughtPutMid : null;
     var putCreditPct = (putSpreadCredit !== null && spreadWidth > 0) ? (putSpreadCredit / spreadWidth * 100) : null;
+    var soldPutOtmPct = (soldPutStrike && pd.price) ? (pd.price - soldPutStrike) / pd.price * 100 : null; // buffer
 
     // === Leg 3: Buy Deep ITM Call (~50/50 intrinsic/extrinsic) ===
     // Prefer the higher-OI (round/even) strike — Laura's roll-ability rule — but only WITHIN the
@@ -4989,7 +4964,7 @@ async function runMsl(forceTicker) {
       // SECTION 1: The 3 legs
       sectionOpen('The Trade · 3 Legs') +
         tsItem('Buy Call (Deep ITM)', callCost100 ? '$' + fmt(callCost100,2) : '—', 'ts-loss', fmtDollar(callStrike) + ' · ' + fmt(callRatio*100,0) + '/' + fmt((1-callRatio)*100,0) + ' I/E') +
-        tsItem('Sell Put (ATM)',      soldPutMid ? '$' + fmt(soldPutMid*100,2) : '—', 'ts-gain', fmtDollar(soldPutStrike) + ' strike') +
+        tsItem('Sell Put (OTM Anchor)', soldPutMid ? '$' + fmt(soldPutMid*100,2) : '—', 'ts-gain', fmtDollar(soldPutStrike) + (soldPutOtmPct != null ? ' · ' + fmt(soldPutOtmPct,0) + '% OTM buffer' : '')) +
         tsItem('Buy Put (Lower)',     boughtPutMid ? '$' + fmt(boughtPutMid*100,2) : '—', 'ts-loss', fmtDollar(boughtPutStrike) + ' protection') +
         tsItem('Put Spread Credit',   putCredit100 !== null ? '+$' + fmt(putCredit100,2) : '—', 'ts-gain', fmt(putCreditPct,1) + '% of width') +
       sectionClose() +
@@ -5007,9 +4982,9 @@ async function runMsl(forceTicker) {
         '<div class="sc-row"><span class="sc-key">Δ / OI</span><span class="sc-val">' + (callDelta !== null ? fmt(Math.abs(callDelta),2) : '—') + ' / ' + oiSpan(callOI) + '</span></div>' +
         '<div class="sc-row"><span class="sc-key">I/E</span><span class="sc-val">' + fmt(callRatio*100,0) + '% / ' + fmt((1-callRatio)*100,0) + '%</span></div>' +
       '</div>' +
-      '<div class="scenario-card" style="padding:10px 12px"><h4 style="margin-bottom:6px">SELL — Put (ATM)</h4>' +
+      '<div class="scenario-card" style="padding:10px 12px"><h4 style="margin-bottom:6px">SELL — Put (OTM Anchor)</h4>' +
         '<div class="sc-row"><span class="sc-key">Strike / Mid</span><span class="sc-val">' + fmtDollar(soldPutStrike) + ' / ' + fmtDollar(soldPutMid) + '</span></div>' +
-        '<div class="sc-row"><span class="sc-key">Δ / OI</span><span class="sc-val">' + (soldPutDelta !== null ? fmt(Math.abs(soldPutDelta),2) : '—') + ' / ' + oiSpan(soldPutOI) + '</span></div>' +
+        '<div class="sc-row"><span class="sc-key">Buffer / OI</span><span class="sc-val">' + (soldPutOtmPct != null ? fmt(soldPutOtmPct,1) + '% OTM' : '—') + ' / ' + oiSpan(soldPutOI) + '</span></div>' +
       '</div>' +
       '<div class="scenario-card" style="padding:10px 12px"><h4 style="margin-bottom:6px">BUY — Put (Lower)</h4>' +
         '<div class="sc-row"><span class="sc-key">Strike / Mid</span><span class="sc-val">' + fmtDollar(boughtPutStrike) + ' / ' + fmtDollar(boughtPutMid) + '</span></div>' +
@@ -5061,7 +5036,7 @@ async function runMsl(forceTicker) {
     if (putChain && putChain.strike) {
       var spStart = Math.max(0, soldPutIdx - 4);
       var spEnd   = Math.min(putChain.strike.length, soldPutIdx + 5);
-      html += '<div class="chain-section"><h3>Short Put (ATM) <span style="color:var(--text-muted);font-weight:400;font-size:11px">— the anchor leg: sell the strike closest to price, ★ = recommended</span></h3>' +
+      html += '<div class="chain-section"><h3>Short Put (OTM Anchor) <span style="color:var(--text-muted);font-weight:400;font-size:11px">— furthest OTM that still pays ~50% spread credit (buffer), ★ = recommended</span></h3>' +
         '<div class="leaps-table-wrap"><table><thead><tr>' +
         '<th>Strike</th><th>Bid</th><th>Ask</th><th>Mid</th><th>Δ</th><th>OI</th><th>Dist from Price</th>' +
         '</tr></thead><tbody>';
@@ -5095,7 +5070,7 @@ async function runMsl(forceTicker) {
       var pStart = Math.max(0, recPutPos - 4);
       var pEnd   = Math.min(lowerPuts.length, recPutPos + 5);
 
-      html += '<div class="chain-section"><h3>Bull Put Spread Strikes <span style="color:var(--text-muted);font-weight:400;font-size:11px">— sold ' + fmtDollar(soldPutStrike) + ' ATM, ★ = recommended lower</span></h3>' +
+      html += '<div class="chain-section"><h3>Bull Put Spread Strikes <span style="color:var(--text-muted);font-weight:400;font-size:11px">— sold ' + fmtDollar(soldPutStrike) + (soldPutOtmPct != null ? ' (' + fmt(soldPutOtmPct,0) + '% OTM)' : '') + ', ★ = recommended lower</span></h3>' +
         '<div class="leaps-table-wrap"><table><thead><tr>' +
         '<th>Lower Strike</th><th>Bid</th><th>Ask</th><th>Mid</th><th>Δ</th><th>OI</th>' +
         '<th>Width</th><th>Credit</th><th>Credit %</th>' +
