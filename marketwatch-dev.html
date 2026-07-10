@@ -296,6 +296,16 @@ header {
    DASHBOARD GRID
 ═══════════════════════════════════════════════════════ */
 /* "Ready Now" banner — surfaces tickers at their MR entry trigger */
+.grade-alert-box { border-radius:10px; padding:11px 16px; margin:8px 20px 4px; font-size:13px; line-height:1.55;
+  background:rgba(0,255,150,0.10); border:1px solid var(--green); color:var(--text);
+  box-shadow:0 0 20px rgba(0,255,150,0.16); animation:gaPulse 2.2s ease-in-out infinite; }
+@keyframes gaPulse { 0%,100%{ box-shadow:0 0 14px rgba(0,255,150,0.12);} 50%{ box-shadow:0 0 26px rgba(0,255,150,0.26);} }
+@media (prefers-reduced-motion: reduce) { .grade-alert-box { animation:none; } }
+.grade-alert-box .ga-chip { display:inline-block; background:rgba(0,255,150,0.14); border:1px solid var(--green);
+  color:var(--text); border-radius:20px; padding:3px 11px; margin:3px 5px 0 0; font-size:11px; font-weight:800; cursor:pointer; }
+.grade-alert-box .ga-chip:hover { background:var(--green); color:#03121f; }
+.grade-alert-box .ga-sub { font-size:11px; color:var(--text-muted); margin-top:6px; }
+.hbtn.on { border-color:var(--green); color:var(--green); }
 .ready-banner { border-radius:10px; padding:11px 16px; margin:0 20px 4px; font-size:13px; line-height:1.55; }
 .ready-banner.ready-go { background:rgba(0,255,170,0.08); border:1px solid var(--green); color:var(--text); box-shadow:0 0 16px rgba(0,255,170,0.10); }
 .ready-banner.ready-none { background:rgba(255,255,255,0.03); border:1px solid var(--border2); color:var(--text-muted); }
@@ -1604,6 +1614,7 @@ input, textarea, select { -webkit-user-select: text; user-select: text; }
     <div class="market-status closed" id="mkt-status">CLOSED</div>
     <button class="hbtn" onclick="toggleTheme()">◑ THEME</button>
     <button class="hbtn" onclick="openTickerModal()">⚙ TICKERS</button>
+    <button class="hbtn" id="alert-btn" onclick="toggleAlerts()" title="Alert me when any ticker earns an A grade">🔕 ALERTS</button>
     <button class="hbtn" onclick="refreshDashboard(true)">↺ REFRESH</button>
   </div>
 </header>
@@ -1626,6 +1637,7 @@ input, textarea, select { -webkit-user-select: text; user-select: text; }
   <div class="dash-toolbar">
     <div id="refresh-info">Auto-refresh: market hours only</div>
   </div>
+  <div id="grade-alert" style="display:none"></div>
   <div id="ready-banner"></div>
   <div class="dash-columns">
     <!-- CSP Column -->
@@ -3189,6 +3201,73 @@ function renderColumns() {
   });
 
   renderReadyBanner();
+  checkGradeAlerts();
+}
+
+// ── A-grade alert: banner (always shown when an A exists) + opt-in browser notification on the
+//    transition into A (de-duped so it doesn't re-fire every refresh while it stays A). ──
+var _alertsOn = false;
+var _alertedA = {};
+function checkGradeAlerts() {
+  var strats = [
+    { key: 'put',   score: 'putScore',   label: 'Cash-Secured Put' },
+    { key: 'cc',    score: 'ccScore',    label: 'Covered Call' },
+    { key: 'synth', score: 'synthScore', label: 'Synthetic Long' },
+    { key: 'msl',   score: 'mslScore',   label: 'MSL' }
+  ];
+  var current = [];
+  tickers.forEach(function(t) {
+    var d = cardData[t];
+    if (!d || d.loading || d.phase < 2) return;
+    strats.forEach(function(s) {
+      var sc = d[s.score];
+      if (sc == null) return;
+      if (scoreToGrade(sc, maxCriteriaFor(s.key), d.phase) === 'A') current.push({ t: t, label: s.label, key: t + '|' + s.key });
+    });
+  });
+  var el = document.getElementById('grade-alert');
+  if (el) {
+    if (current.length) {
+      el.style.display = '';
+      el.innerHTML = '<div class="grade-alert-box">🎯 <strong>A-GRADE SETUP' + (current.length > 1 ? 'S' : '') + ' (' + current.length + '):</strong> ' +
+        current.map(function(c) { return '<span class="ga-chip" onclick="navigateToAnalyzer(\'' + c.t + '\',\'' + strats.filter(function(s){return s.label===c.label;})[0].key + '\')">' + c.t + ' · ' + c.label + '</span>'; }).join('') +
+        '<div class="ga-sub">Top grade — the −2 MR trigger and the quality checks all line up. Click a setup to open its analyzer and confirm.</div></div>';
+    } else { el.style.display = 'none'; el.innerHTML = ''; }
+  }
+  // Fire a browser notification only for setups that just crossed INTO A this cycle.
+  var newOnes = current.filter(function(c) { return !_alertedA[c.key]; });
+  var next = {}; current.forEach(function(c) { next[c.key] = true; });
+  _alertedA = next;
+  if (newOnes.length && _alertsOn && typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+    try {
+      new Notification('🎯 ' + newOnes.length + ' A-grade setup' + (newOnes.length > 1 ? 's' : '') + ' — OptionsEdge Pro', {
+        body: newOnes.map(function(c) { return c.t + ' · ' + c.label; }).join('\n'),
+        tag: 'oep-a-grade'
+      });
+    } catch (e) {}
+  }
+}
+function updateAlertBtn() {
+  var b = document.getElementById('alert-btn');
+  if (!b) return;
+  b.classList.toggle('on', !!_alertsOn);
+  b.innerHTML = (_alertsOn ? '🔔' : '🔕') + ' ALERTS';
+}
+function toggleAlerts() {
+  if (typeof Notification === 'undefined') { alert('This browser doesn\'t support desktop notifications — the on-screen A-grade banner still works.'); return; }
+  if (Notification.permission === 'granted') {
+    _alertsOn = !_alertsOn;
+    localStorage.setItem('owp-alerts', _alertsOn ? '1' : '0');
+    updateAlertBtn();
+  } else if (Notification.permission !== 'denied') {
+    Notification.requestPermission().then(function(p) {
+      _alertsOn = (p === 'granted');
+      localStorage.setItem('owp-alerts', _alertsOn ? '1' : '0');
+      updateAlertBtn();
+    });
+  } else {
+    alert('Notifications are blocked for this site in your browser settings. The on-screen A-grade banner still works regardless.');
+  }
 }
 
 // "Ready Now" — surface every ticker/strategy at its MR entry trigger (badge not gated to WAIT FOR SETUP),
@@ -5745,6 +5824,11 @@ refreshDashboard = function(forceRefresh) {
 };
 
 renderTickerStrip();
+
+// Restore A-grade alert preference (only "on" if the user previously enabled it AND the browser
+// still has notification permission granted).
+_alertsOn = (localStorage.getItem('owp-alerts') === '1') && (typeof Notification !== 'undefined') && (Notification.permission === 'granted');
+updateAlertBtn();
 
 // ═══════════════════════════════════════════════════════
 // CARD CLICK — NAVIGATE TO ANALYZER
