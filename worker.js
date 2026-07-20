@@ -318,11 +318,16 @@ async function requireAuth(req, env) {
   if (!payload) return { error: json({ error: 'Unauthorized — please log in' }, 401) };
 
   const now = Math.floor(Date.now() / 1000);
-  if (payload.status === 'trialing' && payload.trialEnd < now) {
-    return { error: json({ error: 'Trial expired — please subscribe to continue' }, 402) };
-  }
-  if (!['active', 'trialing'].includes(payload.status)) {
-    return { error: json({ error: 'Subscription required' }, 402) };
+  // Admin emails bypass the subscription/trial gate entirely (they always get
+  // full Trader-tier access — see tier assignment at login/verify).
+  const isAdmin = ADMIN_EMAILS.includes((payload.email || '').toLowerCase());
+  if (!isAdmin) {
+    if (payload.status === 'trialing' && payload.trialEnd < now) {
+      return { error: json({ error: 'Trial expired — please subscribe to continue' }, 402) };
+    }
+    if (!['active', 'trialing'].includes(payload.status)) {
+      return { error: json({ error: 'Subscription required' }, 402) };
+    }
   }
 
   // Single-session enforcement: verify session_id matches DB
