@@ -285,13 +285,19 @@ function getCacheTTL(proxyUrl) {
   return CACHE_TTL_STOCK;
 }
 
+const MAX_STALE = 24 * 60 * 60 * 1000; // serve stale-on-quota up to 24h old, then give up
+
 function getCached(key) {
   const entry = responseCache.get(key);
   if (!entry) return null;
-  if (Date.now() > entry.expires) {
-    responseCache.delete(key);
-    return null;
-  }
+  if (Date.now() > entry.expires) return null; // not fresh — but keep it for quota fallback
+  return entry;
+}
+// Last-known value regardless of freshness (used only when upstream is quota-limited).
+function getStale(key) {
+  const entry = responseCache.get(key);
+  if (!entry) return null;
+  if (Date.now() > entry.expires + MAX_STALE) { responseCache.delete(key); return null; }
   return entry;
 }
 
@@ -376,15 +382,34 @@ async function handleProxy(req, env) {
     });
   }
 
-  // ── Cache MISS — fetch from upstream ──
-  const proxyRes = await fetch(proxyUrl, { headers: proxyHeaders });
+  // ── Cache MISS — fetch from upstream (retry once on a transient 429 burst) ──
+  let proxyRes = await fetch(proxyUrl, { headers: proxyHeaders });
+  if (proxyRes.status === 429) {
+    await new Promise(r => setTimeout(r, 400));
+    proxyRes = await fetch(proxyUrl, { headers: proxyHeaders });
+  }
   const data = await proxyRes.text();
   const contentType = proxyRes.headers.get('Content-Type') || 'application/json';
 
   // Cache successful responses
   if (proxyRes.ok || proxyRes.status === 203) {
-    const ttl = getCacheTTL(proxyUrl);
-    putCache(cacheKey, data, contentType, proxyRes.status, ttl);
+    putCache(cacheKey, data, contentType, proxyRes.status, getCacheTTL(proxyUrl));
+    return new Response(data, {
+      status: proxyRes.status,
+      headers: { ...CORS_HEADERS, 'Content-Type': contentType, 'X-Cache': 'MISS' },
+    });
+  }
+
+  // Quota / rate-limit (402 = credits exhausted, 429 = too many requests): serve the last-known
+  // value if we have one, so the app degrades to stale data instead of a hard error.
+  if (proxyRes.status === 402 || proxyRes.status === 429) {
+    const stale = getStale(cacheKey);
+    if (stale) {
+      return new Response(stale.data, {
+        status: stale.status,
+        headers: { ...CORS_HEADERS, 'Content-Type': stale.contentType, 'X-Cache': 'STALE-QUOTA' },
+      });
+    }
   }
 
   return new Response(data, {

@@ -2598,7 +2598,10 @@ async function fetchTD(endpoint, params) {
   var headers = _authToken ? { 'Authorization': 'Bearer ' + _authToken } : {};
   var r = await fetch(proxyUrl, { headers: headers });
   if (checkSessionKicked(r)) throw new Error('session-kicked');
-  if (!r.ok) throw new Error('Twelve Data HTTP ' + r.status);
+  if (!r.ok) {
+    if (r.status === 402 || r.status === 429) throw new Error('TwelveData API limit reached — market data is rate-limited right now. It resets shortly (per-minute limits clear in ~1 min); try again in a moment.');
+    throw new Error('Twelve Data HTTP ' + r.status);
+  }
   var data = await r.json();
   if (data.status === 'error') throw new Error('TD: ' + (data.message || 'API error'));
   return data;
