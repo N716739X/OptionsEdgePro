@@ -1616,6 +1616,7 @@ input, textarea, select { -webkit-user-select: text; user-select: text; }
     <button class="hbtn" onclick="openTickerModal()">⚙ TICKERS</button>
     <button class="hbtn" id="alert-btn" onclick="toggleAlerts()" title="Alert me when any ticker earns an A grade">🔕 ALERTS</button>
     <button class="hbtn" onclick="refreshDashboard(true)">↺ REFRESH</button>
+    <button class="hbtn" id="logout-btn" onclick="doLogout()" title="Log out and return to the sign-in screen">⇥ LOG OUT</button>
   </div>
 </header>
 
@@ -1994,6 +1995,16 @@ function authLogout(msg) {
   // Show session-kicked message if provided
   var errEl = document.getElementById('auth-error');
   if (msg && errEl) { errEl.textContent = msg; errEl.classList.add('show'); }
+}
+
+// User-initiated logout: clear the saved token and reload so the next login
+// mints a fresh JWT (the proxy trusts the token's baked-in subscription status,
+// so a stale token must be discarded, not just re-verified).
+function doLogout() {
+  try { localStorage.removeItem('oe_token'); } catch(e) {}
+  _authToken = null;
+  _authUser = null;
+  location.reload();
 }
 
 // Check API responses for session-kicked (403)
