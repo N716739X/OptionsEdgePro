@@ -2557,31 +2557,53 @@ function aggregate30mTo4h(vals) {
     .map(function(k) { return buckets[k].close; });
 }
 
-// Fetch extended-hours (ETH) 4H closes for the mean-reversion calc.
-// James/Laura's Mean-BT runs on the ETH 4H chart. TwelveData only serves extended
-// hours (prepost=true) at ≤30-min intervals, so we pull 30-min ETH bars and build
-// the 4H series ourselves. The (interval) arg is kept for call-site compatibility
-// but the ETH 4H aggregation is always used, since the scale=12.5 is a 4H calibration.
+// True if TwelveData's newest bar (newest-first series) is older than ~5 days —
+// data feed lagging the live quote, so MR would be bogus → caller shows "—".
+function mrSeriesStale(newestStr) {
+  if (!newestStr) return false;
+  var dp = String(newestStr).slice(0, 10).split('-'); // "YYYY-MM-DD ..." → date only (tz-safe)
+  if (dp.length !== 3) return false;
+  var barUTC   = Date.UTC(parseInt(dp[0]), parseInt(dp[1]) - 1, parseInt(dp[2]));
+  var now      = new Date();
+  var todayUTC = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  return (todayUTC - barUTC) / 86400000 > 5; // survives long holiday weekends
+}
+
+// Set once per session if the ETH (prepost) fetch proves unavailable — extended
+// hours needs TwelveData Pro; on Grow/lower the request errors. After the first
+// failure we skip straight to the RTH 4h fallback so we don't burn a wasted call
+// (and a slow round-trip) on every ticker.
+var _mrEthUnavailable = false;
+
+// Fetch 4H closes for the mean-reversion calc, oldest-first.
+// PREFERRED: extended-hours (ETH) 4H — James/Laura read Mean-BT on the ETH chart.
+// TwelveData only serves prepost at ≤30-min, so we pull 30-min ETH bars and build
+// the 4H series ourselves (aggregate30mTo4h). If prepost is unavailable (non-Pro
+// plan → the request errors) we FALL BACK to regular-hours 4h bars, which works on
+// every plan. Scale stays 12.5 (a 4H calibration) either way.
 async function fetchMeanRev(ticker, interval) {
-  var data = await fetchTD('time_series', { symbol: ticker, interval: '30min', outputsize: 500, prepost: true, timezone: 'America/New_York' });
-  var vals = data.values || [];
-  // Data-quality guard: reject thin or stale series so recently-surged / thinly-covered
-  // names (where TwelveData's history lags the live quote) show "—" instead of a bogus MR.
-  if (vals.length < 60) return NaN; // too few 30-min bars to build a stable 4H RSI series
-  var newestStr = vals[0] && vals[0].datetime; // TwelveData returns newest-first
-  if (newestStr) {
-    var dp = String(newestStr).slice(0, 10).split('-'); // "YYYY-MM-DD ..." → date only (tz-safe)
-    if (dp.length === 3) {
-      var barUTC   = Date.UTC(parseInt(dp[0]), parseInt(dp[1]) - 1, parseInt(dp[2]));
-      var now      = new Date();
-      var todayUTC = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
-      var ageDays  = (todayUTC - barUTC) / 86400000;
-      if (ageDays > 5) return NaN; // stale: newest bar older than ~5 days (survives long holiday weekends)
+  if (!_mrEthUnavailable) {
+    try {
+      var data = await fetchTD('time_series', { symbol: ticker, interval: '30min', outputsize: 500, prepost: true, timezone: 'America/New_York' });
+      var vals = data.values || [];
+      if (vals.length >= 60 && !mrSeriesStale(vals[0] && vals[0].datetime)) {
+        var closes = aggregate30mTo4h(vals); // oldest-first 4H (ETH) closes
+        if (closes.length >= 30) return calcMeanRev(closes);
+      }
+      // Reached here on a 200 with too-few bars — treat as ETH unavailable and fall back.
+      _mrEthUnavailable = true;
+    } catch (e) {
+      _mrEthUnavailable = true; // prepost errored (likely non-Pro plan) → use RTH from now on
     }
   }
-  var closes = aggregate30mTo4h(vals); // oldest-first 4H (ETH) closes
-  if (closes.length < 30) return NaN;  // too few 4H bars for RSI(14)+EMA(9)
-  return calcMeanRev(closes);
+  // Fallback: regular-hours 4h bars (all plans). Slightly under-reads MR magnitude on
+  // volatile days vs the ETH chart, but never leaves MR blank.
+  var d2 = await fetchTD('time_series', { symbol: ticker, interval: '4h', outputsize: 60 });
+  var v2 = d2.values || [];
+  if (v2.length < 30) return NaN;
+  if (mrSeriesStale(v2[0] && v2[0].datetime)) return NaN;
+  var c2 = v2.map(function(v) { return parseFloat(v.close); }).reverse();
+  return calcMeanRev(c2);
 }
 
 function dteFromStr(dateStr) {

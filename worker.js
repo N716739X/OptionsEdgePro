@@ -521,6 +521,22 @@ function aggregate30mTo4h(vals) {
     .map(k => buckets[k].close);
 }
 
+// True if the newest bar (newest-first series) is older than ~5 days — feed lagging.
+function mrSeriesStale(newestStr) {
+  if (!newestStr) return false;
+  const dp = String(newestStr).slice(0, 10).split('-');
+  if (dp.length !== 3) return false;
+  const barUTC   = Date.UTC(parseInt(dp[0]), parseInt(dp[1]) - 1, parseInt(dp[2]));
+  const now      = new Date();
+  const todayUTC = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  return (todayUTC - barUTC) / 86400000 > 5;
+}
+
+// Set once per isolate if the ETH (prepost) fetch proves unavailable — extended hours
+// needs TwelveData Pro; on Grow/lower the request errors. After the first failure we
+// fetch RTH 4h directly instead of burning a wasted prepost call on every ticker.
+let mrEthUnavailable = false;
+
 function dteFromStr(dateStr) {
   if (!dateStr) return null;
   const parts = dateStr.split('-');
@@ -807,9 +823,14 @@ async function scoreTicker(ticker, env) {
   // Quote is essential; time_series (MR) and SMA-200 degrade gracefully. A just-IPO'd stock
   // (e.g. SPCX) has no 200-day history, so TwelveData errors on the SMA — catch it → no value
   // (criteria show neutral) instead of failing the whole card.
+  // MR source: ETH 30-min (aggregated to 4H) when prepost is available (TwelveData Pro),
+  // else RTH 4h. Once prepost has failed this isolate, go straight to RTH.
+  const mrTsUrl = mrEthUnavailable
+    ? 'https://api.twelvedata.com/time_series?symbol=' + ticker + '&interval=4h&outputsize=60' + TD_COUNTRY + '&apikey=' + env.TD_KEY
+    : 'https://api.twelvedata.com/time_series?symbol=' + ticker + '&interval=30min&outputsize=500&prepost=true&timezone=America%2FNew_York' + TD_COUNTRY + '&apikey=' + env.TD_KEY;
   const [quoteData, tsData, smaData] = await Promise.all([
     cachedFetch('https://api.twelvedata.com/quote?symbol=' + ticker + TD_COUNTRY + '&apikey=' + env.TD_KEY),
-    cachedFetch('https://api.twelvedata.com/time_series?symbol=' + ticker + '&interval=30min&outputsize=500&prepost=true&timezone=America%2FNew_York' + TD_COUNTRY + '&apikey=' + env.TD_KEY).catch(() => ({ values: [] })),
+    cachedFetch(mrTsUrl).catch(() => ({ values: [] })),
     cachedFetch('https://api.twelvedata.com/sma?symbol=' + ticker + '&interval=1day&time_period=200&outputsize=1' + TD_COUNTRY + '&apikey=' + env.TD_KEY).catch(() => ({ values: [] })), // SMA stays daily (trend filter)
   ]);
 
@@ -819,27 +840,27 @@ async function scoreTicker(ticker, env) {
   const week52H = parseFloat(quoteData.fifty_two_week?.high || quoteData.high);
   const week52L = parseFloat(quoteData.fifty_two_week?.low || quoteData.low);
   // Mean Reversion: Wilder RSI(14) → EMA(9) smooth → (val-50)/12.5 — matches James's indicator.
-  // Source is 30-min EXTENDED-hours bars aggregated into 4H (see aggregate30mTo4h): James/Laura
-  // read Mean-BT on the ETH 4H chart, and TwelveData only serves prepost data at ≤30min.
-  const tsVals = tsData.values || [];
+  // Preferred source is ETH 30-min bars aggregated into 4H (James/Laura read Mean-BT on the
+  // ETH chart); falls back to RTH 4h when prepost is unavailable (non-Pro plan). Scale=12.5
+  // is a 4H calibration and holds for both.
   // Data-quality guard: reject thin or stale series so recently-surged / thinly-covered
   // names (where TwelveData's history lags the live quote) return NaN instead of a bogus MR.
+  const tsVals = tsData.values || [];
   let meanRev = NaN;
-  if (tsVals.length >= 60) {
-    let stale = false;
-    const newestStr = tsVals[0] && tsVals[0].datetime; // TwelveData returns newest-first
-    if (newestStr) {
-      const dp = String(newestStr).slice(0, 10).split('-'); // date only (tz-safe)
-      if (dp.length === 3) {
-        const barUTC   = Date.UTC(parseInt(dp[0]), parseInt(dp[1]) - 1, parseInt(dp[2]));
-        const now      = new Date();
-        const todayUTC = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
-        if ((todayUTC - barUTC) / 86400000 > 5) stale = true; // newest bar older than ~5 days
-      }
-    }
-    if (!stale) {
-      const closes = aggregate30mTo4h(tsVals); // 30-min ETH bars → oldest-first 4H closes
-      if (closes.length >= 30) meanRev = calcMeanRev(closes);
+  const minBars = mrEthUnavailable ? 30 : 60;
+  if (tsVals.length >= minBars && !mrSeriesStale(tsVals[0] && tsVals[0].datetime)) {
+    const closes = mrEthUnavailable
+      ? tsVals.map(v => parseFloat(v.close)).reverse() // RTH 4h: closes are already 4H, oldest-first
+      : aggregate30mTo4h(tsVals);                      // ETH 30-min → oldest-first 4H closes
+    if (closes.length >= 30) meanRev = calcMeanRev(closes);
+  }
+  // ETH attempt yielded nothing (prepost unavailable on this plan) → remember + fall back to RTH 4h.
+  if (isNaN(meanRev) && !mrEthUnavailable) {
+    mrEthUnavailable = true;
+    const rth = await cachedFetch('https://api.twelvedata.com/time_series?symbol=' + ticker + '&interval=4h&outputsize=60' + TD_COUNTRY + '&apikey=' + env.TD_KEY).catch(() => ({ values: [] }));
+    const rv = rth.values || [];
+    if (rv.length >= 30 && !mrSeriesStale(rv[0] && rv[0].datetime)) {
+      meanRev = calcMeanRev(rv.map(v => parseFloat(v.close)).reverse());
     }
   }
   const smaVals = smaData.values || [];
