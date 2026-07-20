@@ -1616,6 +1616,7 @@ input, textarea, select { -webkit-user-select: text; user-select: text; }
     <button class="hbtn" onclick="openTickerModal()">⚙ TICKERS</button>
     <button class="hbtn" id="alert-btn" onclick="toggleAlerts()" title="Alert me when any ticker earns an A grade">🔕 ALERTS</button>
     <button class="hbtn" onclick="refreshDashboard(true)">↺ REFRESH</button>
+    <button class="hbtn" id="logout-btn" onclick="doLogout()" title="Log out and return to the sign-in screen">⇥ LOG OUT</button>
   </div>
 </header>
 
@@ -1994,6 +1995,16 @@ function authLogout(msg) {
   // Show session-kicked message if provided
   var errEl = document.getElementById('auth-error');
   if (msg && errEl) { errEl.textContent = msg; errEl.classList.add('show'); }
+}
+
+// User-initiated logout: clear the saved token and reload so the next login
+// mints a fresh JWT (the proxy trusts the token's baked-in subscription status,
+// so a stale token must be discarded, not just re-verified).
+function doLogout() {
+  try { localStorage.removeItem('oe_token'); } catch(e) {}
+  _authToken = null;
+  _authUser = null;
+  location.reload();
 }
 
 // Check API responses for session-kicked (403)
@@ -2599,8 +2610,12 @@ async function fetchTD(endpoint, params) {
   var r = await fetch(proxyUrl, { headers: headers });
   if (checkSessionKicked(r)) throw new Error('session-kicked');
   if (!r.ok) {
-    if (r.status === 402 || r.status === 429) throw new Error('TwelveData API limit reached — market data is rate-limited right now. It resets shortly (per-minute limits clear in ~1 min); try again in a moment.');
-    throw new Error('Twelve Data HTTP ' + r.status);
+    // 402 comes from the app's OWN subscription gate (requireAuth), NOT the data feed — surface
+    // the real reason. 429 = genuine upstream rate limit. 401 = re-login.
+    if (r.status === 402) { var b402 = {}; try { b402 = await r.json(); } catch (e) {} throw new Error(b402.error || 'Your OptionsEdge Pro subscription or trial has expired — please subscribe to continue.'); }
+    if (r.status === 401) throw new Error('Please log in again to continue.');
+    if (r.status === 429) throw new Error('Market data is temporarily rate-limited — try again in a moment.');
+    throw new Error('Market data unavailable (HTTP ' + r.status + ').');
   }
   var data = await r.json();
   if (data.status === 'error') throw new Error('TD: ' + (data.message || 'API error'));
@@ -2712,7 +2727,10 @@ async function fetchMD(path, params) {
           var stale = mdCacheGetStale(cacheKey, MD_CACHE_TTL_STALE_ON_QUOTA);
           if (stale) return stale;
         }
-        throw new Error('MarketData HTTP ' + r.status + ': ' + errText);
+        // 402 is the app's own subscription gate (requireAuth), not MarketData — show the real reason.
+        if (r.status === 402) { var m402; try { m402 = JSON.parse(errText).error; } catch (e) {} throw new Error(m402 || 'Your OptionsEdge Pro subscription or trial has expired — please subscribe to continue.'); }
+        if (r.status === 401) throw new Error('Please log in again to continue.');
+        throw new Error('Options data unavailable (HTTP ' + r.status + ').');
       }
       var data = await r.json();
       if (data.s === 'no_data') {
