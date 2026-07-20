@@ -2534,14 +2534,40 @@ function calcMeanRev(closes) {
   return (ema - 50) / scale;
 }
 
-// Fetch daily or weekly closes for mean reversion calc
+// Aggregate TwelveData 30-min bars (newest-first, ET datetimes) into 4H closes,
+// oldest-first. 4H buckets are anchored to the ET clock (…04:00 / 08:00 / 12:00 /
+// 16:00 / 20:00), so extended-hours (pre/post-market) bars fall into the 04–08 and
+// 16–20 buckets — matching the ETH 4H chart Laura & James read their Mean-BT on.
+// Each 4H close = the close of the LAST 30-min bar inside its bucket.
+function aggregate30mTo4h(vals) {
+  var buckets = {};
+  for (var i = 0; i < vals.length; i++) {
+    var dt = vals[i] && vals[i].datetime;
+    if (!dt) continue;
+    var c = parseFloat(vals[i].close);
+    if (isNaN(c)) continue;
+    var hh = parseInt(String(dt).slice(11, 13), 10);
+    if (isNaN(hh)) hh = 0;
+    var key = String(dt).slice(0, 10) + '_' + (Math.floor(hh / 4) * 4);
+    var ex = buckets[key];
+    if (!ex || dt > ex.dt) buckets[key] = { dt: dt, close: c }; // keep latest sub-bar = bucket close
+  }
+  return Object.keys(buckets)
+    .sort(function(a, b) { return buckets[a].dt < buckets[b].dt ? -1 : 1; })
+    .map(function(k) { return buckets[k].close; });
+}
+
+// Fetch extended-hours (ETH) 4H closes for the mean-reversion calc.
+// James/Laura's Mean-BT runs on the ETH 4H chart. TwelveData only serves extended
+// hours (prepost=true) at ≤30-min intervals, so we pull 30-min ETH bars and build
+// the 4H series ourselves. The (interval) arg is kept for call-site compatibility
+// but the ETH 4H aggregation is always used, since the scale=12.5 is a 4H calibration.
 async function fetchMeanRev(ticker, interval) {
-  var intv = interval || '4h'; // default 4H — James's scale
-  var data = await fetchTD('time_series', { symbol: ticker, interval: intv, outputsize: 60 });
+  var data = await fetchTD('time_series', { symbol: ticker, interval: '30min', outputsize: 500, prepost: true, timezone: 'America/New_York' });
   var vals = data.values || [];
   // Data-quality guard: reject thin or stale series so recently-surged / thinly-covered
   // names (where TwelveData's history lags the live quote) show "—" instead of a bogus MR.
-  if (vals.length < 30) return NaN; // too few bars for RSI(14)+EMA(9)
+  if (vals.length < 60) return NaN; // too few 30-min bars to build a stable 4H RSI series
   var newestStr = vals[0] && vals[0].datetime; // TwelveData returns newest-first
   if (newestStr) {
     var dp = String(newestStr).slice(0, 10).split('-'); // "YYYY-MM-DD ..." → date only (tz-safe)
@@ -2553,8 +2579,8 @@ async function fetchMeanRev(ticker, interval) {
       if (ageDays > 5) return NaN; // stale: newest bar older than ~5 days (survives long holiday weekends)
     }
   }
-  // TwelveData returns newest first — reverse to oldest-first
-  var closes = vals.map(function(v) { return parseFloat(v.close); }).reverse();
+  var closes = aggregate30mTo4h(vals); // oldest-first 4H (ETH) closes
+  if (closes.length < 30) return NaN;  // too few 4H bars for RSI(14)+EMA(9)
   return calcMeanRev(closes);
 }
 

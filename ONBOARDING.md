@@ -61,7 +61,8 @@ Then open a PR and squash-merge.
 ## 4. The methodology (Laura OG / James)
 
 **Mean Reversion (MR)** — the core indicator. Wilder **RSI(14) → EMA(9) → (value − 50) / 12.5**, on the **4H** timeframe.
-- `scale = 12.5` was calibrated from live IA-Mean-Reversion chart pairs (maps RSI to ±4; OB/OS ±2 bands at RSI 75/25).
+- **Data source = EXTENDED-hours (ETH) 4H bars.** Laura & James read Mean-BT on the ETH chart, so the app must too. TwelveData only serves extended-hours data (`prepost=true`) at **≤30-min** intervals — *not* 4h — so we fetch **30-min ETH bars** (`interval=30min&prepost=true&timezone=America/New_York&outputsize=500`) and aggregate them into 4H buckets via `aggregate30mTo4h` before the RSI calc. 4H buckets anchor to the ET clock (…04:00/08:00/12:00/16:00/20:00 → four bars/day: 04–08, 08–12, 12–16, 16–20); each 4H close = the last 30-min close in its bucket. Mirrored in `worker.js` (`aggregate30mTo4h` + the 30-min fetch in `scoreTicker`) — keep both in sync. *Before this change the app used RTH-only 4h bars and systematically under-read MR magnitude on volatile days (e.g. TSLA app −0.78 vs chart −1.55).*
+- `scale = 12.5` was calibrated from live IA-Mean-Reversion chart pairs (maps RSI to ±4; OB/OS ±2 bands at RSI 75/25). It is James's own 4H scale — do **not** rescale it to close a gap; a magnitude gap means the *input bars* differ (session/feed), not the scale.
 - Zone labels (display only): ±0.5 = Overbought/Oversold, ±2 = Deeply OB/OS — matches James's IA-Mean-Reversion shading. Entry **triggers** stay at ±2 regardless (the labels don't gate anything).
 - Data guard: rejects thin (<30 bars) or stale (>5 days) TwelveData series → shows `—`.
 - ⚠️ It **cannot** tick-match James's private "Mean-BT" exactly — that's a data-feed/session (RTH vs ETH) difference. 12.5 is the pragmatic best-fit.

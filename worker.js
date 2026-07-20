@@ -499,6 +499,28 @@ function calcMeanRev(closes) {
   return (ema - 50) / scale;
 }
 
+// Aggregate TwelveData 30-min bars (newest-first, ET datetimes) into 4H closes,
+// oldest-first. 4H buckets anchor to the ET clock (…04:00/08:00/12:00/16:00/20:00),
+// so extended-hours bars are included — matching the ETH 4H chart James's Mean-BT
+// uses. Each 4H close = the close of the last 30-min bar inside its bucket.
+function aggregate30mTo4h(vals) {
+  const buckets = {};
+  for (let i = 0; i < vals.length; i++) {
+    const dt = vals[i] && vals[i].datetime;
+    if (!dt) continue;
+    const c = parseFloat(vals[i].close);
+    if (isNaN(c)) continue;
+    let hh = parseInt(String(dt).slice(11, 13), 10);
+    if (isNaN(hh)) hh = 0;
+    const key = String(dt).slice(0, 10) + '_' + (Math.floor(hh / 4) * 4);
+    const ex = buckets[key];
+    if (!ex || dt > ex.dt) buckets[key] = { dt, close: c }; // latest sub-bar = bucket close
+  }
+  return Object.keys(buckets)
+    .sort((a, b) => (buckets[a].dt < buckets[b].dt ? -1 : 1))
+    .map(k => buckets[k].close);
+}
+
 function dteFromStr(dateStr) {
   if (!dateStr) return null;
   const parts = dateStr.split('-');
@@ -787,7 +809,7 @@ async function scoreTicker(ticker, env) {
   // (criteria show neutral) instead of failing the whole card.
   const [quoteData, tsData, smaData] = await Promise.all([
     cachedFetch('https://api.twelvedata.com/quote?symbol=' + ticker + TD_COUNTRY + '&apikey=' + env.TD_KEY),
-    cachedFetch('https://api.twelvedata.com/time_series?symbol=' + ticker + '&interval=4h&outputsize=60' + TD_COUNTRY + '&apikey=' + env.TD_KEY).catch(() => ({ values: [] })),
+    cachedFetch('https://api.twelvedata.com/time_series?symbol=' + ticker + '&interval=30min&outputsize=500&prepost=true&timezone=America%2FNew_York' + TD_COUNTRY + '&apikey=' + env.TD_KEY).catch(() => ({ values: [] })),
     cachedFetch('https://api.twelvedata.com/sma?symbol=' + ticker + '&interval=1day&time_period=200&outputsize=1' + TD_COUNTRY + '&apikey=' + env.TD_KEY).catch(() => ({ values: [] })), // SMA stays daily (trend filter)
   ]);
 
@@ -796,12 +818,14 @@ async function scoreTicker(ticker, env) {
   const changePct = parseFloat(quoteData.percent_change);
   const week52H = parseFloat(quoteData.fifty_two_week?.high || quoteData.high);
   const week52L = parseFloat(quoteData.fifty_two_week?.low || quoteData.low);
-  // Mean Reversion: Wilder RSI(14) → EMA(9) smooth → (val-50)/12.5 — matches James's indicator
+  // Mean Reversion: Wilder RSI(14) → EMA(9) smooth → (val-50)/12.5 — matches James's indicator.
+  // Source is 30-min EXTENDED-hours bars aggregated into 4H (see aggregate30mTo4h): James/Laura
+  // read Mean-BT on the ETH 4H chart, and TwelveData only serves prepost data at ≤30min.
   const tsVals = tsData.values || [];
   // Data-quality guard: reject thin or stale series so recently-surged / thinly-covered
   // names (where TwelveData's history lags the live quote) return NaN instead of a bogus MR.
   let meanRev = NaN;
-  if (tsVals.length >= 30) {
+  if (tsVals.length >= 60) {
     let stale = false;
     const newestStr = tsVals[0] && tsVals[0].datetime; // TwelveData returns newest-first
     if (newestStr) {
@@ -814,8 +838,8 @@ async function scoreTicker(ticker, env) {
       }
     }
     if (!stale) {
-      const closes = tsVals.map(v => parseFloat(v.close)).reverse(); // oldest-first
-      meanRev = calcMeanRev(closes);
+      const closes = aggregate30mTo4h(tsVals); // 30-min ETH bars → oldest-first 4H closes
+      if (closes.length >= 30) meanRev = calcMeanRev(closes);
     }
   }
   const smaVals = smaData.values || [];
