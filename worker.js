@@ -644,6 +644,10 @@ function scoreMslChains(price, mr, expiry, dte, callChain, putChain) {
     }
   }
   if (soldPutIdx < 0) {
+    // Highest credit ≥42%, but credits within PUT_CR_TOL of the best are a tie → break toward
+    // liquidity (OI) then buffer (further OTM). Mirrors runMsl Pass B — keep in sync.
+    const PUT_CR_TOL = 2.5;
+    let candsB = [];
     for (let sb = 0; sb < putChain.strike.length; sb++) {
       const Skb = putChain.strike[sb];
       if (Skb == null || Skb >= price) continue;
@@ -660,12 +664,19 @@ function scoreMslChains(price, mr, expiry, dte, callChain, putChain) {
         if (wb < minW || wb > maxW) continue;
         const crb = (Smb - Lmb) / wb * 100;
         if (crb < PUT_FLOOR_CR) continue;
-        if (soldPutIdx < 0 || crb > bpCr + 1e-9
-            || (Math.abs(crb - bpCr) < 1e-9 && otmb > bpOtm + 1e-9)
-            || (Math.abs(crb - bpCr) < 1e-9 && Math.abs(otmb - bpOtm) < 1e-9 && Soib > bpOI)) {
-          bpCr = crb; bpOtm = otmb; bpOI = Soib; soldPutIdx = sb; boughtPutIdx = lb;
-        }
+        candsB.push({ si: sb, li: lb, cr: crb, otm: otmb, oi: Soib });
       }
+    }
+    if (candsB.length) {
+      const maxCrB = candsB.reduce((m, c) => (c.cr > m ? c.cr : m), -Infinity);
+      candsB = candsB.filter(c => c.cr >= maxCrB - PUT_CR_TOL);
+      candsB.sort((a, b) => {
+        if (b.oi !== a.oi) return b.oi - a.oi;
+        if (Math.abs(b.otm - a.otm) > 1e-9) return b.otm - a.otm;
+        return b.cr - a.cr;
+      });
+      soldPutIdx = candsB[0].si; boughtPutIdx = candsB[0].li;
+      bpCr = candsB[0].cr; bpOtm = candsB[0].otm; bpOI = candsB[0].oi;
     }
   }
   if (soldPutIdx < 0) {
