@@ -3654,7 +3654,7 @@ async function runMslPhase3(ticker) {
       fetchChain(ticker, bestExpiry, 'call').catch(function(err){ console.warn('[MSLp3]', ticker, 'call chain error', err && err.message); return null; }),
       fetchChain(ticker, bestExpiry, 'put').catch(function(err){ console.warn('[MSLp3]', ticker, 'put chain error', err && err.message); return null; })
     ]);
-    var callChain = results[0], putChain = results[1];
+    var callChain = mslFilterRoundStrikes(results[0], pd.price), putChain = mslFilterRoundStrikes(results[1], pd.price);
     if (!callChain || !callChain.strike || !putChain || !putChain.strike || callChain.strike.length === 0 || putChain.strike.length === 0) {
       console.warn('[MSLp3]', ticker, 'chain unusable @', bestExpiry, 'calls=', callChain && callChain.strike && callChain.strike.length, 'puts=', putChain && putChain.strike && putChain.strike.length);
       return;
@@ -4887,6 +4887,36 @@ async function runSynth(forceTicker) {
   } finally { if (btn) btn.disabled = false; }
 }
 
+// Restrict an option chain to "round" strikes so the MSL never picks (or lists) an
+// off-round strike like 325/335 next to the liquid 320/330/340 ladder — round strikes
+// are the deeper, more roll-able ones (Laura's rule). Adapts to each ticker's ladder:
+// tries the largest increment (10, then 5) that leaves enough strikes AND actually drops
+// some; if neither qualifies (cheap names with tight $1/$2.50 ladders) the chain is
+// returned untouched. Used for BOTH selection and the strike tables, so they always agree.
+function mslFilterRoundStrikes(chain, price) {
+  if (!chain || !Array.isArray(chain.strike) || !chain.strike.length) return chain;
+  var strikes = chain.strike.filter(function(s) { return s != null; });
+  var isMult = function(s, g) { return Math.abs(s / g - Math.round(s / g)) < 1e-6; };
+  var incs = [10, 5], chosen = 0;
+  for (var gi = 0; gi < incs.length; gi++) {
+    var g = incs[gi];
+    var n = strikes.filter(function(s) { return isMult(s, g); }).length;
+    if (n >= 6 && n < strikes.length) { chosen = g; break; } // enough to build spreads, and it prunes something
+  }
+  if (!chosen) return chain;
+  var keep = [];
+  for (var i = 0; i < chain.strike.length; i++) {
+    if (chain.strike[i] != null && isMult(chain.strike[i], chosen)) keep.push(i);
+  }
+  var out = {};
+  Object.keys(chain).forEach(function(k) {
+    out[k] = Array.isArray(chain[k]) && chain[k].length === chain.strike.length
+      ? keep.map(function(idx) { return chain[k][idx]; })
+      : chain[k];
+  });
+  return out;
+}
+
 // ═══════════════════════════════════════════════════════
 // GRADE MY MSL — score a user-entered structure vs Laura's rules
 // ═══════════════════════════════════════════════════════
@@ -5067,7 +5097,7 @@ async function gradeMsl() {
     try { pd.meanRev = await fetchMeanRev(ticker, '4h'); } catch (e) {}
     var dte = dteFromStr(expiry);
     var chains = await Promise.all([fetchChain(ticker, expiry, 'call'), fetchChain(ticker, expiry, 'put')]);
-    var callChain = chains[0], putChain = chains[1];
+    var callChain = mslFilterRoundStrikes(chains[0], pd.price), putChain = mslFilterRoundStrikes(chains[1], pd.price);
     if (!callChain || !callChain.strike || !putChain || !putChain.strike) throw new Error('Could not load option chains for ' + expiry + '.');
     function nearest(chain, k) { var idx = -1, best = Infinity; for (var i = 0; i < chain.strike.length; i++) { var d = Math.abs(chain.strike[i] - k); if (d < best) { best = d; idx = i; } } return idx; }
     var uc = nearest(callChain, cS), us = nearest(putChain, sS), ub = nearest(putChain, bS);
@@ -5174,7 +5204,8 @@ async function runMsl(forceTicker) {
       fetchChain(ticker, bestExpiry, 'call'),
       fetchChain(ticker, bestExpiry, 'put')
     ]);
-    var callChain = results[0], putChain = results[1];
+    var callChain = mslFilterRoundStrikes(results[0], pd.price);
+    var putChain = mslFilterRoundStrikes(results[1], pd.price);
     if (!callChain || !callChain.strike || !putChain || !putChain.strike)
       throw new Error('Could not load option chains.');
 
