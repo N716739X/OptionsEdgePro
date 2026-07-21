@@ -537,6 +537,32 @@ function mrSeriesStale(newestStr) {
 // fetch RTH 4h directly instead of burning a wasted prepost call on every ticker.
 let mrEthUnavailable = false;
 
+// Restrict an option chain to "round" strikes so the MSL never picks an off-round strike
+// (e.g. 325/335 beside the 320/330/340 ladder). Mirrors frontend mslFilterRoundStrikes:
+// largest increment (10, then 5) that leaves ≥6 strikes and prunes some; else untouched.
+function mslFilterRoundStrikes(chain, price) {
+  if (!chain || !Array.isArray(chain.strike) || !chain.strike.length) return chain;
+  const strikes = chain.strike.filter(s => s != null);
+  const isMult = (s, g) => Math.abs(s / g - Math.round(s / g)) < 1e-6;
+  let chosen = 0;
+  for (const g of [10, 5]) {
+    const n = strikes.filter(s => isMult(s, g)).length;
+    if (n >= 6 && n < strikes.length) { chosen = g; break; }
+  }
+  if (!chosen) return chain;
+  const keep = [];
+  for (let i = 0; i < chain.strike.length; i++) {
+    if (chain.strike[i] != null && isMult(chain.strike[i], chosen)) keep.push(i);
+  }
+  const out = {};
+  Object.keys(chain).forEach(k => {
+    out[k] = Array.isArray(chain[k]) && chain[k].length === chain.strike.length
+      ? keep.map(idx => chain[k][idx])
+      : chain[k];
+  });
+  return out;
+}
+
 function dteFromStr(dateStr) {
   if (!dateStr) return null;
   const parts = dateStr.split('-');
@@ -612,6 +638,8 @@ function scoreMslChains(price, mr, expiry, dte, callChain, putChain) {
     c1: !isNaN(mr) ? mr <= -2 : null, c2: null, c3: null, c4: dte >= 365, c5: null, c6: null, c7: null, c8: null,
     weighted: null, t1Pass: null, score: null, callRatio: null, netDebitPct: null, putCreditPct: null, riskRatio: null };
   if (!callChain || !callChain.strike || !putChain || !putChain.strike || !callChain.strike.length || !putChain.strike.length) return out;
+  callChain = mslFilterRoundStrikes(callChain, price);
+  putChain = mslFilterRoundStrikes(putChain, price);
   // Legs 1 & 2: the bull put spread \u2014 anchored OTM for BUFFER (Laura MM56). Push the SHORT put as
   // far OTM as possible while the spread still pays ~50% credit. Width ~20% of price up to ~30%
   // for credit. \u226550% reachable \u2192 furthest-OTM such spread; else highest credit \u226542%.
