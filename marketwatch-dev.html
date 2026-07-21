@@ -3694,6 +3694,10 @@ async function runMslPhase3(ticker) {
       }
     }
     if (soldPutIdx < 0) {
+      // Highest credit ≥42%, but credits within PUT_CR_TOL of the best are a tie → break
+      // toward liquidity (OI) then buffer (further OTM). Mirrors runMsl Pass B.
+      var PUT_CR_TOL = 2.5;
+      var candsB = [];
       for (var sb = 0; sb < putChain.strike.length; sb++) {
         var Skb = putChain.strike[sb];
         if (Skb == null || Skb >= pd.price) continue;
@@ -3710,12 +3714,19 @@ async function runMslPhase3(ticker) {
           if (wb < minW || wb > maxW) continue;
           var crb = (Smb - Lmb) / wb * 100;
           if (crb < PUT_FLOOR_CR) continue;
-          if (soldPutIdx < 0 || crb > bpCr + 1e-9
-              || (Math.abs(crb - bpCr) < 1e-9 && otmb > bpOtm + 1e-9)
-              || (Math.abs(crb - bpCr) < 1e-9 && Math.abs(otmb - bpOtm) < 1e-9 && Soib > bpOI)) {
-            bpCr = crb; bpOtm = otmb; bpOI = Soib; soldPutIdx = sb; boughtPutIdx = lb;
-          }
+          candsB.push({ si: sb, li: lb, cr: crb, otm: otmb, oi: Soib });
         }
+      }
+      if (candsB.length) {
+        var maxCrB = candsB.reduce(function(m, c) { return c.cr > m ? c.cr : m; }, -Infinity);
+        candsB = candsB.filter(function(c) { return c.cr >= maxCrB - PUT_CR_TOL; });
+        candsB.sort(function(a, b) {
+          if (b.oi !== a.oi) return b.oi - a.oi;
+          if (Math.abs(b.otm - a.otm) > 1e-9) return b.otm - a.otm;
+          return b.cr - a.cr;
+        });
+        soldPutIdx = candsB[0].si; boughtPutIdx = candsB[0].li;
+        bpCr = candsB[0].cr; bpOtm = candsB[0].otm; bpOI = candsB[0].oi;
       }
     }
     if (soldPutIdx < 0) {
@@ -4920,6 +4931,9 @@ function mslPickPutSpread(putChain, price) {
     }
   }
   if (sIdx < 0) {
+    // Highest credit ≥42%, credits within CR_TOL of best treated as a tie → break toward
+    // liquidity (OI) then buffer (further OTM). Mirrors runMsl Pass B — keep in sync.
+    var CR_TOL = 2.5, candsB = [];
     for (var sb = 0; sb < putChain.strike.length; sb++) {
       var Skb = putChain.strike[sb]; if (Skb == null || Skb >= price) continue;
       var Smb = putChain.mid ? putChain.mid[sb] : null; if (Smb == null || Smb <= 0) continue;
@@ -4930,8 +4944,18 @@ function mslPickPutSpread(putChain, price) {
         var Lmb = putChain.mid ? putChain.mid[lb] : null; if (Lmb == null || Lmb <= 0) continue;
         var wb = Skb - Lkb; if (wb < minW || wb > maxW) continue;
         var crb = (Smb - Lmb) / wb * 100; if (crb < FLOOR) continue;
-        if (sIdx < 0 || crb > bCr + 1e-9 || (Math.abs(crb - bCr) < 1e-9 && otmb > bOtm + 1e-9) || (Math.abs(crb - bCr) < 1e-9 && Math.abs(otmb - bOtm) < 1e-9 && Soib > bOI)) { bCr = crb; bOtm = otmb; bOI = Soib; sIdx = sb; bIdx = lb; }
+        candsB.push({ si: sb, li: lb, cr: crb, otm: otmb, oi: Soib });
       }
+    }
+    if (candsB.length) {
+      var maxCrB = candsB.reduce(function(m, c) { return c.cr > m ? c.cr : m; }, -Infinity);
+      candsB = candsB.filter(function(c) { return c.cr >= maxCrB - CR_TOL; });
+      candsB.sort(function(a, b) {
+        if (b.oi !== a.oi) return b.oi - a.oi;
+        if (Math.abs(b.otm - a.otm) > 1e-9) return b.otm - a.otm;
+        return b.cr - a.cr;
+      });
+      sIdx = candsB[0].si; bIdx = candsB[0].li; bCr = candsB[0].cr; bOtm = candsB[0].otm; bOI = candsB[0].oi;
     }
   }
   if (sIdx < 0) {
@@ -5189,8 +5213,15 @@ async function runMsl(forceTicker) {
         }
       }
     }
-    // Pass B — nothing hit 50%: take the highest credit ≥42% (closest to target); tiebreak OTM, OI.
+    // Pass B — nothing hit 50%: aim for the highest credit ≥42%, but treat credits within
+    // PUT_CR_TOL of the best as a TIE and break toward LIQUIDITY (OI) then BUFFER (further OTM).
+    // Strict max-credit chases a fractional-% edge onto thin strikes (e.g. GOOG picked the
+    // 345 short at 268 OI over the 340 at 927 OI for ~0.5% more credit) — this stops that.
+    // Pass B only fires on low-IV names where every OTM spread is near-ATM anyway, so the
+    // buffer spread across candidates is small and roll-ability (OI) is the deciding factor.
     if (soldPutIdx < 0) {
+      var PUT_CR_TOL = 2.5; // percentage points of width treated as an equal-credit tie
+      var candsB = [];
       for (var sb = 0; sb < putChain.strike.length; sb++) {
         var Skb = putChain.strike[sb];
         if (Skb == null || Skb >= pd.price) continue;
@@ -5207,12 +5238,19 @@ async function runMsl(forceTicker) {
           if (wb < minW || wb > maxW) continue;
           var crb = (Smb - Lmb) / wb * 100;
           if (crb < PUT_FLOOR_CR) continue;
-          if (soldPutIdx < 0 || crb > bpCr + 1e-9
-              || (Math.abs(crb - bpCr) < 1e-9 && otmb > bpOtm + 1e-9)
-              || (Math.abs(crb - bpCr) < 1e-9 && Math.abs(otmb - bpOtm) < 1e-9 && Soib > bpOI)) {
-            bpCr = crb; bpOtm = otmb; bpOI = Soib; soldPutIdx = sb; boughtPutIdx = lb;
-          }
+          candsB.push({ si: sb, li: lb, cr: crb, otm: otmb, oi: Soib });
         }
+      }
+      if (candsB.length) {
+        var maxCrB = candsB.reduce(function(m, c) { return c.cr > m ? c.cr : m; }, -Infinity);
+        candsB = candsB.filter(function(c) { return c.cr >= maxCrB - PUT_CR_TOL; });
+        candsB.sort(function(a, b) {
+          if (b.oi !== a.oi) return b.oi - a.oi;                        // liquidity first (roll-ability)
+          if (Math.abs(b.otm - a.otm) > 1e-9) return b.otm - a.otm;     // then more buffer
+          return b.cr - a.cr;                                           // then more credit
+        });
+        soldPutIdx = candsB[0].si; boughtPutIdx = candsB[0].li;
+        bpCr = candsB[0].cr; bpOtm = candsB[0].otm; bpOI = candsB[0].oi;
       }
     }
     // Pass C — even the 42% floor is unreachable: closest-to-50% spread within the width band.
