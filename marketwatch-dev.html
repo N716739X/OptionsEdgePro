@@ -1764,6 +1764,9 @@ input, textarea, select { -webkit-user-select: text; user-select: text; }
     <div style="font-size:12px;color:var(--text-muted);margin-bottom:12px;line-height:1.5">
       Roll an underwater MSL <strong>down</strong> using Laura's two rules. Pick <strong>your expiration</strong> from the dropdown (auto-filled once you enter a ticker) to price the roll on the contract you hold — or leave it on <em>Farthest LEAPS</em>. Live mid prices. Roll each side as its own vertical — you don't have to roll both.
     </div>
+    <div style="border:1px solid var(--border);border-left:3px solid var(--accent);background:rgba(0,0,0,0.16);border-radius:8px;padding:10px 13px;margin-bottom:14px;font-size:11.5px;line-height:1.55;color:var(--text)">
+      <b style="color:var(--accent)">When do you roll?</b> Only at a <b>fresh bottom — never on the way down.</b> Laura rolls an MSL down when the <b>4H Mean Reversion (Mean-BT) hits ≤ −2</b> (deeply oversold), ideally as price tests the <b>200-day SMA</b> with a buy divergence. Rolling before that just spends adjustment room while the stock keeps falling. Enter your position below — the tool tells you whether that signal is live <em>right now</em> and gives you the exact <b>TradingView alert levels</b> to watch for the next one.
+    </div>
     <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;margin-bottom:16px">
       <label style="display:flex;flex-direction:column;gap:4px;font-size:10px;text-transform:uppercase;letter-spacing:0.6px;color:var(--text-muted)">Ticker
         <input id="msladj-ticker" type="text" placeholder="SLV" onchange="loadMslAdjExpirations()" onkeydown="if(event.key==='Enter')runMslAdjust()" style="width:90px;padding:7px 9px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:14px;font-weight:700;text-transform:uppercase" />
@@ -6287,6 +6290,18 @@ async function runMslAdjust() {
         gateChip(atSMA, 'At 200 Daily SMA', smaDistPct !== null ? (smaDistPct >= 0 ? '+' : '') + fmt(smaDistPct,1) + '% vs SMA' : '—') +
         gateChip(null, 'Buy divergence', 'confirm on chart — price lower low, MR higher low') +
       '</div>' +
+    '</div>';
+
+    // ── TradingView alert levels — so you catch the NEXT roll window without watching the chart ──
+    html += '<div style="border:1px solid var(--border);background:rgba(0,0,0,0.16);border-radius:10px;padding:12px 14px;margin-bottom:12px">' +
+      '<div style="font-size:12.5px;font-weight:800;color:var(--accent);margin-bottom:3px">📟 Set these TradingView alerts to catch the next roll window</div>' +
+      '<div style="font-size:11px;color:var(--text-muted);line-height:1.5;margin-bottom:9px">Roll <b>at the bottom, not on the way down.</b> These fire when Laura\'s conditions line up — so you don\'t have to babysit the chart:</div>' +
+      '<div style="display:flex;flex-direction:column;gap:8px;font-size:11.5px;line-height:1.5;color:var(--text)">' +
+        '<div><b>①&nbsp; Mean-BT crosses below −2</b> — the primary bottom trigger. In TradingView: alert on the IA-Mean-Reversion indicator, condition <em>“crossing down”</em> value <b>−2</b>, on the <b>4H</b>.' + (hasMR ? ' <span style="color:var(--text-muted)">Now: ' + fmt(mr,2) + ' · ' + mrZ.short + '.</span>' : '') + '</div>' +
+        '<div><b>②&nbsp; Price crosses the 200-day SMA</b> — the support / buy-divergence zone. In TradingView: add a 200 SMA, alert condition <em>“crossing”</em> price × the SMA line.' + (pd.sma200 ? ' <span style="color:var(--text-muted)">200 SMA ≈ ' + fmtDollar(pd.sma200) + (smaDistPct !== null ? ', price is ' + (smaDistPct >= 0 ? '+' : '') + fmt(smaDistPct,1) + '% away.' : '.') + '</span>' : '') + '</div>' +
+        (hasShort ? '<div><b>③&nbsp; Price alert at ' + fmtDollar(shortStrike) + '</b> — your short-put anchor (the buffer line). If price falls to here the buffer is spent and rolling the long put down gets urgent. In TradingView: a simple <em>price</em> alert at ' + fmtDollar(shortStrike) + '.</div>' : '') +
+      '</div>' +
+      '<div style="font-size:10.5px;color:var(--text-muted);line-height:1.5;margin-top:9px">When ① fires (bonus if ② is near too), come back here and hit <b>Scan Roll-Downs</b> — the tool will price the roll and confirm the signal is live.</div>' +
     '</div>';
 
     if (missingNote) html += '<div class="notice">⚠ ' + missingNote + 'Enter strikes that appear in the chain (check the expiry) — the scan uses live mids at your exact strikes.</div>';
