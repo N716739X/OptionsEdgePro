@@ -800,13 +800,15 @@ function scoreMslChains(price, mr, expiry, dte, callChain, putChain) {
   const slRisk = (slNetDebit !== null && slPutStrike) ? (slPutStrike + slNetDebit) : null;
   const mslRisk = (netDebit !== null && spreadWidth > 0) ? (netDebit + spreadWidth) : null;
   const riskRatio = (slRisk && slRisk > 0 && mslRisk !== null) ? (mslRisk / slRisk * 100) : null;
+  // MM60 risk gate: MSL risk ≤ 50% of owning the stock (price per share), not vs the synthetic long.
+  const riskVsStockPct = (mslRisk !== null && price) ? (mslRisk / price * 100) : null;
   out.c2 = putCreditPct !== null ? putCreditPct >= 42 : null;
   out.c3 = (callRatio !== null && !isNaN(callRatio)) ? (callRatio >= 0.40 && callRatio <= 0.60) : null;
   out.c5 = netDebitPct !== null ? netDebitPct <= 40 : null;
   out.c6 = callOI !== null ? callOI >= 500 : null;
   out.c7 = soldPutOI !== null ? soldPutOI >= 500 : null;
-  out.c8 = riskRatio !== null ? riskRatio <= 60 : null;
-  out.callRatio = callRatio; out.netDebitPct = netDebitPct; out.putCreditPct = putCreditPct; out.riskRatio = riskRatio;
+  out.c8 = riskVsStockPct !== null ? riskVsStockPct <= 50 : null; // MM60: ≤ 50% of owning stock
+  out.callRatio = callRatio; out.netDebitPct = netDebitPct; out.putCreditPct = putCreditPct; out.riskRatio = riskRatio; out.riskVsStockPct = riskVsStockPct;
   out.score = [out.c1, out.c2, out.c3, out.c4, out.c5, out.c8].filter(x => x === true).length;
   out.weighted = (out.c1 === true ? 2 : 0) + (out.c2 === true ? 2 : 0) + (out.c8 === true ? 2 : 0) +
                  (out.c3 === true ? 1 : 0) + (out.c5 === true ? 1 : 0) + (out.c4 === true ? 1 : 0);
@@ -1099,7 +1101,7 @@ async function scoreTicker(ticker, env) {
     synth: { score: synthScore, total: 4, grade: scoreToGrade(synthScore, 4), badge: synthBadge, mr: synthCh.mr, netCostPct: synthCh.netCostPct,
              c1: synthCh.c1, c2: null, c3: synthCh.c3, c4: synthCh.c4, c5: synthCh.c5, c6: synthCh.c6, c7: synthCh.c7 },
     msl:   { score: mslScore, total: 6, grade: scoreToGrade(mslScore, 6), badge: mslBadge, weighted: mslCh.weighted, t1Pass: mslCh.t1Pass,
-             mr: mslCh.mr, callRatio: mslCh.callRatio, netDebitPct: mslCh.netDebitPct, riskRatio: mslCh.riskRatio, expiry: mslCh.expiry,
+             mr: mslCh.mr, callRatio: mslCh.callRatio, netDebitPct: mslCh.netDebitPct, riskRatio: mslCh.riskRatio, riskVsStockPct: mslCh.riskVsStockPct, expiry: mslCh.expiry,
              c1: mslCh.c1, c2: mslCh.c2, c3: mslCh.c3, c4: mslCh.c4, c5: mslCh.c5, c6: mslCh.c6, c7: mslCh.c7, c8: mslCh.c8 },
   };
 }
