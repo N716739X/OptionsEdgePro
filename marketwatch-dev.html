@@ -6193,14 +6193,27 @@ function mslPosRemove(id) {
 
 function mslPosLoadIntoForm(id) {
   var p = mslPosLoad().filter(function(x){ return x.id === id; })[0];
-  if (!p) return;
-  document.getElementById('msladj-ticker').value = p.ticker;
-  document.getElementById('msladj-call').value = p.call;
-  document.getElementById('msladj-short').value = p.short;
-  document.getElementById('msladj-put').value = p.put;
-  var done = loadMslAdjExpirations();
-  if (done && done.then) { done.then(function(){ if (p.exp) { var sel = document.getElementById('msladj-exp'); if (sel) sel.value = p.exp; } }); }
-  try { document.getElementById('msladj-ticker').scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (e) {}
+  if (!p) { setStatus('msladj-status', 'Could not find that saved position', 'error'); return; }
+  var tEl = document.getElementById('msladj-ticker'),
+      cEl = document.getElementById('msladj-call'),
+      sEl = document.getElementById('msladj-short'),
+      pEl = document.getElementById('msladj-put');
+  tEl.value = p.ticker; cEl.value = p.call; sEl.value = p.short; pEl.value = p.put;
+  // Flash the loaded fields so the change is unmistakable (three same-ticker positions differ
+  // only by strike, so a silent swap looks like nothing happened).
+  [tEl, cEl, sEl, pEl].forEach(function(el) {
+    if (!el) return;
+    el.style.transition = 'box-shadow .15s, border-color .15s';
+    el.style.boxShadow = '0 0 0 2px var(--accent)';
+    el.style.borderColor = 'var(--accent)';
+    setTimeout(function(){ el.style.boxShadow = ''; el.style.borderColor = ''; }, 900);
+  });
+  setStatus('msladj-status', '✓ Loaded ' + p.ticker + ' — Call ' + fmtDollar(p.call) + ' / Short ' + fmtDollar(p.short) + ' / Long ' + fmtDollar(p.put) + ' — now hit Scan Roll-Downs', 'ok');
+  try {
+    var done = loadMslAdjExpirations();
+    if (done && done.then) { done.then(function(){ if (p.exp) { var sel = document.getElementById('msladj-exp'); if (sel) sel.value = p.exp; } }); }
+  } catch (e) {}
+  try { tEl.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (e) {}
 }
 
 function renderMslPositions() {
