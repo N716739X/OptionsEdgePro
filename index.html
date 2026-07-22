@@ -6159,20 +6159,36 @@ async function loadMslAdjExpirations() {
 // ═══════════════════════════════════════════════════════
 // MY MSL POSITIONS — save legs locally, flag when a roll window opens
 // ═══════════════════════════════════════════════════════
-// Stored per logged-in email in localStorage (this device only). Roll-status is
-// computed from each ticker's live MR / 200 SMA using the SAME trigger gate as the
-// roll calculator, refreshed on tab-open (if stale) or the ↻ button.
-function _mslPosKey() {
-  var email = (_authUser && _authUser.email) ? _authUser.email.toLowerCase() : 'anon';
-  return 'owp-msl-positions-' + email;
-}
+// Stored in localStorage on this device. A STABLE key (not per-email) — an earlier build
+// keyed this per logged-in email, which orphaned the list across a logout/login. Roll-status
+// is computed from each ticker's live MR / 200 SMA using the SAME trigger gate as the roll
+// calculator, refreshed on tab-open (if stale) or the ↻ button.
+var MSL_POS_KEY = 'owp-msl-positions';
+function _mslPosKey() { return MSL_POS_KEY; }
 var _mslRollAlerted = {}; // position ids already alerted this session (fires only on transition INTO open)
 
 function mslPosLoad() {
-  try { return JSON.parse(localStorage.getItem(_mslPosKey()) || '[]') || []; } catch (e) { return []; }
+  try {
+    var raw = localStorage.getItem(MSL_POS_KEY);
+    if (raw) { var a = JSON.parse(raw); if (Array.isArray(a) && a.length) return a; }
+    // One-time migration: recover positions saved by the old per-email key
+    // ('owp-msl-positions-<email>' / '-anon') so a prior logout/login didn't lose them.
+    for (var i = 0; i < localStorage.length; i++) {
+      var k = localStorage.key(i);
+      if (k && k !== MSL_POS_KEY && k.indexOf('owp-msl-positions-') === 0) {
+        var legacy = JSON.parse(localStorage.getItem(k) || '[]');
+        if (Array.isArray(legacy) && legacy.length) {
+          localStorage.setItem(MSL_POS_KEY, JSON.stringify(legacy)); // adopt into the stable key
+          return legacy;
+        }
+      }
+    }
+    if (raw) { var a2 = JSON.parse(raw); return Array.isArray(a2) ? a2 : []; }
+    return [];
+  } catch (e) { return []; }
 }
 function mslPosSave(arr) {
-  try { localStorage.setItem(_mslPosKey(), JSON.stringify(arr)); } catch (e) {}
+  try { localStorage.setItem(MSL_POS_KEY, JSON.stringify(arr)); } catch (e) {}
 }
 
 // Roll signal for a saved position — mirrors the runMslAdjust trigger gate.
