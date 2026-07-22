@@ -2997,7 +2997,7 @@ var GLOSSARY = {
   'DUR':   'Duration (DTE). Synthetic Long / MSL use LEAPS — 540+ days preferred.',
   'DEBIT': 'Net debit as a % of price — MSL wants ≤ 40% (ideal ≤ 33%).',
   'SPRD':  'Bid-ask spread ≤ 10% — confirms the option is liquid enough to fill near the mid.',
-  'RISK':  'MSL max risk vs an equivalent Synthetic Long — Laura wants ≤ 60% (about half).'
+  'RISK':  'MSL max risk (debit + spread width) vs owning the stock — Laura wants ≤ 50% ("less than half of what the stock does", MM60).'
 };
 
 // Build a full rich card for a dashboard column
@@ -3843,6 +3843,8 @@ async function runMslPhase3(ticker) {
     var slRiskPh3 = (slNetDebitPh3 !== null && slPutStrikePh3) ? (slPutStrikePh3 + slNetDebitPh3) : null;
     var mslRiskPh3 = (netDebit !== null && spreadWidth > 0) ? (netDebit + spreadWidth) : null;
     var mslRiskRatioPh3 = (slRiskPh3 && slRiskPh3 > 0 && mslRiskPh3 !== null) ? (mslRiskPh3 / slRiskPh3 * 100) : null;
+    // MM60 risk gate: MSL risk ≤ 50% of owning the stock (price per share), not vs the synthetic long.
+    var mslRiskVsStockPh3 = (mslRiskPh3 !== null && pd.price) ? (mslRiskPh3 / pd.price * 100) : null;
 
     // 6 scored criteria + back-compat fields
     d.msl_c1 = !isNaN(pd.meanRev) ? pd.meanRev <= -2 : null; // Laura OG (MM46): entry at MR −2 (Deeply Oversold)
@@ -3856,8 +3858,9 @@ async function runMslPhase3(ticker) {
     d.mslNetDebitPct = netDebitPct;
     d.msl_c6 = callOI !== null ? callOI >= 500 : null;
     d.msl_c7 = soldPutOI !== null ? soldPutOI >= 500 : null;
-    d.msl_c8 = mslRiskRatioPh3 !== null ? mslRiskRatioPh3 <= 60 : null;  // MSL risk ≤ 60% of SL (ideal ≤50%)
-    d.mslRiskRatio = mslRiskRatioPh3;
+    d.msl_c8 = mslRiskVsStockPh3 !== null ? mslRiskVsStockPh3 <= 50 : null;  // MM60: MSL risk ≤ 50% of owning stock
+    d.mslRiskRatio = mslRiskRatioPh3;       // vs synthetic long — kept for context
+    d.mslRiskVsStock = mslRiskVsStockPh3;   // vs owning stock — the gating metric
     // Criteria-passed count (displayed as X/6 — unchanged for UX continuity)
     d.mslScore = [d.msl_c1,d.msl_c2,d.msl_c3,d.msl_c4,d.msl_c5,d.msl_c8]
       .filter(function(x){return x===true;}).length;
@@ -5074,13 +5077,14 @@ function mslComputeGrade(pd, callChain, putChain, cIdx, sIdx, bIdx, dte) {
   var slNetCost = (callMid != null && slPutMid != null) ? callMid - slPutMid : null;
   var slMaxRisk = (slPutStrike && slNetCost != null) ? (slPutStrike + slNetCost) * 100 : null;
   var riskRatio = (slMaxRisk && mslMaxRisk) ? mslMaxRisk / slMaxRisk * 100 : null;
+  var riskVsStockPct = (mslMaxRisk && price) ? (mslMaxRisk / (price * 100) * 100) : null; // MM60 gate
   var m = {
     callStrike: callStrike, callMid: callMid, callOI: callOI, callDelta: callDelta, callRatio: callRatio,
     soldPutStrike: soldPutStrike, soldPutMid: soldPutMid, soldPutOI: soldPutOI,
     boughtPutStrike: boughtPutStrike, boughtPutMid: boughtPutMid, boughtPutOI: boughtPutOI,
     spreadWidth: spreadWidth, putSpreadCredit: putSpreadCredit, putCreditPct: putCreditPct,
     netDebit: netDebit, netDebitPct: netDebitPct, breakeven: breakeven, soldPutOtmPct: soldPutOtmPct,
-    mslMaxRisk: mslMaxRisk, slMaxRisk: slMaxRisk, riskRatio: riskRatio,
+    mslMaxRisk: mslMaxRisk, slMaxRisk: slMaxRisk, riskRatio: riskRatio, riskVsStockPct: riskVsStockPct,
     riskReductionPct: riskRatio != null ? 100 - riskRatio : null
   };
   m.c1 = !isNaN(pd.meanRev) ? pd.meanRev <= -2 : null;
@@ -5088,7 +5092,7 @@ function mslComputeGrade(pd, callChain, putChain, cIdx, sIdx, bIdx, dte) {
   m.c3 = (callRatio != null && !isNaN(callRatio)) ? (callRatio >= 0.40 && callRatio <= 0.60) : null;
   m.c4 = dte >= 365;
   m.c5 = netDebitPct != null ? netDebitPct <= 40 : null;
-  m.c8 = riskRatio != null ? riskRatio <= 60 : null;
+  m.c8 = riskVsStockPct != null ? riskVsStockPct <= 50 : null; // MM60: risk ≤ 50% of owning stock
   m.score = [m.c1, m.c2, m.c3, m.c4, m.c5, m.c8].filter(function(x) { return x === true; }).length;
   m.weighted = (m.c1 === true ? 2 : 0) + (m.c2 === true ? 2 : 0) + (m.c8 === true ? 2 : 0) + (m.c3 === true ? 1 : 0) + (m.c5 === true ? 1 : 0) + (m.c4 === true ? 1 : 0);
   m.t1Pass = m.c1 === true && m.c2 === true && m.c8 === true;
@@ -5163,7 +5167,7 @@ async function gradeMsl() {
     html += '<div class="scorecard"><h3>Your MSL — Grade</h3><div class="criteria-list">';
     html += critRow(1, 'MR · 4H ≤ −2 (Deeply Oversold — Buy the Dip)', um.c1, !isNaN(pd.meanRev) ? mrZone(pd.meanRev).label : 'N/A');
     html += critRow(2, 'Put Credit ≥ 42% of Width (≥50% = Ideal)', um.c2, um.putCreditPct != null ? fmt(um.putCreditPct, 1) + '%' : 'N/A');
-    html += critRow(3, 'MSL Risk ≤ 60% of SL Risk (≤50% = Ideal)', um.c8, um.riskRatio != null ? fmt(um.riskRatio, 0) + '% of SL' : 'N/A');
+    html += critRow(3, 'MSL Risk ≤ 50% of Owning Stock (≤40% = Ideal)', um.c8, um.riskVsStockPct != null ? fmt(um.riskVsStockPct, 0) + '% of stock' : 'N/A');
     html += critRow(4, 'Call Intrinsic/Extrinsic 40–60% (45–55% = Ideal)', um.c3, um.callRatio != null ? fmt(um.callRatio * 100, 0) + '/' + fmt((1 - um.callRatio) * 100, 0) : 'N/A');
     html += critRow(5, 'Net Debit ≤ 40% of Price (≤33% = Ideal)', um.c5, um.netDebitPct != null ? fmt(um.netDebitPct, 1) + '%' : 'N/A');
     html += critRow(6, 'Duration ≥ 365 DTE (LEAPS — ≥540 = Ideal)', um.c4, dte + ' days');
@@ -5186,7 +5190,7 @@ async function gradeMsl() {
           gmRow('Put-spread credit', um.putCreditPct != null ? fmt(um.putCreditPct, 1) + '%' : '—', rm.putCreditPct != null ? fmt(rm.putCreditPct, 1) + '%' : '—', '') +
           gmRow('Net debit', um.netDebitPct != null ? fmt(um.netDebitPct, 1) + '% of price' : '—', rm.netDebitPct != null ? fmt(rm.netDebitPct, 1) + '% of price' : '—', '') +
           gmRow('Downside buffer', um.soldPutOtmPct != null ? fmt(um.soldPutOtmPct, 1) + '% OTM' : '—', rm.soldPutOtmPct != null ? fmt(rm.soldPutOtmPct, 1) + '% OTM' : '—', '') +
-          gmRow('Risk vs synthetic long', um.riskRatio != null ? fmt(um.riskRatio, 0) + '%' : '—', rm.riskRatio != null ? fmt(rm.riskRatio, 0) + '%' : '—', '') +
+          gmRow('Risk vs owning stock', um.riskVsStockPct != null ? fmt(um.riskVsStockPct, 0) + '%' : '—', rm.riskVsStockPct != null ? fmt(rm.riskVsStockPct, 0) + '%' : '—', '') +
           gmRow('Breakeven', um.breakeven != null ? fmtDollar(um.breakeven) : '—', rm.breakeven != null ? fmtDollar(rm.breakeven) : '—', '') +
         '</div>' +
         '<div style="font-size:10.5px;color:var(--text-muted);margin-top:8px;line-height:1.5">Cyan = your leg differs from the app\'s pick. Matching the app\'s strikes isn\'t mandatory — it\'s the buffer-first structure Laura\'s rules point to for this expiry.</div>' +
@@ -5197,7 +5201,7 @@ async function gradeMsl() {
     var sw = [], sg = [];
     if (um.c1 !== true) sw.push('💡 <strong>Not at the −2 MR trigger:</strong> MSL is a mean-reversion play — best entered at a 4H low. This is a timing gate, independent of your strikes.');
     if (um.c2 !== true && um.putCreditPct != null) sw.push('⚠️ <strong>Put credit ' + fmt(um.putCreditPct, 1) + '% (< 42%):</strong> move the short put further OTM or widen the spread until the credit reaches ~50% (app picks ' + fmtDollar(rm ? rm.soldPutStrike : um.soldPutStrike) + ').');
-    if (um.c8 !== true && um.riskRatio != null) sw.push('⚠️ <strong>Risk ' + fmt(um.riskRatio, 0) + '% of SL (> 60%):</strong> a wider bull-put spread or a tighter (deeper) call lowers the max risk toward Laura\'s ≤half.');
+    if (um.c8 !== true && um.riskVsStockPct != null) sw.push('⚠️ <strong>Risk ' + fmt(um.riskVsStockPct, 0) + '% of owning the stock (> 50%):</strong> over Laura\'s "less than half" rule (MM60). A wider bull-put spread or a tighter (deeper) call lowers the max risk; usually it only clears 50% at a lower entry / lower IV.');
     if (um.c3 !== true && um.callRatio != null) sw.push('💡 <strong>Call I/E off 50/50 (' + fmt(um.callRatio * 100, 0) + '/' + fmt((1 - um.callRatio) * 100, 0) + '):</strong> ' + (um.callRatio > 0.60 ? 'too deep — try a higher strike' : 'not deep enough — try a lower strike') + ' (app picks ' + (rm ? fmtDollar(rm.callStrike) : '—') + ').');
     if (um.c5 !== true && um.netDebitPct != null) sw.push('💡 <strong>Net debit ' + fmt(um.netDebitPct, 1) + '% (> 40%):</strong> the put-spread credit isn\'t offsetting enough of the call cost.');
     if (um.c4 !== true) sw.push('💡 <strong>Under 365 DTE:</strong> Laura anchors MSLs in LEAPS — prefer ≥540 days.');
@@ -5516,8 +5520,22 @@ async function runMsl(forceTicker) {
     var riskHalfGoal = riskReductionPct !== null && riskReductionPct >= 45;
     // c8 — MSL Max Risk ≤ 60% of SL Max Risk (Laura's "risk less than half"); ≤50% = ideal
     var mslRiskRatio = (slMaxRisk && mslMaxRisk) ? (mslMaxRisk / slMaxRisk * 100) : null;
-    c8 = mslRiskRatio !== null ? mslRiskRatio <= 60 : null;
-    var c8Ideal = mslRiskRatio !== null && mslRiskRatio <= 50;
+    // MM60 risk rule: MSL max risk must be "less than half of what the stock does" — i.e.
+    // ≤ 50% of OWNING the stock (price × 100), NOT relative to a synthetic long. (Marvell
+    // 124/196 = 63% → fail; Astera 66% → fail.) The synthetic-long ratio stays as context below.
+    var riskVsStockPct = (mslMaxRisk && pd.price) ? (mslMaxRisk / (pd.price * 100) * 100) : null;
+    c8 = riskVsStockPct !== null ? riskVsStockPct <= 50 : null;
+    var c8Ideal = riskVsStockPct !== null && riskVsStockPct <= 40;
+    // MM60 "3x test": price the underlying must reach for a 3× return = call strike + 3 × risk.
+    // Flag when that target sits above the 52-week high (best available proxy for the all-time
+    // high) — Laura calls that unrealistic and a fail ("MRVL needs 515 vs a 340 ATH").
+    var riskPerShare = (mslMaxRisk !== null) ? mslMaxRisk / 100 : null;
+    var target3x = (riskPerShare !== null && callStrike) ? callStrike + 3 * riskPerShare : null;
+    var move3xPct = (target3x !== null && pd.price) ? (target3x / pd.price - 1) * 100 : null;
+    var target3xAboveHigh = (target3x !== null && pd.week52H) ? target3x > pd.week52H : null;
+    // MM60 width rule: "the widest I go is 20% of the price." We allow up to 30% (MM56) but warn past 20%.
+    var spreadWidthPct = (spreadWidth && pd.price) ? (spreadWidth / pd.price * 100) : null;
+    var widthOverLaura = spreadWidthPct !== null && spreadWidthPct > 21; // ~1pp grace so ~20% spreads don't nag
     // Final score (recompute now that c8 is known)
     score = [c1,c2,c3,c4,c5,c8].filter(function(x){return x===true;}).length;
     // SL breakeven = deep-ITM call strike + SL net debit
@@ -5694,7 +5712,7 @@ async function runMsl(forceTicker) {
     // Tier 1 — Thesis gates (2 pts each, must all pass)
     html += critRow(1,'MR · 4H ≤ −2 (Deeply Oversold — Buy the Dip) ' + pPill2, c1, mrZone(pd.meanRev).label);
     html += critRow(2,'Put Credit ≥ 42% of Width (≥50% = Ideal) ' + pPill2, c2, putCreditPct !== null ? fmt(putCreditPct,1) + '%' + (c2Ideal ? ' ✨ IDEAL' : '') : 'N/A');
-    html += critRow(3,'MSL Risk ≤ 60% of SL Risk (≤50% = Ideal) ' + pPill2, c8, mslRiskRatio !== null ? fmt(mslRiskRatio,0) + '% of SL' + (c8Ideal ? ' ✨ IDEAL' : '') : 'N/A');
+    html += critRow(3,'MSL Risk ≤ 50% of Owning Stock (≤40% = Ideal) ' + pPill2, c8, riskVsStockPct !== null ? fmt(riskVsStockPct,0) + '% of stock' + (c8Ideal ? ' ✨ IDEAL' : '') : 'N/A');
     // Tier 2 — Quality (1 pt each)
     html += critRow(4,'Call Intrinsic/Extrinsic 40–60% (45–55% = Ideal) ' + pPill1, c3, (callRatio !== null && !isNaN(callRatio)) ? fmt(callRatio*100,0) + '/' + fmt((1-callRatio)*100,0) + (c3Ideal ? ' ✨ IDEAL' : '') : 'N/A');
     html += critRow(5,'Net Debit ≤ 40% of Price (≤33% = Ideal) ' + pPill1, c5, netDebitPct !== null ? fmt(netDebitPct,1) + '%' + (c5Ideal ? ' ✨ IDEAL' : '') : 'N/A');
@@ -5773,8 +5791,18 @@ async function runMsl(forceTicker) {
     } else if (c4 && !c4Ideal) {
       suggWarn.push('⚠️ <strong>LEAPS but under ideal:</strong> ' + dte + ' DTE qualifies as LEAPS but Laura prefers ≥540 (1.5yr+). Time decay accelerates in the last 90 DTE.');
     }
-    if (!c8 && mslRiskRatio !== null) {
-      suggWarn.push('💡 <strong>Risk reduction insufficient:</strong> MSL risks ' + fmt(mslRiskRatio,0) + '% of an equivalent SL. Laura targets ≤60% (ideal ≤50%) — the whole point of MSL is half the risk. Widen the bull put spread or pick a tighter call.');
+    if (!c8 && riskVsStockPct !== null) {
+      suggWarn.push('❌ <strong>Risk more than half the stock:</strong> max risk $' + fmt(mslMaxRisk,0) + ' is ' + fmt(riskVsStockPct,0) + '% of owning ' + fmtDollar(pd.price * 100) + ' of stock — over Laura\'s "less than half" rule (MM60). Usually elevated IV making the call expensive; she waits for lower prices / lower IV (near the 200 SMA) where it prices under 50%.');
+    }
+    // MM60 3x test — flag when the price needed for a 3x return is above the 52-week high
+    if (target3xAboveHigh === true && target3x !== null) {
+      suggWarn.push('❌ <strong>Fails the 3× test:</strong> a 3× needs the stock at ~' + fmtDollar(target3x) + ' (call strike + 3× risk) — that\'s <strong>' + (move3xPct !== null ? '+' + fmt(move3xPct,0) + '% from here' : 'a big move') + '</strong> and above the 52-week high ' + fmtDollar(pd.week52H) + '. Laura wants ≥3× against realistic upside; this only pencils out at a lower entry (more buffer, cheaper call). <span style="color:var(--text-muted)">(52-wk high used as an all-time-high proxy.)</span>');
+    } else if (target3x !== null && move3xPct !== null) {
+      suggGood.push('ℹ️ <strong>3× target:</strong> ~' + fmtDollar(target3x) + ' (+' + fmt(move3xPct,0) + '% from here) for a 3× return — within/near the 52-week high, so the reward side is realistic. <span style="color:var(--text-muted)">(3× = Laura\'s minimum; price = call strike + 3× risk.)</span>');
+    }
+    // MM60 width rule — allowed up to 30% (MM56) but warn past Laura's 20% baseline
+    if (widthOverLaura) {
+      suggWarn.push('⚠️ <strong>Spread wider than Laura\'s 20% rule:</strong> the ' + fmtDollar(spreadWidth) + ' put spread is ' + fmt(spreadWidthPct,0) + '% of price — MM60 says "the widest I go is 20%." Allowed here to bring in credit (MM56), but a tighter spread hews closer to her rule.');
     }
     if (!c5 && netDebitPct !== null) {
       suggWarn.push('💡 <strong>Net debit too high:</strong> ' + fmt(netDebitPct,1) + '% of price — above 40% ceiling. The put spread credit isn\'t offsetting enough of the call cost.');
