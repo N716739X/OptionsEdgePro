@@ -1786,7 +1786,9 @@ input, textarea, select { -webkit-user-select: text; user-select: text; }
         </select>
       </label>
       <button id="msladj-btn" onclick="runMslAdjust()" style="padding:9px 18px;background:var(--accent);border:none;border-radius:6px;color:#03121f;font-size:13px;font-weight:800;cursor:pointer">Scan Roll-Downs</button>
+      <button id="msltrack-btn" onclick="mslPosAdd()" title="Save these legs so the app flags them when a roll window opens" style="padding:9px 16px;background:transparent;border:1px solid var(--accent);border-radius:6px;color:var(--accent);font-size:13px;font-weight:800;cursor:pointer">＋ Track this MSL</button>
     </div>
+    <div id="msl-positions"></div>
     <div id="msladj-results"><div class="placeholder"><div class="ph-icon">↔</div><p>Enter your current MSL legs — the tool scans the chain and highlights the best strikes to roll down to</p></div></div>
   </div>
 </div>
@@ -1987,6 +1989,9 @@ function authSuccess(data) {
   applyTierUI();
   // Now that we have a valid token, load the dashboard data
   refreshDashboard();
+  // If MSL Adjust is the restored tab, render tracked positions (now that _authUser is set)
+  var mp = document.getElementById('panel-msl-adjust');
+  if (mp && mp.classList.contains('active')) { renderMslPositions(); checkMslRollStatus(false); }
 }
 
 function authLogout(msg) {
@@ -2156,6 +2161,7 @@ document.querySelectorAll('.tab').forEach(function(tab) {
     if (tid === 'put' || tid === 'cc' || tid === 'synth' || tid === 'msl') {
       renderMiniRankings(tid, null);
     }
+    if (tid === 'msl-adjust') { renderMslPositions(); checkMslRollStatus(false); } // show saved MSLs + refresh flags if stale
   });
 });
 
@@ -6123,6 +6129,148 @@ async function loadMslAdjExpirations() {
     sel.innerHTML = '<option value="">Farthest LEAPS (default)</option>';
   } finally {
     sel.disabled = false;
+  }
+}
+
+// ═══════════════════════════════════════════════════════
+// MY MSL POSITIONS — save legs locally, flag when a roll window opens
+// ═══════════════════════════════════════════════════════
+// Stored per logged-in email in localStorage (this device only). Roll-status is
+// computed from each ticker's live MR / 200 SMA using the SAME trigger gate as the
+// roll calculator, refreshed on tab-open (if stale) or the ↻ button.
+function _mslPosKey() {
+  var email = (_authUser && _authUser.email) ? _authUser.email.toLowerCase() : 'anon';
+  return 'owp-msl-positions-' + email;
+}
+var _mslRollAlerted = {}; // position ids already alerted this session (fires only on transition INTO open)
+
+function mslPosLoad() {
+  try { return JSON.parse(localStorage.getItem(_mslPosKey()) || '[]') || []; } catch (e) { return []; }
+}
+function mslPosSave(arr) {
+  try { localStorage.setItem(_mslPosKey(), JSON.stringify(arr)); } catch (e) {}
+}
+
+// Roll signal for a saved position — mirrors the runMslAdjust trigger gate.
+function mslRollSignal(mr, price, sma200, shortStrike) {
+  var hasMR = !isNaN(mr);
+  var smaDistPct = (sma200 && price) ? ((price - sma200) / sma200 * 100) : null;
+  var atSMA = smaDistPct !== null && Math.abs(smaDistPct) <= 3;
+  var mrDeep = hasMR && mr <= -2;
+  var mrClose = hasMR && mr <= -1.5;
+  var bufferRisk = (shortStrike && price) ? (price <= shortStrike) : false;
+  if (mrDeep || (mrClose && atSMA)) return { cls: 'open', icon: '🟢', color: 'var(--green)', label: 'Roll window OPEN', short: 'OPEN' };
+  if (bufferRisk)                   return { cls: 'risk', icon: '⚠️', color: 'var(--yellow)', label: 'Buffer at risk — price at/below your short put', short: 'BUFFER' };
+  if (mrClose)                      return { cls: 'marg', icon: '⚠️', color: 'var(--yellow)', label: 'Marginal — confirm support on chart', short: 'MARGINAL' };
+  if (!hasMR)                       return { cls: 'na',   icon: '·',  color: 'var(--text-muted)', label: 'No signal data', short: '—' };
+  return { cls: 'wait', icon: '⏳', color: 'var(--text-muted)', label: 'Waiting — not oversold yet', short: 'WAIT' };
+}
+
+function mslPosAdd() {
+  var ticker = (document.getElementById('msladj-ticker').value || '').trim().toUpperCase();
+  var call = parseFloat(document.getElementById('msladj-call').value);
+  var short = parseFloat(document.getElementById('msladj-short').value);
+  var put = parseFloat(document.getElementById('msladj-put').value);
+  var exp = (document.getElementById('msladj-exp').value || '').trim();
+  if (!ticker) { setStatus('msladj-status', 'Enter a ticker to track', 'error'); return; }
+  if (isNaN(call) || isNaN(short) || isNaN(put)) { setStatus('msladj-status', 'Enter call, short-put, and long-put strikes to track', 'error'); return; }
+  if (short <= put) { setStatus('msladj-status', 'Short-put strike must be above the long-put strike', 'error'); return; }
+  var arr = mslPosLoad();
+  if (arr.some(function(p){ return p.ticker===ticker && p.call===call && p.short===short && p.put===put && (p.exp||'')===exp; })) {
+    setStatus('msladj-status', 'That MSL is already tracked', 'ok'); return;
+  }
+  arr.push({ id: ticker + '-' + call + '-' + short + '-' + put + '-' + (exp || 'leaps') + '-' + Date.now(), ticker: ticker, call: call, short: short, put: put, exp: exp, lastStatus: null, lastChecked: 0 });
+  mslPosSave(arr);
+  setStatus('msladj-status', '✓ Tracking ' + ticker + ' MSL', 'ok');
+  renderMslPositions();
+  checkMslRollStatus(true);
+}
+
+function mslPosRemove(id) {
+  mslPosSave(mslPosLoad().filter(function(p){ return p.id !== id; }));
+  renderMslPositions();
+}
+
+function mslPosLoadIntoForm(id) {
+  var p = mslPosLoad().filter(function(x){ return x.id === id; })[0];
+  if (!p) return;
+  document.getElementById('msladj-ticker').value = p.ticker;
+  document.getElementById('msladj-call').value = p.call;
+  document.getElementById('msladj-short').value = p.short;
+  document.getElementById('msladj-put').value = p.put;
+  var done = loadMslAdjExpirations();
+  if (done && done.then) { done.then(function(){ if (p.exp) { var sel = document.getElementById('msladj-exp'); if (sel) sel.value = p.exp; } }); }
+  try { document.getElementById('msladj-ticker').scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (e) {}
+}
+
+function renderMslPositions() {
+  var el = document.getElementById('msl-positions'); if (!el) return;
+  var arr = mslPosLoad();
+  if (!arr.length) { el.innerHTML = ''; return; }
+  var rows = arr.map(function(p) {
+    var sig = p.lastStatus || { icon: '·', color: 'var(--text-muted)', label: 'Not checked yet — hit ↻', short: '—' };
+    var legs = 'Call ' + fmtDollar(p.call) + ' · Short ' + fmtDollar(p.short) + ' · Long ' + fmtDollar(p.put) + (p.exp ? ' · ' + p.exp : ' · LEAPS');
+    var when = p.lastChecked ? new Date(p.lastChecked).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+    return '<div style="display:flex;align-items:center;gap:12px;padding:9px 12px;border:1px solid var(--border);border-left:3px solid ' + sig.color + ';border-radius:8px;background:var(--surface2);margin-bottom:6px">' +
+      '<div style="min-width:60px;font-weight:800;font-size:13px;color:var(--text)">' + p.ticker + '</div>' +
+      '<div style="flex:1;min-width:0">' +
+        '<div style="font-size:12px;color:' + sig.color + ';font-weight:700">' + sig.icon + ' ' + sig.label + '</div>' +
+        '<div style="font-size:10.5px;color:var(--text-muted)">' + legs + (when ? ' · checked ' + when : '') + '</div>' +
+      '</div>' +
+      '<button onclick="mslPosLoadIntoForm(\'' + p.id + '\')" style="padding:5px 10px;background:transparent;border:1px solid var(--border);border-radius:5px;color:var(--text);font-size:11px;cursor:pointer">Load</button>' +
+      '<button onclick="mslPosRemove(\'' + p.id + '\')" title="Stop tracking" style="padding:5px 9px;background:transparent;border:1px solid var(--border);border-radius:5px;color:var(--text-muted);font-size:11px;cursor:pointer">✕</button>' +
+    '</div>';
+  }).join('');
+  el.innerHTML = '<div style="margin:4px 0 18px">' +
+    '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">' +
+      '<span style="font-size:12.5px;font-weight:800;color:var(--accent)">📋 My MSL Positions (' + arr.length + ')</span>' +
+      '<button id="mslpos-check" onclick="checkMslRollStatus(true)" style="padding:5px 12px;background:transparent;border:1px solid var(--accent);border-radius:5px;color:var(--accent);font-size:11px;font-weight:700;cursor:pointer">↻ Check roll status</button>' +
+    '</div>' + rows +
+    '<div style="font-size:10px;color:var(--text-muted);margin-top:2px;line-height:1.5">Saved on this device. 🟢 = a roll window is open (MR ≤ −2 / at the 200 SMA) — click <b>Load</b>, then <b>Scan Roll-Downs</b>. With 🔔 alerts on (top bar), a position that flips to open will ping you.</div>' +
+  '</div>';
+}
+
+var _mslCheckBusy = false;
+async function checkMslRollStatus(force) {
+  var arr = mslPosLoad();
+  renderMslPositions();
+  if (!arr.length || _mslCheckBusy) return;
+  var now = Date.now();
+  // Skip refetch if everything is fresh (<10 min), unless forced by the button
+  if (!force && arr.every(function(p){ return p.lastChecked && (now - p.lastChecked) < 600000; })) return;
+  _mslCheckBusy = true;
+  var btn = document.getElementById('mslpos-check'); if (btn) { btn.disabled = true; btn.textContent = '↻ Checking…'; }
+  try {
+    var uniq = arr.map(function(p){ return p.ticker; }).filter(function(v, i, a){ return a.indexOf(v) === i; });
+    var pdBy = {};
+    for (var i = 0; i < uniq.length; i++) {
+      try { pdBy[uniq[i]] = await fetchPriceData(uniq[i], '4h'); } catch (e) { pdBy[uniq[i]] = null; }
+    }
+    var openNow = [];
+    arr.forEach(function(p) {
+      var pd = pdBy[p.ticker];
+      if (pd) {
+        p.lastStatus = mslRollSignal(pd.meanRev, pd.price, pd.sma200, p.short);
+        p.lastChecked = Date.now();
+        if (p.lastStatus.cls === 'open') openNow.push(p);
+      }
+    });
+    mslPosSave(arr);
+    renderMslPositions();
+    var fresh = openNow.filter(function(p){ return !_mslRollAlerted[p.id]; });
+    var next = {}; openNow.forEach(function(p){ next[p.id] = true; });
+    _mslRollAlerted = next;
+    if (fresh.length && _alertsOn && typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+      try {
+        new Notification('🟢 MSL roll window — OptionsEdge Pro', {
+          body: fresh.map(function(p){ return p.ticker + ' — at a bottom signal, time to look at rolling'; }).join('\n'),
+          tag: 'oep-msl-roll'
+        });
+      } catch (e) {}
+    }
+  } finally {
+    _mslCheckBusy = false;
+    var b2 = document.getElementById('mslpos-check'); if (b2) { b2.disabled = false; b2.textContent = '↻ Check roll status'; }
   }
 }
 
