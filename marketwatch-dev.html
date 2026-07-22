@@ -3669,6 +3669,10 @@ async function runMslPhase3(ticker) {
     var minW = pd.price * 0.18, maxW = pd.price * 0.30;
     var soldPutIdx = -1, boughtPutIdx = -1;
     var bpOtm = -Infinity, bpCr = -Infinity, bpOI = -1, bpCrDiff = Infinity;
+    // Pass A — credit ≥50%: among spreads clearing Laura's ~20% baseline buffer, highest OI
+    // wins (tiebreak deeper buffer, then credit→50%); else deepest buffer. Mirrors runMsl.
+    var BUF_BASE = 20;
+    var candsA = [];
     for (var si = 0; si < putChain.strike.length; si++) {
       var Sk = putChain.strike[si];
       if (Sk == null || Sk >= pd.price) continue;
@@ -3685,13 +3689,24 @@ async function runMslPhase3(ticker) {
         if (w < minW || w > maxW) continue;
         var cr = (Sm - Lm) / w * 100;
         if (cr < PUT_TARGET_CR) continue;
-        var crDiff = Math.abs(cr - PUT_TARGET_CR);
-        if (soldPutIdx < 0 || otm > bpOtm + 1e-9
-            || (Math.abs(otm - bpOtm) < 1e-9 && crDiff < bpCrDiff - 1e-9)
-            || (Math.abs(otm - bpOtm) < 1e-9 && Math.abs(crDiff - bpCrDiff) < 1e-9 && Soi > bpOI)) {
-          bpOtm = otm; bpCrDiff = crDiff; bpOI = Soi; soldPutIdx = si; boughtPutIdx = li;
-        }
+        candsA.push({ si: si, li: li, cr: cr, otm: otm, oi: Soi });
       }
+    }
+    if (candsA.length) {
+      var atBase = candsA.filter(function(c) { return c.otm >= BUF_BASE - 1e-9; });
+      var poolA = atBase.length ? atBase : candsA;
+      poolA.sort(function(a, b) {
+        if (atBase.length) {
+          if (b.oi !== a.oi) return b.oi - a.oi;
+          if (Math.abs(b.otm - a.otm) > 1e-9) return b.otm - a.otm;
+          return Math.abs(a.cr - PUT_TARGET_CR) - Math.abs(b.cr - PUT_TARGET_CR);
+        }
+        if (Math.abs(b.otm - a.otm) > 1e-9) return b.otm - a.otm;
+        if (Math.abs(a.cr - PUT_TARGET_CR) !== Math.abs(b.cr - PUT_TARGET_CR)) return Math.abs(a.cr - PUT_TARGET_CR) - Math.abs(b.cr - PUT_TARGET_CR);
+        return b.oi - a.oi;
+      });
+      soldPutIdx = poolA[0].si; boughtPutIdx = poolA[0].li;
+      bpOtm = poolA[0].otm; bpCr = poolA[0].cr; bpOI = poolA[0].oi; bpCrDiff = Math.abs(poolA[0].cr - PUT_TARGET_CR);
     }
     if (soldPutIdx < 0) {
       // Highest credit ≥42%, but credits within PUT_CR_TOL of the best are a tie → break
@@ -4946,6 +4961,9 @@ function mslPickCall(callChain, price) {
 function mslPickPutSpread(putChain, price) {
   var TARGET = 50, FLOOR = 42, minW = price * 0.18, maxW = price * 0.30;
   var sIdx = -1, bIdx = -1, bOtm = -Infinity, bCr = -Infinity, bOI = -1, bCrDiff = Infinity;
+  // Pass A — credit ≥50%: among spreads clearing the ~20% baseline buffer, highest OI wins
+  // (tiebreak deeper buffer, then credit→50%); else deepest buffer. Mirrors runMsl Pass A.
+  var BUF_BASE = 20, candsA = [];
   for (var si = 0; si < putChain.strike.length; si++) {
     var Sk = putChain.strike[si]; if (Sk == null || Sk >= price) continue;
     var Sm = putChain.mid ? putChain.mid[si] : null; if (Sm == null || Sm <= 0) continue;
@@ -4956,9 +4974,23 @@ function mslPickPutSpread(putChain, price) {
       var Lm = putChain.mid ? putChain.mid[li] : null; if (Lm == null || Lm <= 0) continue;
       var w = Sk - Lk; if (w < minW || w > maxW) continue;
       var cr = (Sm - Lm) / w * 100; if (cr < TARGET) continue;
-      var crD = Math.abs(cr - TARGET);
-      if (sIdx < 0 || otm > bOtm + 1e-9 || (Math.abs(otm - bOtm) < 1e-9 && crD < bCrDiff - 1e-9) || (Math.abs(otm - bOtm) < 1e-9 && Math.abs(crD - bCrDiff) < 1e-9 && Soi > bOI)) { bOtm = otm; bCrDiff = crD; bOI = Soi; sIdx = si; bIdx = li; }
+      candsA.push({ si: si, li: li, cr: cr, otm: otm, oi: Soi });
     }
+  }
+  if (candsA.length) {
+    var atBase = candsA.filter(function(c) { return c.otm >= BUF_BASE - 1e-9; });
+    var poolA = atBase.length ? atBase : candsA;
+    poolA.sort(function(a, b) {
+      if (atBase.length) {
+        if (b.oi !== a.oi) return b.oi - a.oi;
+        if (Math.abs(b.otm - a.otm) > 1e-9) return b.otm - a.otm;
+        return Math.abs(a.cr - TARGET) - Math.abs(b.cr - TARGET);
+      }
+      if (Math.abs(b.otm - a.otm) > 1e-9) return b.otm - a.otm;
+      if (Math.abs(a.cr - TARGET) !== Math.abs(b.cr - TARGET)) return Math.abs(a.cr - TARGET) - Math.abs(b.cr - TARGET);
+      return b.oi - a.oi;
+    });
+    sIdx = poolA[0].si; bIdx = poolA[0].li; bOtm = poolA[0].otm; bCr = poolA[0].cr; bOI = poolA[0].oi; bCrDiff = Math.abs(poolA[0].cr - TARGET);
   }
   if (sIdx < 0) {
     // Highest credit ≥42%, credits within CR_TOL of best treated as a tie → break toward
@@ -5219,7 +5251,14 @@ async function runMsl(forceTicker) {
     var minW = pd.price * 0.18, maxW = pd.price * 0.30; // Laura's ~20% baseline, up to ~30% for credit
     var soldPutIdx = -1, boughtPutIdx = -1;
     var bpOtm = -Infinity, bpCr = -Infinity, bpOI = -1, bpCrDiff = Infinity;
-    // Pass A — credit ≥ 50%: maximise buffer (short-put % OTM); tiebreak credit→50%, then OI.
+    // Pass A — credit ≥ 50%. Buffer is a "get enough, then stop" criterion; liquidity is
+    // "more is always better" for a LEAPS you'll roll repeatedly. So among the ≥50% spreads
+    // that ALSO clear Laura's ~20% baseline buffer, pick the HIGHEST-OI strike (tiebreak
+    // deeper buffer, then credit→50%). Only if nothing reaches the 20% baseline do we fall
+    // back to the deepest-buffer spread. (MRVL: takes 160 @ 25% OTM / 737 OI over 150 @ 30% /
+    // 129 OI — both deep, the liquid one wins.)
+    var BUF_BASE = 20; // Laura's ~20% OTM baseline buffer
+    var candsA = [];
     for (var si = 0; si < putChain.strike.length; si++) {
       var Sk = putChain.strike[si];
       if (Sk == null || Sk >= pd.price) continue;               // short put must be OTM
@@ -5236,13 +5275,24 @@ async function runMsl(forceTicker) {
         if (w < minW || w > maxW) continue;
         var cr = (Sm - Lm) / w * 100;
         if (cr < PUT_TARGET_CR) continue;
-        var crDiff = Math.abs(cr - PUT_TARGET_CR);
-        if (soldPutIdx < 0 || otm > bpOtm + 1e-9
-            || (Math.abs(otm - bpOtm) < 1e-9 && crDiff < bpCrDiff - 1e-9)
-            || (Math.abs(otm - bpOtm) < 1e-9 && Math.abs(crDiff - bpCrDiff) < 1e-9 && Soi > bpOI)) {
-          bpOtm = otm; bpCrDiff = crDiff; bpOI = Soi; soldPutIdx = si; boughtPutIdx = li;
-        }
+        candsA.push({ si: si, li: li, cr: cr, otm: otm, oi: Soi });
       }
+    }
+    if (candsA.length) {
+      var atBase = candsA.filter(function(c) { return c.otm >= BUF_BASE - 1e-9; });
+      var poolA = atBase.length ? atBase : candsA; // enough buffer → liquidity decides; else deepest
+      poolA.sort(function(a, b) {
+        if (atBase.length) {                                       // adequate buffer: OI first
+          if (b.oi !== a.oi) return b.oi - a.oi;
+          if (Math.abs(b.otm - a.otm) > 1e-9) return b.otm - a.otm; // then deeper buffer
+          return Math.abs(a.cr - PUT_TARGET_CR) - Math.abs(b.cr - PUT_TARGET_CR); // then closest to 50%
+        }
+        if (Math.abs(b.otm - a.otm) > 1e-9) return b.otm - a.otm;   // no baseline reached: deepest buffer
+        if (Math.abs(a.cr - PUT_TARGET_CR) !== Math.abs(b.cr - PUT_TARGET_CR)) return Math.abs(a.cr - PUT_TARGET_CR) - Math.abs(b.cr - PUT_TARGET_CR);
+        return b.oi - a.oi;
+      });
+      soldPutIdx = poolA[0].si; boughtPutIdx = poolA[0].li;
+      bpOtm = poolA[0].otm; bpCr = poolA[0].cr; bpOI = poolA[0].oi; bpCrDiff = Math.abs(poolA[0].cr - PUT_TARGET_CR);
     }
     // Pass B — nothing hit 50%: aim for the highest credit ≥42%, but treat credits within
     // PUT_CR_TOL of the best as a TIE and break toward LIQUIDITY (OI) then BUFFER (further OTM).

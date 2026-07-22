@@ -647,6 +647,10 @@ function scoreMslChains(price, mr, expiry, dte, callChain, putChain) {
   const minW = price * 0.18, maxW = price * 0.30;
   let soldPutIdx = -1, boughtPutIdx = -1;
   let bpOtm = -Infinity, bpCr = -Infinity, bpOI = -1, bpCrDiff = Infinity;
+  // Pass A — credit ≥50%: among spreads clearing Laura's ~20% baseline buffer, highest OI wins
+  // (tiebreak deeper buffer, then credit→50%); else deepest buffer. Mirrors runMsl Pass A.
+  const BUF_BASE = 20;
+  let candsA = [];
   for (let si = 0; si < putChain.strike.length; si++) {
     const Sk = putChain.strike[si];
     if (Sk == null || Sk >= price) continue;
@@ -663,13 +667,24 @@ function scoreMslChains(price, mr, expiry, dte, callChain, putChain) {
       if (w < minW || w > maxW) continue;
       const cr = (Sm - Lm) / w * 100;
       if (cr < PUT_TARGET_CR) continue;
-      const crDiff = Math.abs(cr - PUT_TARGET_CR);
-      if (soldPutIdx < 0 || otm > bpOtm + 1e-9
-          || (Math.abs(otm - bpOtm) < 1e-9 && crDiff < bpCrDiff - 1e-9)
-          || (Math.abs(otm - bpOtm) < 1e-9 && Math.abs(crDiff - bpCrDiff) < 1e-9 && Soi > bpOI)) {
-        bpOtm = otm; bpCrDiff = crDiff; bpOI = Soi; soldPutIdx = si; boughtPutIdx = li;
-      }
+      candsA.push({ si, li, cr, otm, oi: Soi });
     }
+  }
+  if (candsA.length) {
+    const atBase = candsA.filter(c => c.otm >= BUF_BASE - 1e-9);
+    const poolA = atBase.length ? atBase : candsA;
+    poolA.sort((a, b) => {
+      if (atBase.length) {
+        if (b.oi !== a.oi) return b.oi - a.oi;
+        if (Math.abs(b.otm - a.otm) > 1e-9) return b.otm - a.otm;
+        return Math.abs(a.cr - PUT_TARGET_CR) - Math.abs(b.cr - PUT_TARGET_CR);
+      }
+      if (Math.abs(b.otm - a.otm) > 1e-9) return b.otm - a.otm;
+      if (Math.abs(a.cr - PUT_TARGET_CR) !== Math.abs(b.cr - PUT_TARGET_CR)) return Math.abs(a.cr - PUT_TARGET_CR) - Math.abs(b.cr - PUT_TARGET_CR);
+      return b.oi - a.oi;
+    });
+    soldPutIdx = poolA[0].si; boughtPutIdx = poolA[0].li;
+    bpOtm = poolA[0].otm; bpCr = poolA[0].cr; bpOI = poolA[0].oi; bpCrDiff = Math.abs(poolA[0].cr - PUT_TARGET_CR);
   }
   if (soldPutIdx < 0) {
     // Highest credit ≥42%, but credits within PUT_CR_TOL of the best are a tie → break toward
