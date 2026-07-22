@@ -5517,8 +5517,7 @@ async function runMsl(forceTicker) {
     // Risk reduction: Laura's goal is for MSL risk to be ~half of SL risk
     var riskReductionPct = (slMaxRisk && mslMaxRisk) ? (1 - mslMaxRisk / slMaxRisk) * 100 : null;
     var riskReductionDollars = (slMaxRisk && mslMaxRisk) ? slMaxRisk - mslMaxRisk : null;
-    var riskHalfGoal = riskReductionPct !== null && riskReductionPct >= 45;
-    // c8 — MSL Max Risk ≤ 60% of SL Max Risk (Laura's "risk less than half"); ≤50% = ideal
+    // Synthetic-long risk ratio — kept as informational context only (MM60 gates on % of stock, below).
     var mslRiskRatio = (slMaxRisk && mslMaxRisk) ? (mslMaxRisk / slMaxRisk * 100) : null;
     // MM60 risk rule: MSL max risk must be "less than half of what the stock does" — i.e.
     // ≤ 50% of OWNING the stock (price × 100), NOT relative to a synthetic long. (Marvell
@@ -5748,7 +5747,7 @@ async function runMsl(forceTicker) {
       var failed = [];
       if (c1 !== true) failed.push('MR Oversold');
       if (c2 !== true) failed.push('Put Credit ≥42%');
-      if (c8 !== true) failed.push('Risk Reduction');
+      if (c8 !== true) failed.push('Risk ≤ 50% of Stock');
       if (oiHardReject) failed.push('Untradeable Liquidity');
       sumLabel = '⏳ Wait for Setup — missing: ' + failed.join(', ');
     } else if (mslWeighted >= 7) {
@@ -5843,18 +5842,15 @@ async function runMsl(forceTicker) {
         var t1Need = [];
         if (c1 !== true) t1Need.push('MR Oversold (≤ −2)');
         if (c2 !== true) t1Need.push('Put Credit ≥ 42%');
-        if (c8 !== true) t1Need.push('Risk ≤ 60% of SL');
+        if (c8 !== true) t1Need.push('Risk ≤ 50% of Stock');
         var t1Lbl = t1Need.length === 1 ? t1Need[0] : t1Need.join(' + ');
         suggWarn.push('⏳ <strong>Waiting on ' + t1Lbl + ':</strong> the ' + (t1Need.length === 1 ? 'one remaining Tier-1 thesis gate' : 'Tier-1 thesis gates') + ' must pass — quality criteria can\'t compensate for a missing thesis. Everything else is set; this is a timing/structure wait, not a flaw.');
       }
     }
-    // Laura's MSL goal #1: risk should be ~half of an equivalent SL (ideal ≤50%; acceptable to ~60%).
-    if (riskReductionPct !== null && riskReductionPct >= 50) {
-      suggGood.push('✅ <strong>Risk cut by ' + fmt(riskReductionPct,0) + '%:</strong> MSL risks $' + fmt(mslMaxRisk,0) + ' vs SL\'s $' + fmt(slMaxRisk,0) + ' — at/under half, Laura\'s ideal.');
-    } else if (riskReductionPct !== null && riskReductionPct >= 40) {
-      suggGood.push('✅ <strong>Risk cut by ' + fmt(riskReductionPct,0) + '%:</strong> MSL risks $' + fmt(mslMaxRisk,0) + ' vs SL\'s $' + fmt(slMaxRisk,0) + '. Under Laura\'s ~50% ideal, but expensive options in high IV make a bit less normal — she still takes it for the buffer &amp; the roll levers (MM56).');
-    } else if (riskReductionPct !== null && riskReductionPct > 0 && riskReductionPct < 40) {
-      suggWarn.push('💡 <strong>Risk reduction only ' + fmt(riskReductionPct,0) + '%:</strong> below Laura\'s ~half target — a wider bull put spread or a tighter call deepens the discount.');
+    // MM60 risk rule — strength only when the gate PASSES (the fail case is the ❌ warning above).
+    // The synthetic-long reduction is shown as secondary context, not as the rule.
+    if (c8 === true && riskVsStockPct !== null) {
+      suggGood.push('✅ <strong>Risk under half the stock:</strong> max risk $' + fmt(mslMaxRisk,0) + ' is ' + fmt(riskVsStockPct,0) + '% of owning ' + fmtDollar(pd.price * 100) + ' of stock — inside Laura\'s "less than half" rule' + (c8Ideal ? ' (≤40% ✨ IDEAL)' : '') + '.' + (riskReductionPct !== null && riskReductionPct > 0 ? ' <span style="color:var(--text-muted)">(≈' + fmt(riskReductionPct,0) + '% less risk than a synthetic long.)</span>' : ''));
     }
     // Breakeven vs the synthetic long: with the short put anchored OTM, the MSL breakeven is HIGHER
     // by design — that's the deliberate cost of the buffer, lower margin, and adjustment levers (MM56).
