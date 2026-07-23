@@ -6191,19 +6191,30 @@ function mslPosSave(arr) {
   try { localStorage.setItem(MSL_POS_KEY, JSON.stringify(arr)); } catch (e) {}
 }
 
-// Roll signal for a saved position — mirrors the runMslAdjust trigger gate.
+// Roll signal for a saved position. NOT gated on mean reversion: the app can't read the
+// extended-hours (ETH) Mean-BT on the current data plan, so the PRIMARY auto-trigger is
+// price at/below the 200-day SMA (Laura's roll level). MR ≤ −2 is a bonus trigger when the
+// feed happens to show it. The manual "Bottom" toggle (p.bottom) overrides everything — your
+// own ETH chart is the source of truth. sma200 here should be the 200-DAY SMA.
 function mslRollSignal(mr, price, sma200, shortStrike) {
   var hasMR = !isNaN(mr);
   var smaDistPct = (sma200 && price) ? ((price - sma200) / sma200 * 100) : null;
-  var atSMA = smaDistPct !== null && Math.abs(smaDistPct) <= 3;
+  var atOrBelowSMA = smaDistPct !== null && smaDistPct <= 3; // at (within 3%) or below the 200-day SMA
   var mrDeep = hasMR && mr <= -2;
-  var mrClose = hasMR && mr <= -1.5;
   var bufferRisk = (shortStrike && price) ? (price <= shortStrike) : false;
-  if (mrDeep || (mrClose && atSMA)) return { cls: 'open', icon: '🟢', color: 'var(--green)', label: 'Roll window OPEN', short: 'OPEN' };
-  if (bufferRisk)                   return { cls: 'risk', icon: '⚠️', color: 'var(--yellow)', label: 'Buffer at risk — price at/below your short put', short: 'BUFFER' };
-  if (mrClose)                      return { cls: 'marg', icon: '⚠️', color: 'var(--yellow)', label: 'Marginal — confirm support on chart', short: 'MARGINAL' };
-  if (!hasMR)                       return { cls: 'na',   icon: '·',  color: 'var(--text-muted)', label: 'No signal data', short: '—' };
-  return { cls: 'wait', icon: '⏳', color: 'var(--text-muted)', label: 'Waiting — not oversold yet', short: 'WAIT' };
+  if (atOrBelowSMA || mrDeep) {
+    return { cls: 'open', icon: '🟢', color: 'var(--green)',
+      label: 'Roll window OPEN — ' + (atOrBelowSMA ? (smaDistPct <= 0 ? 'below the 200-day SMA' : 'at the 200-day SMA') : 'MR ≤ −2'), short: 'OPEN' };
+  }
+  if (bufferRisk) return { cls: 'risk', icon: '⚠️', color: 'var(--yellow)', label: 'Buffer breached — price at/below your short put', short: 'BUFFER' };
+  if (smaDistPct === null && !hasMR) return { cls: 'na', icon: '·', color: 'var(--text-muted)', label: 'No signal data — use the Bottom toggle from your chart', short: '—' };
+  return { cls: 'wait', icon: '⏳', color: 'var(--text-muted)', label: 'Watching — above the 200-day SMA (mark Bottom from your chart if it’s at −2)', short: 'WAIT' };
+}
+
+// Display status: the manual "Bottom" toggle wins over the auto signal (your ETH chart is truth).
+function mslPosDisplayStatus(p) {
+  if (p && p.bottom) return { cls: 'open', icon: '🟢', color: 'var(--green)', label: 'Roll window OPEN — bottom marked (your chart)', short: 'OPEN' };
+  return p && p.lastStatus ? p.lastStatus : { cls: 'na', icon: '·', color: 'var(--text-muted)', label: 'Not checked yet — hit ↻', short: '—' };
 }
 
 function mslPosAdd() {
@@ -6228,6 +6239,15 @@ function mslPosAdd() {
 
 function mslPosRemove(id) {
   mslPosSave(mslPosLoad().filter(function(p){ return p.id !== id; }));
+  renderMslPositions();
+}
+
+// Manual bottom flag — you confirmed −2 / a bottom on your own ETH chart. Overrides the auto
+// signal (the app can't read the extended-hours Mean-BT on the current plan). Instant, no refetch.
+function mslPosToggleBottom(id) {
+  var arr = mslPosLoad();
+  arr.forEach(function(p){ if (p.id === id) p.bottom = !p.bottom; });
+  mslPosSave(arr);
   renderMslPositions();
 }
 
@@ -6261,15 +6281,17 @@ function renderMslPositions() {
   var arr = mslPosLoad();
   if (!arr.length) { el.innerHTML = ''; return; }
   var rows = arr.map(function(p) {
-    var sig = p.lastStatus || { icon: '·', color: 'var(--text-muted)', label: 'Not checked yet — hit ↻', short: '—' };
+    var sig = mslPosDisplayStatus(p); // manual "Bottom" toggle overrides the auto signal
     var legs = 'Call ' + fmtDollar(p.call) + ' · Short ' + fmtDollar(p.short) + ' · Long ' + fmtDollar(p.put) + (p.exp ? ' · ' + p.exp : ' · LEAPS');
     var when = p.lastChecked ? new Date(p.lastChecked).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+    var botOn = !!p.bottom;
     return '<div style="display:flex;align-items:center;gap:12px;padding:9px 12px;border:1px solid var(--border);border-left:3px solid ' + sig.color + ';border-radius:8px;background:var(--surface2);margin-bottom:6px">' +
       '<div style="min-width:60px;font-weight:800;font-size:13px;color:var(--text)">' + p.ticker + '</div>' +
       '<div style="flex:1;min-width:0">' +
         '<div style="font-size:12px;color:' + sig.color + ';font-weight:700">' + sig.icon + ' ' + sig.label + '</div>' +
         '<div style="font-size:10.5px;color:var(--text-muted)">' + legs + (when ? ' · checked ' + when : '') + '</div>' +
       '</div>' +
+      '<button onclick="mslPosToggleBottom(\'' + p.id + '\')" title="Mark this position at a bottom from your own ETH chart — forces the roll flag open" style="padding:5px 10px;background:' + (botOn ? 'var(--green)' : 'transparent') + ';border:1px solid var(--green);border-radius:5px;color:' + (botOn ? '#03121f' : 'var(--green)') + ';font-size:11px;font-weight:700;cursor:pointer">' + (botOn ? '● Bottom' : '○ Bottom') + '</button>' +
       '<button onclick="mslPosLoadIntoForm(\'' + p.id + '\')" style="padding:5px 10px;background:transparent;border:1px solid var(--border);border-radius:5px;color:var(--text);font-size:11px;cursor:pointer">Load</button>' +
       '<button onclick="mslPosRemove(\'' + p.id + '\')" title="Stop tracking" style="padding:5px 9px;background:transparent;border:1px solid var(--border);border-radius:5px;color:var(--text-muted);font-size:11px;cursor:pointer">✕</button>' +
     '</div>';
@@ -6279,7 +6301,7 @@ function renderMslPositions() {
       '<span style="font-size:12.5px;font-weight:800;color:var(--accent)">📋 My MSL Positions (' + arr.length + ')</span>' +
       '<button id="mslpos-check" onclick="checkMslRollStatus(true)" style="padding:5px 12px;background:transparent;border:1px solid var(--accent);border-radius:5px;color:var(--accent);font-size:11px;font-weight:700;cursor:pointer">↻ Check roll status</button>' +
     '</div>' + rows +
-    '<div style="font-size:10px;color:var(--text-muted);margin-top:2px;line-height:1.5">Saved on this device. 🟢 = a roll window is open (MR ≤ −2 / at the 200 SMA) — click <b>Load</b>, then <b>Scan Roll-Downs</b>. With 🔔 alerts on (top bar), a position that flips to open will ping you.</div>' +
+    '<div style="font-size:10px;color:var(--text-muted);margin-top:2px;line-height:1.5">Saved on this device. 🟢 opens when price is <b>at/below the 200-day SMA</b> (Laura\'s roll level) — no mean-reversion needed. Watching your own ETH Mean-BT? Hit <b>○ Bottom</b> to force the flag open from your chart. Then <b>Load</b> → <b>Scan Roll-Downs</b>. With 🔔 alerts on, an auto-flip to open pings you.</div>' +
   '</div>';
 }
 
@@ -6297,13 +6319,23 @@ async function checkMslRollStatus(force) {
     var uniq = arr.map(function(p){ return p.ticker; }).filter(function(v, i, a){ return a.indexOf(v) === i; });
     var pdBy = {};
     for (var i = 0; i < uniq.length; i++) {
-      try { pdBy[uniq[i]] = await fetchPriceData(uniq[i], '4h'); } catch (e) { pdBy[uniq[i]] = null; }
+      try {
+        var pdt = await fetchPriceData(uniq[i], '4h'); // price + MR
+        // Laura's roll level is the 200-DAY SMA; fetchPriceData('4h') returns a 4h SMA, so pull the daily one.
+        try {
+          var smaR = await fetchTD('sma', { symbol: uniq[i], interval: '1day', time_period: 200, outputsize: 1 });
+          var sv = (smaR.values && smaR.values[0]) ? parseFloat(smaR.values[0].sma) : (smaR.sma != null ? parseFloat(smaR.sma) : NaN);
+          pdt.sma200Daily = isNaN(sv) ? null : sv;
+        } catch (e) { pdt.sma200Daily = null; }
+        pdBy[uniq[i]] = pdt;
+      } catch (e) { pdBy[uniq[i]] = null; }
     }
     var openNow = [];
     arr.forEach(function(p) {
       var pd = pdBy[p.ticker];
       if (pd) {
-        p.lastStatus = mslRollSignal(pd.meanRev, pd.price, pd.sma200, p.short);
+        var sma = (pd.sma200Daily != null) ? pd.sma200Daily : pd.sma200; // prefer the 200-day SMA
+        p.lastStatus = mslRollSignal(pd.meanRev, pd.price, sma, p.short);
         p.lastChecked = Date.now();
         if (p.lastStatus.cls === 'open') openNow.push(p);
       }
