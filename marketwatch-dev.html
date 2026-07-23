@@ -6378,6 +6378,12 @@ async function runMslAdjust() {
   try {
     setStatus('msladj-status', spinner() + 'Price & indicators…', 'loading');
     var pd = await fetchPriceData(ticker, '4h');
+    // Laura's roll level is the 200-DAY SMA; fetchPriceData('4h') returns a 4h SMA, so replace it with the daily.
+    try {
+      var _smaR = await fetchTD('sma', { symbol: ticker, interval: '1day', time_period: 200, outputsize: 1 });
+      var _sv = (_smaR.values && _smaR.values[0]) ? parseFloat(_smaR.values[0].sma) : (_smaR.sma != null ? parseFloat(_smaR.sma) : NaN);
+      if (!isNaN(_sv)) pd.sma200 = _sv;
+    } catch (e) {}
 
     setStatus('msladj-status', spinner() + 'Expirations…', 'loading');
     var expirations = await fetchExpirations(ticker);
@@ -6454,6 +6460,10 @@ async function runMslAdjust() {
     callCands.sort(function(a,b){ return b.strike - a.strike; }); // nearest first
     var bestCall = null; // deepest viable strike = biggest breakeven drop within the ≤30% rule
     callCands.forEach(function(c){ if (c.viable && (bestCall === null || c.strike < bestCall.strike)) bestCall = c; });
+    var bestCallIdeal = !!bestCall;
+    // Fallback: if none meet the ≤30% rule, still recommend the CLOSEST (lowest debit %) so there's
+    // always an actionable pick — labeled as below-ideal in the table.
+    if (!bestCall) callCands.forEach(function(c){ if (c.pct !== null && (bestCall === null || c.pct < bestCall.pct)) bestCall = c; });
 
     // PUT: roll the long put DOWN for a credit ≥60% of roll width. Widens the spread (more margin), lowers BE by the credit.
     var putCands = [];
@@ -6472,6 +6482,9 @@ async function runMslAdjust() {
     putCands.sort(function(a,b){ return b.strike - a.strike; });
     var bestPut = null; // deepest viable strike = most credit & breakeven drop within the ≥60% rule
     putCands.forEach(function(p){ if (p.viable && (bestPut === null || p.strike < bestPut.strike)) bestPut = p; });
+    var bestPutIdeal = !!bestPut;
+    // Fallback: if none meet the ≥60% rule, recommend the CLOSEST (highest credit %) — below-ideal, labeled.
+    if (!bestPut) putCands.forEach(function(p){ if (p.pct !== null && (bestPut === null || p.pct > bestPut.pct)) bestPut = p; });
 
     setStatus('msladj-status', 'Done', 'ok');
 
@@ -6480,22 +6493,26 @@ async function runMslAdjust() {
     var mr = pd.meanRev;
     var hasMR = !isNaN(mr);
     var smaDistPct = (pd.sma200 && pd.price) ? ((pd.price - pd.sma200) / pd.sma200 * 100) : null;
-    var atSMA = smaDistPct !== null && Math.abs(smaDistPct) <= 3; // within 3% of the 200 Daily SMA
-    var mrDeep  = hasMR && mr <= -2;    // ideal trigger
+    // Bottom signal is NOT gated on MR (the app can't read the ETH Mean-BT on the current plan).
+    // PRIMARY trigger: price at/below the 200-day SMA — Laura's roll level. MR ≤ −2 is a bonus.
+    var atOrBelowSMA = smaDistPct !== null && smaDistPct <= 3; // at (within 3%) or below the 200-day SMA
+    var mrDeep  = hasMR && mr <= -2;    // bonus trigger
     var mrClose = hasMR && mr <= -1.5;  // Laura's "close enough" (−1.5 to −1.7)
     var gateLabel, gateCls, gateMsg;
-    if (mrDeep || (mrClose && atSMA)) {
+    if (atOrBelowSMA || mrDeep) {
       gateCls = 'ok';
-      gateLabel = 'OK to roll';
-      gateMsg = mrDeep ? 'MR ≤ −2 (deeply oversold) — her primary bottom trigger.' : 'MR near −2 and holding the 200 Daily SMA.';
+      gateLabel = 'OK to roll — at the bottom zone';
+      gateMsg = atOrBelowSMA
+        ? 'Price is ' + (smaDistPct <= 0 ? fmt(Math.abs(smaDistPct),1) + '% below' : 'right at') + ' the 200-day SMA — Laura\'s roll level. ' + (mrDeep ? 'MR is also ≤ −2 (deeply oversold).' : 'Confirm a bottom / buy divergence on your ETH chart, then use the strikes below.')
+        : 'MR ≤ −2 (deeply oversold) — her primary bottom trigger.';
     } else if (mrClose) {
       gateCls = 'warn';
       gateLabel = 'Marginal — confirm on chart';
-      gateMsg = 'MR is in the −1.5 to −1.7 "close enough" zone but not at −2 or the 200 SMA. Confirm support or a buy divergence on your chart before rolling.';
+      gateMsg = 'MR is in the −1.5 to −1.7 "close enough" zone but price isn\'t at the 200-day SMA yet. Confirm support or a buy divergence on your ETH chart before rolling.';
     } else {
       gateCls = 'bad';
       gateLabel = 'Wait — no bottom signal';
-      gateMsg = hasMR ? 'MR is ' + fmt(mr,2) + ', not oversold. Laura does not roll on math alone — wait for MR ≈ −2, or a buy divergence at support.' : 'Mean Reversion is unavailable for this ticker.';
+      gateMsg = 'Price is above the 200-day SMA' + (hasMR ? ' and MR is ' + fmt(mr,2) + ' (not oversold)' : '') + '. Laura rolls at a bottom — wait for the 200-day SMA test or a −2 on your ETH chart.';
     }
     var gateColor = gateCls === 'ok' ? 'var(--green)' : gateCls === 'warn' ? 'var(--yellow)' : 'var(--red)';
     var gateIcon  = gateCls === 'ok' ? '✅' : gateCls === 'warn' ? '⚠️' : '⛔';
@@ -6510,7 +6527,7 @@ async function runMslAdjust() {
       '<div class="info-item"><div class="info-label">Expiry (' + (expIsYours ? 'Yours' : 'Farthest') + ')</div><div class="info-val">' + expiry + '</div></div>' +
       '<div class="info-item"><div class="info-label">DTE</div><div class="info-val">' + dte + '</div></div>' +
       '<div class="info-item"><div class="info-label">MR · 4H</div><div class="info-val ' + mrZ.cls + '">' + (hasMR ? fmt(mr,2) + ' · ' + mrZ.short : '—') + '</div></div>' +
-      '<div class="info-item"><div class="info-label">vs 200 SMA</div><div class="info-val ' + (atSMA ? 'up' : '') + '">' + (smaDistPct !== null ? (smaDistPct >= 0 ? '+' : '') + fmt(smaDistPct,1) + '%' : '—') + '</div></div>' +
+      '<div class="info-item"><div class="info-label">vs 200-day SMA</div><div class="info-val ' + (atOrBelowSMA ? 'up' : '') + '">' + (smaDistPct !== null ? (smaDistPct >= 0 ? '+' : '') + fmt(smaDistPct,1) + '%' : '—') + '</div></div>' +
       '<div class="info-item"><div class="info-label">Current BE' + (effBE !== null ? ' · est' : '') + '</div><div class="info-val">' + (effBE !== null ? fmtDollar(effBE) : '—') + '</div></div>' +
     '</div>';
 
@@ -6519,9 +6536,9 @@ async function runMslAdjust() {
       '<div style="font-size:13px;font-weight:800;color:' + gateColor + ';margin-bottom:5px">' + gateIcon + ' Roll signal: ' + gateLabel + '</div>' +
       '<div style="font-size:11px;color:var(--text);line-height:1.5">' + gateMsg + '</div>' +
       '<div style="display:flex;flex-wrap:wrap;gap:16px;margin-top:9px;font-size:11px">' +
-        gateChip(mrDeep, 'MR ≤ −2', hasMR ? fmt(mr,2) : '—') +
-        gateChip(atSMA, 'At 200 Daily SMA', smaDistPct !== null ? (smaDistPct >= 0 ? '+' : '') + fmt(smaDistPct,1) + '% vs SMA' : '—') +
-        gateChip(null, 'Buy divergence', 'confirm on chart — price lower low, MR higher low') +
+        gateChip(atOrBelowSMA, 'At/below 200-day SMA', smaDistPct !== null ? (smaDistPct >= 0 ? '+' : '') + fmt(smaDistPct,1) + '% vs SMA' : '—') +
+        gateChip(mrDeep, 'MR ≤ −2 (bonus)', hasMR ? fmt(mr,2) : '—') +
+        gateChip(null, 'Buy divergence', 'confirm on your ETH chart — price lower low, MR higher low') +
       '</div>' +
     '</div>';
 
@@ -6540,7 +6557,7 @@ async function runMslAdjust() {
     if (missingNote) html += '<div class="notice">⚠ ' + missingNote + 'Enter strikes that appear in the chain (check the expiry) — the scan uses live mids at your exact strikes.</div>';
 
     // ── Scan tables — one per leg, best (deepest viable) strike highlighted ──
-    function scanTable(title, cands, best, amtLabel, pctLabel, ruleText) {
+    function scanTable(title, cands, best, isIdeal, amtLabel, pctLabel, ruleText) {
       if (!cands.length) return '<div class="chain-section"><h3>' + title + '</h3><div class="btc-note" style="text-align:left">No roll-down strikes with live quotes on this expiry.</div></div>';
       var rows = '';
       cands.slice(0, 12).forEach(function(c) {
@@ -6554,15 +6571,18 @@ async function runMslAdjust() {
           '<td class="' + okCls + '" style="font-weight:800">' + (c.viable ? '✓' : '✗') + '</td>' +
         '</tr>';
       });
+      var footNote = !best ? 'No strike has a live quote to roll to on this expiry.'
+        : isIdeal ? '★ = recommended — deepest strike still passing the rule (biggest breakeven improvement).'
+        : '★ = best available (' + (best.pct !== null ? fmt(best.pct,0) + '%' : '—') + ') — <strong>closest to the rule but below the ideal</strong>. Nothing hits it on this expiry; roll only on high conviction, or wait for a better print / try another expiration.';
       return '<div class="chain-section"><h3>' + title + '</h3>' +
         '<div class="chain-table-wrap"><table><thead><tr>' +
           '<th style="text-align:left">Roll To</th><th>Width</th><th>' + amtLabel + '</th><th>' + pctLabel + '</th><th>Rule</th>' +
         '</tr></thead><tbody>' + rows + '</tbody></table></div>' +
-        '<div class="btc-note" style="text-align:left">' + ruleText + ' ' + (best ? '★ = recommended — deepest strike still passing the rule (biggest breakeven improvement).' : 'No strike passes the rule at this expiry yet — wait for a better print.') + '</div>' +
+        '<div class="btc-note" style="text-align:left">' + ruleText + ' ' + footNote + '</div>' +
       '</div>';
     }
-    html += scanTable('Roll Call Down — pick a strike', callCands, bestCall, 'Debit', '% of width (≤30)', 'Roll the long call down for a debit ≤30% of the roll width; lowers breakeven by (width − debit).');
-    html += scanTable('Roll Long Put Down — pick a strike', putCands, bestPut, 'Credit', '% of width (≥60)', 'Roll the long put down for a credit ≥60% of the roll width; widens the spread (more margin) and lowers breakeven by the credit.');
+    html += scanTable('Roll Call Down — pick a strike', callCands, bestCall, bestCallIdeal, 'Debit', '% of width (≤30)', 'Roll the long call down for a debit ≤30% of the roll width; lowers breakeven by (width − debit).');
+    html += scanTable('Roll Long Put Down — pick a strike', putCands, bestPut, bestPutIdeal, 'Credit', '% of width (≥60)', 'Roll the long put down for a credit ≥60% of the roll width; widens the spread (more margin) and lowers breakeven by the credit.');
 
     // ── Paired Roll — combined net effect using each leg's recommended (★) strike ──
     var callDebit = bestCall ? bestCall.amount : null;
@@ -6619,8 +6639,12 @@ async function runMslAdjust() {
         '</div>';
       }
       html += '</div>';
+      // Caveat when neither leg meets the ideal — the ★ picks above are "best available," not textbook.
+      if (!bestCallIdeal && !bestPutIdeal) {
+        html += '<div class="notice">⚠ Neither roll hits Laura\'s ideal on this expiry (call debit ≤30% / put credit ≥60%). The ★ strikes above are the <strong>best available</strong> — closest to the rule. If you\'re confident it\'s a bottom, roll them; otherwise wait for a better print or try another expiration.</div>';
+      }
     } else {
-      html += '<div class="notice">No roll-down strike passes Laura\'s rules on this expiry yet (call debit ≤30% / put credit ≥60%). Wait for a better print, or try another expiration.</div>';
+      html += '<div class="notice">No roll-down strikes with live quotes on this expiry. Try another expiration.</div>';
     }
 
     resEl.innerHTML = html;
