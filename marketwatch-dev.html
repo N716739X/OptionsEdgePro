@@ -6625,21 +6625,33 @@ async function runMslAdjust() {
         '<div class="btc-note" style="text-align:left">Uses each leg\'s ★ recommended strike. The put-roll credit funds the call-roll debit; widening the put spread adds margin. You can roll either side alone. Every roll is a taxable event in non-retirement accounts (pair a winning put roll with a losing call roll to offset). Consult a tax professional.</div>' +
       '</div>';
 
-      html += '<div class="chain-section"><h3>Order Tickets — separate verticals</h3>';
-      if (bestCall) {
-        html += '<div class="btc-note" style="text-align:left">' +
-          '<strong>Call roll:</strong><br>' +
-          '• Sell to close ' + expiry + ' ' + fmtDollar(callStrike) + ' call<br>' +
-          '• Buy to open ' + expiry + ' ' + fmtDollar(bestCall.strike) + ' call<br>' +
-          '• Target debit $' + fmt(bestCall.amount,2) + ' at the midpoint (max $' + fmt(bestCall.width * CALL_MAX,2) + ')' +
+      // Explicit broker-style tickets — exactly what to sell and buy (matches how Laura writes them).
+      var rollTicket = function(heading, oldK, newK, cp, amtPerShare, pct, isCredit) {
+        var perContract = Math.abs(amtPerShare) * 100;
+        return '<div style="border:1px solid var(--border);border-radius:9px;padding:11px 13px;margin-bottom:9px;background:var(--surface2)">' +
+          '<div style="font-size:11px;font-weight:800;color:var(--accent);margin-bottom:7px">' + heading + '</div>' +
+          '<div style="font-family:var(--mono, monospace);font-size:13px;line-height:1.85">' +
+            '<div><span style="display:inline-block;min-width:118px;color:var(--red);font-weight:800">SELL TO CLOSE</span> ' + expiry + '&nbsp; <b>' + fmtDollar(oldK) + ' ' + cp + '</b></div>' +
+            '<div><span style="display:inline-block;min-width:118px;color:var(--green);font-weight:800">BUY TO OPEN</span> ' + expiry + '&nbsp; <b>' + fmtDollar(newK) + ' ' + cp + '</b></div>' +
+          '</div>' +
+          '<div style="font-size:12px;margin-top:7px;color:var(--text)">➜ ' +
+            (isCredit
+              ? 'Net <b style="color:var(--green)">CREDIT $' + fmt(Math.abs(amtPerShare),2) + '/share</b> = <b style="color:var(--green)">+$' + fmt(perContract,0) + ' per contract</b>'
+              : 'Net <b style="color:var(--red)">DEBIT $' + fmt(Math.abs(amtPerShare),2) + '/share</b> = <b style="color:var(--red)">−$' + fmt(perContract,0) + ' per contract</b>') +
+            (pct !== null ? ' <span style="color:var(--text-muted)">· ' + fmt(pct,0) + '% of the $' + fmt(Math.abs(oldK - newK),0) + ' roll width</span>' : '') +
+          '</div>' +
         '</div>';
-      }
-      if (bestPut) {
-        html += '<div class="btc-note" style="text-align:left;margin-top:8px">' +
-          '<strong>Put roll:</strong><br>' +
-          '• Sell to close ' + expiry + ' ' + fmtDollar(putStrike) + ' put<br>' +
-          '• Buy to open ' + expiry + ' ' + fmtDollar(bestPut.strike) + ' put<br>' +
-          '• Target credit $' + fmt(bestPut.amount,2) + ' at the midpoint (min $' + fmt(bestPut.width * PUT_MIN,2) + ')' +
+      };
+      html += '<div class="chain-section"><h3>Order Tickets — exactly what to enter</h3>' +
+        '<div style="font-size:11px;color:var(--text-muted);margin-bottom:9px;line-height:1.5">Enter each as a <b>vertical (calendar-same) spread</b> at your broker, working the mid. Your <b>short put stays put</b> — you only move the long legs down.</div>';
+      if (bestPut) html += rollTicket('① Put roll — funds the trade & locks in credit', putStrike, bestPut.strike, 'PUT', bestPut.amount, bestPut.pct, true);
+      if (bestCall) html += rollTicket('② Call roll — lowers your breakeven', callStrike, bestCall.strike, 'CALL', bestCall.amount, bestCall.pct, false);
+      if (bestCall && bestPut) {
+        html += '<div style="border:1px dashed var(--accent);border-radius:9px;padding:10px 13px;background:rgba(0,0,0,0.16);font-size:12.5px;color:var(--text)">' +
+          '<b>Combined net:</b> ' + (netCashShare <= 0
+            ? '<b style="color:var(--green)">+$' + fmt(netCash100,0) + ' credit per contract</b> (the put-roll credit more than covers the call-roll debit)'
+            : '<b style="color:var(--red)">−$' + fmt(netCash100,0) + ' debit per contract</b>') +
+          ' · margin +$' + fmt(addedMargin100,0) + '/contract from widening the put spread.' +
         '</div>';
       }
       html += '</div>';
