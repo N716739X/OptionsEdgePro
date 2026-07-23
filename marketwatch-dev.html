@@ -6466,7 +6466,8 @@ async function runMslAdjust() {
         if (cm === null || isNaN(cm)) continue;
         var cw = callStrike - ck;
         var cDebit = cm - curCallMid; // lower strike costs more → debit
-        callCands.push({ strike: ck, width: cw, amount: cDebit, pct: cw > 0 ? (cDebit / cw) * 100 : null, viable: cDebit <= cw * CALL_MAX, beDrop: cw - cDebit });
+        var cOI = (callChain.openInterest && callChain.openInterest[ci] != null) ? callChain.openInterest[ci] : null;
+        callCands.push({ strike: ck, width: cw, amount: cDebit, pct: cw > 0 ? (cDebit / cw) * 100 : null, viable: cDebit <= cw * CALL_MAX, beDrop: cw - cDebit, oi: cOI });
       }
     }
     callCands.sort(function(a,b){ return b.strike - a.strike; }); // nearest first
@@ -6488,7 +6489,8 @@ async function runMslAdjust() {
         if (pm === null || isNaN(pm)) continue;
         var pw = putStrike - pk;
         var pCredit = curPutMid - pm; // sell higher long put, buy lower → credit
-        putCands.push({ strike: pk, width: pw, amount: pCredit, pct: pw > 0 ? (pCredit / pw) * 100 : null, viable: pCredit >= pw * PUT_MIN, beDrop: pCredit });
+        var pOI = (putChain.openInterest && putChain.openInterest[pi] != null) ? putChain.openInterest[pi] : null;
+        putCands.push({ strike: pk, width: pw, amount: pCredit, pct: pw > 0 ? (pCredit / pw) * 100 : null, viable: pCredit >= pw * PUT_MIN, beDrop: pCredit, oi: pOI });
       }
     }
     putCands.sort(function(a,b){ return b.strike - a.strike; });
@@ -6565,6 +6567,13 @@ async function runMslAdjust() {
     // ── Scan tables — one per leg, best (deepest viable) strike highlighted ──
     function scanTable(title, cands, best, isIdeal, amtLabel, pctLabel, ruleText) {
       if (!cands.length) return '<div class="chain-section"><h3>' + title + '</h3><div class="btc-note" style="text-align:left">No roll-down strikes with live quotes on this expiry.</div></div>';
+      // OI cell — liquidity to fill the roll. <100 = thin (red), <500 = caution (amber), else muted.
+      var oiCell = function(oi) {
+        if (oi == null) return '<td class="down">—</td>';
+        var txt = oi >= 1000 ? (oi / 1000).toFixed(1) + 'k' : String(oi);
+        var col = oi < 100 ? 'var(--red)' : oi < 500 ? 'var(--yellow)' : 'var(--text-muted)';
+        return '<td style="color:' + col + ';font-variant-numeric:tabular-nums">' + txt + '</td>';
+      };
       var rows = '';
       cands.slice(0, 12).forEach(function(c) {
         var isBest = best && Math.abs(c.strike - best.strike) < 0.001;
@@ -6574,6 +6583,7 @@ async function runMslAdjust() {
           '<td>$' + fmt(c.width,0) + '</td>' +
           '<td>$' + fmt(Math.abs(c.amount),2) + '</td>' +
           '<td class="' + okCls + '">' + (c.pct !== null ? fmt(c.pct,0) + '%' : '—') + '</td>' +
+          oiCell(c.oi) +
           '<td class="' + okCls + '" style="font-weight:800">' + (c.viable ? '✓' : '✗') + '</td>' +
         '</tr>';
       });
@@ -6582,7 +6592,7 @@ async function runMslAdjust() {
         : '★ = best available (' + (best.pct !== null ? fmt(best.pct,0) + '%' : '—') + ') — <strong>closest to the rule but below the ideal</strong>. Nothing hits it on this expiry; roll only on high conviction, or wait for a better print / try another expiration.';
       return '<div class="chain-section"><h3>' + title + '</h3>' +
         '<div class="chain-table-wrap"><table><thead><tr>' +
-          '<th style="text-align:left">Roll To</th><th>Width</th><th>' + amtLabel + '</th><th>' + pctLabel + '</th><th>Rule</th>' +
+          '<th style="text-align:left">Roll To</th><th>Width</th><th>' + amtLabel + '</th><th>' + pctLabel + '</th><th>OI</th><th>Rule</th>' +
         '</tr></thead><tbody>' + rows + '</tbody></table></div>' +
         '<div class="btc-note" style="text-align:left">' + ruleText + ' ' + footNote + '</div>' +
       '</div>';
