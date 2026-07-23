@@ -6611,11 +6611,22 @@ async function runMslAdjust() {
       var footNote = !best ? 'No strike has a live quote to roll to on this expiry.'
         : isIdeal ? '★ = recommended — the most <strong>liquid</strong> strike that passes the rule (Laura\'s roll-ability rule), so it fills cleanly. Multiple ✓ just means several strikes qualify; the ★ is the best of them. Deeper strikes lower breakeven more but add margin.'
         : '★ = best available (' + (best.pct !== null ? fmt(best.pct,0) + '%' : '—') + ') — <strong>closest to the rule but below the ideal</strong>. Nothing hits it on this expiry; roll only on high conviction, or wait for a better print / try another expiration.';
+      // Thin-★ caveat: when the recommended (rule-passing) strike is the ONLY one that qualifies and it's
+      // illiquid, warn — it isn't really roll-able, which is the point of the rule. Point at the liquid strikes.
+      var thinNote = '';
+      if (best && best.viable && best.oi != null && best.oi < 100) {
+        var liq = null;
+        cands.forEach(function(c){ if (c.oi != null && (liq === null || c.oi > liq.oi)) liq = c; });
+        var liqTxt = liq && liq.oi >= 1000 ? (liq.oi / 1000).toFixed(1) + 'k' : (liq ? String(liq.oi) : '');
+        thinNote = '<div style="color:var(--yellow);margin-top:6px">⚠ The ★ ' + fmtDollar(best.strike) + ' passes the credit rule but is <strong>thin (OI ' + best.oi + ')</strong> — it may not fill near the mid.' +
+          (liq && Math.abs(liq.strike - best.strike) > 0.001 ? ' The liquid strikes here (e.g. ' + fmtDollar(liq.strike) + ' at ' + liqTxt + ' OI) sit just under the floor — work a limit, size down, or try another expiration.' : ' Work a limit order, size down, or try another expiration.') +
+        '</div>';
+      }
       return '<div class="chain-section"><h3>' + title + '</h3>' +
         '<div class="chain-table-wrap"><table><thead><tr>' +
           '<th style="text-align:left">Roll To</th><th>Width</th><th>' + amtLabel + '</th><th>' + pctLabel + '</th><th>OI</th><th>Rule</th>' +
         '</tr></thead><tbody>' + rows + '</tbody></table></div>' +
-        '<div class="btc-note" style="text-align:left">' + ruleText + ' ' + footNote + '</div>' +
+        '<div class="btc-note" style="text-align:left">' + ruleText + ' ' + footNote + thinNote + '</div>' +
       '</div>';
     }
     html += scanTable('Roll Call Down — pick a strike', callCands, bestCall, bestCallIdeal, 'Debit', '% of width (≤' + Math.round(CALL_MAX * 100) + ')', 'Roll the long call down for a debit ≤30% of the roll width (Laura forces it up to ~33% at a −2 MR bottom — "I would pay .32, NOT .50"). Lowers breakeven by (width − debit).');
