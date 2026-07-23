@@ -6453,7 +6453,9 @@ async function runMslAdjust() {
     var bottomSignal = atOrBelowSMA || mrDeep;
 
     // ── Scan candidate roll-down strikes for each leg (Laura rolls each vertical independently) ──
-    var CALL_MAX = bottomSignal ? 0.33 : 0.30, PUT_MIN = 0.60; // call debit ≤30% (≤33% forcing at a bottom); put credit ≥60%
+    // At a −2/200-SMA bottom Laura "forces" both legs a step past the base rule (call ≤33% instead
+    // of ≤30%; put ≥55% instead of ≥60% — her cited put range is 55–70%). Off a bottom, base rules.
+    var CALL_MAX = bottomSignal ? 0.33 : 0.30, PUT_MIN = bottomSignal ? 0.55 : 0.60;
     // CALL: roll the long call DOWN for a debit within CALL_MAX of roll width. Lowers breakeven by (width − debit).
     var callCands = [];
     if (callChain && callChain.strike && curCallMid !== null) {
@@ -6586,7 +6588,7 @@ async function runMslAdjust() {
       '</div>';
     }
     html += scanTable('Roll Call Down — pick a strike', callCands, bestCall, bestCallIdeal, 'Debit', '% of width (≤' + Math.round(CALL_MAX * 100) + ')', 'Roll the long call down for a debit ≤30% of the roll width (Laura forces it up to ~33% at a −2 MR bottom — "I would pay .32, NOT .50"). Lowers breakeven by (width − debit).');
-    html += scanTable('Roll Long Put Down — pick a strike', putCands, bestPut, bestPutIdeal, 'Credit', '% of width (≥60)', 'Roll the long put down for a credit ≥60% of the roll width; widens the spread (more margin) and lowers breakeven by the credit.');
+    html += scanTable('Roll Long Put Down — pick a strike', putCands, bestPut, bestPutIdeal, 'Credit', '% of width (≥' + Math.round(PUT_MIN * 100) + ')', 'Roll the long put down for a credit ≥60% of the roll width (Laura eases to ~55% at a −2 MR bottom — her cited range is 55–70%). Widens the spread (more margin) and lowers breakeven by the credit.');
 
     // ── Paired Roll — combined net effect using each leg's recommended (★) strike ──
     var callDebit = bestCall ? bestCall.amount : null;
