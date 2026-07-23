@@ -6442,9 +6442,19 @@ async function runMslAdjust() {
     if (curPutMid === null)  missingNote += 'Long-put strike ' + fmtDollar(putStrike) + ' isn\'t listed in the ' + expiry + ' chain. ';
     if (hasShort && shortPutMid === null) missingNote += 'Short-put strike ' + fmtDollar(shortStrike) + ' isn\'t listed. ';
 
+    // Bottom signal drives the call-roll threshold. Laura's base rule is ≤30 cents on the dollar,
+    // but at a −2 MR / 200-day-SMA bottom she "forces" the roll and will pay up to ~33 cents
+    // ("with −2 MR I would pay .32 on the dollar… I WOULD NOT pay .50" — MM roll lesson). Her own
+    // demonstrated roll (360→350) is 32.3%, so a flat 30% cutoff would wrongly reject it.
+    var mr = pd.meanRev, hasMR = !isNaN(mr);
+    var smaDistPct = (pd.sma200 && pd.price) ? ((pd.price - pd.sma200) / pd.sma200 * 100) : null;
+    var atOrBelowSMA = smaDistPct !== null && smaDistPct <= 3;   // at (within 3%) or below the 200-day SMA
+    var mrDeep = hasMR && mr <= -2, mrClose = hasMR && mr <= -1.5;
+    var bottomSignal = atOrBelowSMA || mrDeep;
+
     // ── Scan candidate roll-down strikes for each leg (Laura rolls each vertical independently) ──
-    var CALL_MAX = 0.30, PUT_MIN = 0.60; // Laura's rules: call debit ≤30% of width; put credit ≥60% of width
-    // CALL: roll the long call DOWN for a debit ≤30% of roll width. Lowers breakeven by (width − debit).
+    var CALL_MAX = bottomSignal ? 0.33 : 0.30, PUT_MIN = 0.60; // call debit ≤30% (≤33% forcing at a bottom); put credit ≥60%
+    // CALL: roll the long call DOWN for a debit within CALL_MAX of roll width. Lowers breakeven by (width − debit).
     var callCands = [];
     if (callChain && callChain.strike && curCallMid !== null) {
       for (var ci = 0; ci < callChain.strike.length; ci++) {
@@ -6489,15 +6499,9 @@ async function runMslAdjust() {
     setStatus('msladj-status', 'Done', 'ok');
 
     var mrZ = mrZone(pd.meanRev);
-    // ── Trigger gate: Laura rolls ONLY on a bottom signal (MR ≈ −2 or buy divergence at 200 Daily SMA) ──
-    var mr = pd.meanRev;
-    var hasMR = !isNaN(mr);
-    var smaDistPct = (pd.sma200 && pd.price) ? ((pd.price - pd.sma200) / pd.sma200 * 100) : null;
-    // Bottom signal is NOT gated on MR (the app can't read the ETH Mean-BT on the current plan).
-    // PRIMARY trigger: price at/below the 200-day SMA — Laura's roll level. MR ≤ −2 is a bonus.
-    var atOrBelowSMA = smaDistPct !== null && smaDistPct <= 3; // at (within 3%) or below the 200-day SMA
-    var mrDeep  = hasMR && mr <= -2;    // bonus trigger
-    var mrClose = hasMR && mr <= -1.5;  // Laura's "close enough" (−1.5 to −1.7)
+    // ── Trigger gate — reuses mr / smaDistPct / atOrBelowSMA / mrDeep / mrClose computed above.
+    // Bottom signal is NOT gated on MR (the app can't read the ETH Mean-BT on the current plan):
+    // PRIMARY trigger is price at/below the 200-day SMA (Laura's roll level); MR ≤ −2 is a bonus.
     var gateLabel, gateCls, gateMsg;
     if (atOrBelowSMA || mrDeep) {
       gateCls = 'ok';
@@ -6581,7 +6585,7 @@ async function runMslAdjust() {
         '<div class="btc-note" style="text-align:left">' + ruleText + ' ' + footNote + '</div>' +
       '</div>';
     }
-    html += scanTable('Roll Call Down — pick a strike', callCands, bestCall, bestCallIdeal, 'Debit', '% of width (≤30)', 'Roll the long call down for a debit ≤30% of the roll width; lowers breakeven by (width − debit).');
+    html += scanTable('Roll Call Down — pick a strike', callCands, bestCall, bestCallIdeal, 'Debit', '% of width (≤' + Math.round(CALL_MAX * 100) + ')', 'Roll the long call down for a debit ≤30% of the roll width (Laura forces it up to ~33% at a −2 MR bottom — "I would pay .32, NOT .50"). Lowers breakeven by (width − debit).');
     html += scanTable('Roll Long Put Down — pick a strike', putCands, bestPut, bestPutIdeal, 'Credit', '% of width (≥60)', 'Roll the long put down for a credit ≥60% of the roll width; widens the spread (more margin) and lowers breakeven by the credit.');
 
     // ── Paired Roll — combined net effect using each leg's recommended (★) strike ──
