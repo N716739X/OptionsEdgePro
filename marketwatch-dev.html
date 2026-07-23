@@ -6688,8 +6688,9 @@ async function runMslAdjust() {
       };
       html += '<div class="chain-section"><h3>Order Tickets — exactly what to enter</h3>' +
         '<div style="font-size:11px;color:var(--text-muted);margin-bottom:9px;line-height:1.5">Enter each as a <b>vertical (calendar-same) spread</b> at your broker, working the mid. Your <b>short put stays put</b> — you only move the long legs down.</div>';
-      if (bestPut) html += rollTicket('① Put roll — funds the trade & locks in credit', putStrike, bestPut.strike, 'PUT', bestPut.amount, bestPut.pct, true);
-      if (bestCall) html += rollTicket('② Call roll — lowers your breakeven', callStrike, bestCall.strike, 'CALL', bestCall.amount, bestCall.pct, false);
+      // Order matches the tables above (Call Down, then Put Down) for consistency.
+      if (bestCall) html += rollTicket('① Call roll — lowers your breakeven', callStrike, bestCall.strike, 'CALL', bestCall.amount, bestCall.pct, false);
+      if (bestPut) html += rollTicket('② Put roll — funds the trade & locks in credit', putStrike, bestPut.strike, 'PUT', bestPut.amount, bestPut.pct, true);
       if (bestCall && bestPut) {
         html += '<div style="border:1px dashed var(--accent);border-radius:9px;padding:10px 13px;background:rgba(0,0,0,0.16);font-size:12.5px;color:var(--text)">' +
           '<b>Combined net:</b> ' + (netCashShare <= 0
