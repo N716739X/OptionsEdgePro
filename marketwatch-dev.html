@@ -3011,7 +3011,16 @@ function buildColCard(ticker, d, strategy, rank, isBestTrade) {
 
   var totalCriteria = maxCriteriaFor(strategy);
 
-  // Grade — percentage-based, scales per-strategy max
+  // MR is NOT scored — it's the user's timing call (the app reads regular-hours data and can't see
+  // the ETH Mean-BT Laura/James use). Grade on STRUCTURE only: drop the MR criterion from the
+  // numerator (if it was counting as passed) and the denominator, for every strategy.
+  var _mrCrit = strategy === 'msl' ? d.msl_c1 : strategy === 'put' ? d.put_c2 : strategy === 'cc' ? d.cc_c2 : d.synth_c1;
+  if (_mrCrit != null) {
+    if (_mrCrit === true) score = Math.max(0, score - 1);
+    totalCriteria = Math.max(1, totalCriteria - 1);
+  }
+
+  // Grade — percentage-based, scales per-strategy max (structure only)
   var grade = '';
   if (d.phase >= 2) {
     if (d.phase < 3 && !isScored && strategy !== 'cc' && score <= 0) {
@@ -3039,40 +3048,27 @@ function buildColCard(ticker, d, strategy, rank, isBestTrade) {
     // Chain criteria are scored in phase 3 — show a pending state, not a misleading score
     badgeCls = 'badge-watch'; badgeTxt = 'Scoring…';
   } else if (strategy === 'msl' && d.phase >= 3) {
-    var mslW = d.mslWeighted != null ? d.mslWeighted : 0;
-    // MR is NOT a hard gate anymore — the app reads regular-hours data and can't see the ETH
-    // Mean-BT Laura/James use, so it must not hide a structurally-ready setup. If the STRUCTURE
-    // passes (credit + risk) but only the MR trigger is unmet AND price is leaning oversold,
-    // show "CONFIRM MR" (check your ETH chart); real structure failures still say WAIT.
+    // Structure-only weighted score (0–7): the full weighted minus MR's 2 points. MR is the
+    // user's timing call, not scored — the app can't read the ETH Mean-BT.
+    var structW = (d.mslWeighted != null ? d.mslWeighted : 0) - (d.msl_c1 === true ? 2 : 0);
     var mslMRv = (d.mslMR != null ? d.mslMR : d.meanRev);
-    var mslStructOK = (d.msl_c2 === true && d.msl_c8 === true);
-    if (d.mslT1Pass === true) {
-      if (mslW >= 7)           { badgeCls = 'badge-ideal';    badgeTxt = 'IDEAL · ' + scoreLbl; }
-      else if (mslW >= 5)      { badgeCls = 'badge-watch';    badgeTxt = 'WATCH · ' + scoreLbl; }
-      else                     { badgeCls = 'badge-notready'; badgeTxt = 'WAIT · ' + scoreLbl; }
-    } else if (mslStructOK && d.msl_c1 === false && !isNaN(mslMRv) && mslMRv <= 0.5) {
-      badgeCls = 'badge-watch'; badgeTxt = 'CONFIRM MR · ' + scoreLbl;
+    var mslStructOK = (d.msl_c2 === true && d.msl_c8 === true); // credit + risk both pass
+    if (mslStructOK) {
+      // Structure is sound — grade it, then remind to confirm MR on the chart.
+      if (structW >= 6)        { badgeCls = 'badge-ideal';    badgeTxt = 'IDEAL · CONFIRM MR · ' + scoreLbl; }
+      else                     { badgeCls = 'badge-watch';    badgeTxt = 'WATCH · CONFIRM MR · ' + scoreLbl; }
     } else {
       badgeCls = 'badge-wait'; badgeTxt = 'WAIT FOR SETUP · ' + scoreLbl;
     }
   } else if (isScored) {
-    // Put: MR ≤ −2 is the entry trigger. If it's unmet but price is leaning oversold, don't hide it —
-    // show CONFIRM MR (verify on your ETH chart). Clearly-overbought (wrong direction) still says WAIT.
-    var putMRlean = !isNaN(d.meanRev) && d.meanRev <= 0.5;
-    if (d.put_c2 === false && putMRlean) { badgeCls = 'badge-watch'; badgeTxt = 'CONFIRM MR · ' + scoreLbl; }
-    else if (d.put_c2 === false){ badgeCls = 'badge-wait';     badgeTxt = 'WAIT FOR SETUP · ' + scoreLbl; }
-    else if (pctScore >= 0.70) { badgeCls = 'badge-ideal';    badgeTxt = 'IDEAL · ' + scoreLbl; }
-    else if (pctScore >= 0.40) { badgeCls = 'badge-watch';    badgeTxt = 'WATCH · ' + scoreLbl; }
+    // CSP — MR not scored (your timing call). Grade the structure; remind to confirm MR on the chart.
+    if (pctScore >= 0.70)      { badgeCls = 'badge-ideal';    badgeTxt = 'IDEAL · CONFIRM MR · ' + scoreLbl; }
+    else if (pctScore >= 0.40) { badgeCls = 'badge-watch';    badgeTxt = 'WATCH · CONFIRM MR · ' + scoreLbl; }
     else                       { badgeCls = 'badge-notready'; badgeTxt = 'NO TRADE · ' + scoreLbl; }
   } else {
-    // CC (needs MR ≥ +2) / Synth (needs MR ≤ −2): MR unmet but leaning the right way → CONFIRM MR, not WAIT.
-    var _mrv = (strategy === 'cc') ? d.meanRev : (d.synthMR != null ? d.synthMR : d.meanRev);
-    var _mrFail = (strategy === 'cc') ? (d.cc_c2 === false) : (d.synth_c1 === false);
-    var _mrLean = (strategy === 'cc') ? (!isNaN(_mrv) && _mrv >= -0.5) : (!isNaN(_mrv) && _mrv <= 0.5);
-    if (_mrFail && _mrLean)    { badgeCls = 'badge-watch';    badgeTxt = 'CONFIRM MR · ' + scoreLbl; }
-    else if (_mrFail)          { badgeCls = 'badge-wait';     badgeTxt = 'WAIT FOR SETUP · ' + scoreLbl; }
-    else if (pctScore >= 0.70) { badgeCls = 'badge-ideal';    badgeTxt = 'IDEAL · ' + scoreLbl; }
-    else if (pctScore >= 0.40) { badgeCls = 'badge-watch';    badgeTxt = 'WATCH · ' + scoreLbl; }
+    // CC / Synth — MR not scored (your timing call). Grade the structure; remind to confirm MR.
+    if (pctScore >= 0.70)      { badgeCls = 'badge-ideal';    badgeTxt = 'IDEAL · CONFIRM MR · ' + scoreLbl; }
+    else if (pctScore >= 0.40) { badgeCls = 'badge-watch';    badgeTxt = 'WATCH · CONFIRM MR · ' + scoreLbl; }
     else                       { badgeCls = 'badge-notready'; badgeTxt = 'WAIT · ' + scoreLbl; }
   }
 
@@ -3315,7 +3311,11 @@ function checkGradeAlerts() {
     strats.forEach(function(s) {
       var sc = d[s.score];
       if (sc == null) return;
-      if (scoreToGrade(sc, maxCriteriaFor(s.key), d.phase) === 'A') current.push({ t: t, label: s.label, key: t + '|' + s.key });
+      // Structure-only grade — exclude the MR criterion (the user's timing call), matching the cards.
+      var mrCrit = s.key === 'msl' ? d.msl_c1 : s.key === 'put' ? d.put_c2 : s.key === 'cc' ? d.cc_c2 : d.synth_c1;
+      var mx = maxCriteriaFor(s.key);
+      if (mrCrit != null) { if (mrCrit === true) sc = Math.max(0, sc - 1); mx = Math.max(1, mx - 1); }
+      if (scoreToGrade(sc, mx, d.phase) === 'A') current.push({ t: t, label: s.label, key: t + '|' + s.key });
     });
   });
   var el = document.getElementById('grade-alert');
@@ -5181,7 +5181,8 @@ async function gradeMsl() {
     setStatus('msl-status', 'Done', 'ok');
 
     var snapped = (Math.abs(callChain.strike[uc] - cS) > 0.001) || (Math.abs(putChain.strike[us] - sS) > 0.001) || (Math.abs(putChain.strike[ub] - bS) > 0.001);
-    var grade = scoreToGrade(um.score, 6);
+    // Structure-only grade (MR not scored — user's timing call). Drop c1 from numerator/denominator.
+    var grade = scoreToGrade(um.score - (um.c1 === true ? 1 : 0), 5);
     var html = priceBarHtml(ticker, pd, '4H');
     html += '<div style="display:flex;gap:14px;align-items:center;padding:8px 14px;margin-bottom:10px;background:var(--surface2);border-radius:8px;border:1px solid var(--border);font-size:11px">' +
       '<span style="color:var(--text-muted);text-transform:uppercase;letter-spacing:.8px;font-weight:700">Your legs</span>' +
@@ -5192,13 +5193,13 @@ async function gradeMsl() {
 
     // Scorecard on the USER's legs
     html += '<div class="scorecard"><h3>Your MSL — Grade</h3><div class="criteria-list">';
-    html += critRow(1, 'MR · 4H ≤ −2 (Deeply Oversold — Buy the Dip)', um.c1, !isNaN(pd.meanRev) ? mrZone(pd.meanRev).label : 'N/A');
-    html += critRow(2, 'Put Credit ≥ 42% of Width (≥50% = Ideal)', um.c2, um.putCreditPct != null ? fmt(um.putCreditPct, 1) + '%' : 'N/A');
-    html += critRow(3, 'MSL Risk ≤ 50% of Owning Stock (≤40% = Ideal)', um.c8, um.riskVsStockPct != null ? fmt(um.riskVsStockPct, 0) + '% of stock' : 'N/A');
-    html += critRow(4, 'Call Intrinsic/Extrinsic 40–60% (45–55% = Ideal)', um.c3, um.callRatio != null ? fmt(um.callRatio * 100, 0) + '/' + fmt((1 - um.callRatio) * 100, 0) : 'N/A');
-    html += critRow(5, 'Net Debit ≤ 40% of Price (≤33% = Ideal)', um.c5, um.netDebitPct != null ? fmt(um.netDebitPct, 1) + '%' : 'N/A');
-    html += critRow(6, 'Duration ≥ 365 DTE (LEAPS — ≥540 = Ideal)', um.c4, dte + ' days');
-    html += '</div>' + scoreSummaryHtml(um.score, 6) + '</div>';
+    html += '<div class="criterion" style="border-left:3px solid var(--yellow)"><span class="rank-pip" style="background:transparent">⏱</span><div class="badge-na">—</div><span class="crit-label"><strong>Timing — your call:</strong> confirm MR ≤ −2 on your <strong>ETH</strong> chart (app MR regular-hours, not scored)</span><span class="crit-val ' + mrZone(pd.meanRev).cls + '">' + (!isNaN(pd.meanRev) ? fmt(pd.meanRev,2) + ' · ' + mrZone(pd.meanRev).short : '—') + '</span></div>';
+    html += critRow(1, 'Put Credit ≥ 42% of Width (≥50% = Ideal)', um.c2, um.putCreditPct != null ? fmt(um.putCreditPct, 1) + '%' : 'N/A');
+    html += critRow(2, 'MSL Risk ≤ 50% of Owning Stock (≤40% = Ideal)', um.c8, um.riskVsStockPct != null ? fmt(um.riskVsStockPct, 0) + '% of stock' : 'N/A');
+    html += critRow(3, 'Call Intrinsic/Extrinsic 40–60% (45–55% = Ideal)', um.c3, um.callRatio != null ? fmt(um.callRatio * 100, 0) + '/' + fmt((1 - um.callRatio) * 100, 0) : 'N/A');
+    html += critRow(4, 'Net Debit ≤ 40% of Price (≤33% = Ideal)', um.c5, um.netDebitPct != null ? fmt(um.netDebitPct, 1) + '%' : 'N/A');
+    html += critRow(5, 'Duration ≥ 365 DTE (LEAPS — ≥540 = Ideal)', um.c4, dte + ' days');
+    html += '</div>' + scoreSummaryHtml(um.score - (um.c1 === true ? 1 : 0), 5) + '</div>';
 
     // Side-by-side: your legs vs the app's recommended pick
     if (rm) {
@@ -5562,8 +5563,9 @@ async function runMsl(forceTicker) {
     // MM60 width rule: "the widest I go is 20% of the price." We allow up to 30% (MM56) but warn past 20%.
     var spreadWidthPct = (spreadWidth && pd.price) ? (spreadWidth / pd.price * 100) : null;
     var widthOverLaura = spreadWidthPct !== null && spreadWidthPct > 21; // ~1pp grace so ~20% spreads don't nag
-    // Final score (recompute now that c8 is known)
-    score = [c1,c2,c3,c4,c5,c8].filter(function(x){return x===true;}).length;
+    // Final score — STRUCTURE only (5 criteria). MR (c1) is the user's timing call, not scored,
+    // because the app reads regular-hours data and can't see the ETH Mean-BT Laura/James use.
+    score = [c2,c3,c4,c5,c8].filter(function(x){return x===true;}).length;
     // SL breakeven = deep-ITM call strike + SL net debit
     var beMSL  = breakeven; // call strike + net debit (MSL deep-ITM call)
     var beSL   = (slCallStrike !== null && slNetCost !== null) ? slCallStrike + slNetCost : null;
@@ -5735,17 +5737,22 @@ async function runMsl(forceTicker) {
     var pPill2 = '<span class="wt-pill wt-t1" title="Tier-1 thesis gate — 2 points">+2</span>';
     var pPill1 = '<span class="wt-pill wt-t2" title="Quality criterion — 1 point">+1</span>';
     html += '<div class="scorecard"><h3>MSL — Modified Synthetic Long — Score</h3><div class="criteria-list">';
-    // Tier 1 — Thesis gates (2 pts each, must all pass)
-    html += critRow(1,'MR · 4H ≤ −2 (Deeply Oversold — Buy the Dip) ' + pPill2, c1, mrZone(pd.meanRev).label);
-    html += critRow(2,'Put Credit ≥ 42% of Width (≥50% = Ideal) ' + pPill2, c2, putCreditPct !== null ? fmt(putCreditPct,1) + '%' + (c2Ideal ? ' ✨ IDEAL' : '') : 'N/A');
-    html += critRow(3,'MSL Risk ≤ 50% of Owning Stock (≤40% = Ideal) ' + pPill2, c8, riskVsStockPct !== null ? fmt(riskVsStockPct,0) + '% of stock' + (c8Ideal ? ' ✨ IDEAL' : '') : 'N/A');
-    // Tier 2 — Quality (1 pt each)
-    html += critRow(4,'Call Intrinsic/Extrinsic 40–60% (45–55% = Ideal) ' + pPill1, c3, (callRatio !== null && !isNaN(callRatio)) ? fmt(callRatio*100,0) + '/' + fmt((1-callRatio)*100,0) + (c3Ideal ? ' ✨ IDEAL' : '') : 'N/A');
-    html += critRow(5,'Net Debit ≤ 40% of Price (≤33% = Ideal) ' + pPill1, c5, netDebitPct !== null ? fmt(netDebitPct,1) + '%' + (c5Ideal ? ' ✨ IDEAL' : '') : 'N/A');
-    // Tier 3 — Formality (1 pt)
-    html += critRow(6,'Duration ≥ 365 DTE (LEAPS — ≥540 = Ideal) ' + pPill1, c4, dte + ' days' + (c4Ideal ? ' ✨ IDEAL' : ''));
-    // MSL uses weighted score (0-9) + thesis gate for the summary band
-    var mslWeighted = (c1 === true ? 2 : 0) + (c2 === true ? 2 : 0) + (c8 === true ? 2 : 0) +
+    // TIMING — NOT scored. It's the user's call: the app reads regular-hours data and can't match
+    // the extended-hours (ETH) Mean-BT Laura/James use, so MR must not drive the grade.
+    html += '<div class="criterion" style="border-left:3px solid var(--yellow)">' +
+      '<span class="rank-pip" style="background:transparent">⏱</span>' +
+      '<div class="badge-na">—</div>' +
+      '<span class="crit-label"><strong>Timing — your call:</strong> confirm MR ≤ −2 (and a buy divergence) on your own <strong>ETH</strong> chart. App MR is regular-hours, shown for reference only — not scored.</span>' +
+      '<span class="crit-val ' + mrZone(pd.meanRev).cls + '">' + (!isNaN(pd.meanRev) ? fmt(pd.meanRev,2) + ' · ' + mrZone(pd.meanRev).short : '—') + '</span>' +
+    '</div>';
+    // Structure criteria (SCORED) — Tier 1 gates (credit, risk) then quality/formality.
+    html += critRow(1,'Put Credit ≥ 42% of Width (≥50% = Ideal) ' + pPill2, c2, putCreditPct !== null ? fmt(putCreditPct,1) + '%' + (c2Ideal ? ' ✨ IDEAL' : '') : 'N/A');
+    html += critRow(2,'MSL Risk ≤ 50% of Owning Stock (≤40% = Ideal) ' + pPill2, c8, riskVsStockPct !== null ? fmt(riskVsStockPct,0) + '% of stock' + (c8Ideal ? ' ✨ IDEAL' : '') : 'N/A');
+    html += critRow(3,'Call Intrinsic/Extrinsic 40–60% (45–55% = Ideal) ' + pPill1, c3, (callRatio !== null && !isNaN(callRatio)) ? fmt(callRatio*100,0) + '/' + fmt((1-callRatio)*100,0) + (c3Ideal ? ' ✨ IDEAL' : '') : 'N/A');
+    html += critRow(4,'Net Debit ≤ 40% of Price (≤33% = Ideal) ' + pPill1, c5, netDebitPct !== null ? fmt(netDebitPct,1) + '%' + (c5Ideal ? ' ✨ IDEAL' : '') : 'N/A');
+    html += critRow(5,'Duration ≥ 365 DTE (LEAPS — ≥540 = Ideal) ' + pPill1, c4, dte + ' days' + (c4Ideal ? ' ✨ IDEAL' : ''));
+    // Structure-only weighted score (0-7): credit + risk (2 each) + I/E + debit + DTE (1 each). MR excluded.
+    var mslWeighted = (c2 === true ? 2 : 0) + (c8 === true ? 2 : 0) +
                       (c3 === true ? 1 : 0) + (c5 === true ? 1 : 0) + (c4 === true ? 1 : 0);
     // Liquidity hard-reject thresholds — below these, no real market exists.
     // Deep ITM calls naturally have thinner books (acts like stock on a limit), so allow looser threshold.
@@ -5766,39 +5773,32 @@ async function runMsl(forceTicker) {
       oiHardReject = true;
       oiRejReasons.push('bought put OI ' + boughtPutOI + ' (<' + MSL_OI_FLOOR_PUT + ')');
     }
-    var t1Pass = (c1 === true && c2 === true && c8 === true) && !oiHardReject;
-    // Structure ready = credit + risk + tradeable, MR aside (the app can't read the ETH Mean-BT).
+    // Structure ready = credit + risk pass + legs tradeable. MR is NOT part of this (user's timing call).
     var structReady = (c2 === true && c8 === true) && !oiHardReject;
     var sumCls, sumLabel;
-    if (!t1Pass && structReady && c1 !== true) {
-      // Only the MR trigger is unmet — don't bury a ready structure; tell the user to confirm on their chart.
-      sumCls = 'moderate';
-      sumLabel = '🟡 Structure ready — confirm the −2 on your ETH chart (app MR is regular-hours; ' + (isNaN(pd.meanRev) ? 'n/a' : fmt(pd.meanRev,2)) + ')';
-    } else if (!t1Pass) {
+    if (!structReady) {
       sumCls = 'wait';
-      // List which Tier-1 gates failed
       var failed = [];
       if (c2 !== true) failed.push('Put Credit ≥42%');
       if (c8 !== true) failed.push('Risk ≤ 50% of Stock');
       if (oiHardReject) failed.push('Untradeable Liquidity');
-      if (c1 !== true) failed.push('MR (confirm on your chart)');
-      sumLabel = '⏳ Wait for Setup — missing: ' + failed.join(', ');
-    } else if (mslWeighted >= 7) {
+      sumLabel = '⏳ Structure not ready — missing: ' + failed.join(', ') + '. (MR is your timing call — not scored.)';
+    } else if (mslWeighted >= 6) {
       sumCls = 'strong';
-      sumLabel = '✅ ' + (mslWeighted === 9 ? 'Ideal Setup' : 'Strong Setup');
-    } else if (mslWeighted >= 5) {
+      sumLabel = '✅ ' + (mslWeighted === 7 ? 'Ideal' : 'Strong') + ' structure — now confirm the −2 on your ETH chart';
+    } else if (mslWeighted >= 4) {
       sumCls = 'moderate';
-      sumLabel = '⚠️ Moderate Setup';
+      sumLabel = '⚠️ Moderate structure — confirm the −2 on your ETH chart';
     } else {
       sumCls = 'weak';
-      sumLabel = '❌ Weak Setup';
+      sumLabel = '❌ Weak structure';
     }
     html += '</div>' +
       '<div class="score-summary ' + sumCls + '">' +
         '<span class="score-label">' + sumLabel + '</span>' +
-        '<span class="score-num">' + score + '/6</span>' +
+        '<span class="score-num">' + score + '/5</span>' +
       '</div>' +
-      '<div style="margin-top:6px;font-size:11px;color:var(--text-muted);text-align:right">Weighted: <strong style="color:var(--accent)">' + mslWeighted + '/9</strong> · Structure gates = Put Credit · Risk. MR is your timing call — confirm the −2 on your ETH chart (app MR is regular-hours).</div>' +
+      '<div style="margin-top:6px;font-size:11px;color:var(--text-muted);text-align:right">Structure weighted: <strong style="color:var(--accent)">' + mslWeighted + '/7</strong> · Grade is structure only (credit · risk · I/E · debit · DTE). <strong>MR is not scored</strong> — it\'s your timing call; confirm the −2 on your ETH chart (app MR is regular-hours).</div>' +
       '</div>';
 
     // Contextual suggestions
