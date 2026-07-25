@@ -3012,13 +3012,12 @@ function buildColCard(ticker, d, strategy, rank, isBestTrade) {
   var totalCriteria = maxCriteriaFor(strategy);
 
   // MR is NOT scored — it's the user's timing call (the app reads regular-hours data and can't see
-  // the ETH Mean-BT Laura/James use). Grade on STRUCTURE only: drop the MR criterion from the
-  // numerator (if it was counting as passed) and the denominator, for every strategy.
+  // the ETH Mean-BT Laura/James use). Every strategy's criteria set includes an MR criterion, so
+  // ALWAYS drop it from the denominator (keeps /5·/5·/3·/5 and the criteria-row grid consistent),
+  // and drop it from the numerator only if it had been counting as a pass.
   var _mrCrit = strategy === 'msl' ? d.msl_c1 : strategy === 'put' ? d.put_c2 : strategy === 'cc' ? d.cc_c2 : d.synth_c1;
-  if (_mrCrit != null) {
-    if (_mrCrit === true) score = Math.max(0, score - 1);
-    totalCriteria = Math.max(1, totalCriteria - 1);
-  }
+  if (_mrCrit === true) score = Math.max(0, score - 1);
+  totalCriteria = Math.max(1, totalCriteria - 1);
 
   // Grade — percentage-based, scales per-strategy max (structure only)
   var grade = '';
@@ -3309,8 +3308,8 @@ function checkGradeAlerts() {
       if (sc == null) return;
       // Structure-only grade — exclude the MR criterion (the user's timing call), matching the cards.
       var mrCrit = s.key === 'msl' ? d.msl_c1 : s.key === 'put' ? d.put_c2 : s.key === 'cc' ? d.cc_c2 : d.synth_c1;
-      var mx = maxCriteriaFor(s.key);
-      if (mrCrit != null) { if (mrCrit === true) sc = Math.max(0, sc - 1); mx = Math.max(1, mx - 1); }
+      var mx = Math.max(1, maxCriteriaFor(s.key) - 1); // MR always excluded
+      if (mrCrit === true) sc = Math.max(0, sc - 1);
       if (scoreToGrade(sc, mx, d.phase) === 'A') current.push({ t: t, label: s.label, key: t + '|' + s.key });
     });
   });
