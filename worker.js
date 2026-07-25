@@ -633,10 +633,11 @@ function badgeInfo(score, total, isScored) {
 // \u2500\u2500 Server-side LEAPS-chain scoring for MSL + Synthetic Long \u2500\u2500
 // Ports the frontend runMslPhase3 / runSynthPhase3 logic exactly so dashboard
 // cards match the analyzers, without the client needing to fetch chains (phase 3).
-function scoreMslChains(price, mr, expiry, dte, callChain, putChain) {
+function scoreMslChains(price, mr, expiry, dte, callChain, putChain, week52H) {
   const out = { chainScored: false, expiry: expiry, mr: mr,
     c1: !isNaN(mr) ? mr <= -2 : null, c2: null, c3: null, c4: dte >= 365, c5: null, c6: null, c7: null, c8: null,
-    weighted: null, t1Pass: null, score: null, callRatio: null, netDebitPct: null, putCreditPct: null, riskRatio: null };
+    weighted: null, t1Pass: null, score: null, callRatio: null, netDebitPct: null, putCreditPct: null, riskRatio: null,
+    threeXFail: null, target3x: null, move3xPct: null };
   if (!callChain || !callChain.strike || !putChain || !putChain.strike || !callChain.strike.length || !putChain.strike.length) return out;
   callChain = mslFilterRoundStrikes(callChain, price);
   putChain = mslFilterRoundStrikes(putChain, price);
@@ -809,6 +810,12 @@ function scoreMslChains(price, mr, expiry, dte, callChain, putChain) {
   out.c7 = soldPutOI !== null ? soldPutOI >= 500 : null;
   out.c8 = riskVsStockPct !== null ? riskVsStockPct <= 50 : null; // MM60: ≤ 50% of owning stock
   out.callRatio = callRatio; out.netDebitPct = netDebitPct; out.putCreditPct = putCreditPct; out.riskRatio = riskRatio; out.riskVsStockPct = riskVsStockPct;
+  // Laura's 3x test: price for a 3x return = call strike + 3 x per-share risk. Flag when that
+  // sits above the 52-wk high (upside proxy) — reward is thin at this entry (caps the grade).
+  const target3x = (mslRisk !== null && callStrike != null) ? (callStrike + 3 * mslRisk) : null;
+  out.target3x = target3x;
+  out.move3xPct = (target3x !== null && price) ? ((target3x / price - 1) * 100) : null;
+  out.threeXFail = (target3x !== null && week52H) ? (target3x > week52H) : null;
   out.score = [out.c1, out.c2, out.c3, out.c4, out.c5, out.c8].filter(x => x === true).length;
   out.weighted = (out.c1 === true ? 2 : 0) + (out.c2 === true ? 2 : 0) + (out.c8 === true ? 2 : 0) +
                  (out.c3 === true ? 1 : 0) + (out.c5 === true ? 1 : 0) + (out.c4 === true ? 1 : 0);
@@ -1076,7 +1083,7 @@ async function scoreTicker(ticker, env) {
     } catch (e) { /* chain unavailable — falls back to un-scored (client phase-3) */ }
   }
   const synthCh = scoreSynthChains(price, weeklyMeanRev, leapsExpiry, leapsDte, leapsCall, leapsPut);
-  const mslCh   = scoreMslChains(price, meanRev, leapsExpiry, leapsDte, leapsCall, leapsPut);
+  const mslCh   = scoreMslChains(price, meanRev, leapsExpiry, leapsDte, leapsCall, leapsPut, week52H);
   if (synthCh.ivRank !== null) ivRank = synthCh.ivRank; // match the analyzer's LEAPS-expiry IV rank
   const chainScored = synthCh.chainScored && mslCh.chainScored;
 
@@ -1102,6 +1109,7 @@ async function scoreTicker(ticker, env) {
              c1: synthCh.c1, c2: null, c3: synthCh.c3, c4: synthCh.c4, c5: synthCh.c5, c6: synthCh.c6, c7: synthCh.c7 },
     msl:   { score: mslScore, total: 6, grade: scoreToGrade(mslScore, 6), badge: mslBadge, weighted: mslCh.weighted, t1Pass: mslCh.t1Pass,
              mr: mslCh.mr, callRatio: mslCh.callRatio, netDebitPct: mslCh.netDebitPct, riskRatio: mslCh.riskRatio, riskVsStockPct: mslCh.riskVsStockPct, expiry: mslCh.expiry,
+             threeXFail: mslCh.threeXFail, target3x: mslCh.target3x, move3xPct: mslCh.move3xPct,
              c1: mslCh.c1, c2: mslCh.c2, c3: mslCh.c3, c4: mslCh.c4, c5: mslCh.c5, c6: mslCh.c6, c7: mslCh.c7, c8: mslCh.c8 },
   };
 }

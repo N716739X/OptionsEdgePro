@@ -3088,7 +3088,9 @@ function buildColCard(ticker, d, strategy, rank, isBestTrade) {
     var mslStructOK = (d.msl_c2 === true && d.msl_c8 === true); // credit + risk both pass
     if (mslStructOK) {
       // Structure is sound — grade it, then remind to confirm MR on the chart.
-      if (structW >= 6)        { badgeCls = 'badge-ideal';    badgeTxt = 'IDEAL · ' + mrTag + ' · ' + scoreLbl; }
+      // A failing 3× reward test caps the grade below IDEAL (reward thin, not a structure flaw).
+      if (structW >= 6 && d.msl3xFail === true) { badgeCls = 'badge-watch'; badgeTxt = 'REWARD THIN · ' + mrTag + ' · ' + scoreLbl; }
+      else if (structW >= 6)   { badgeCls = 'badge-ideal';    badgeTxt = 'IDEAL · ' + mrTag + ' · ' + scoreLbl; }
       else                     { badgeCls = 'badge-watch';    badgeTxt = 'WATCH · ' + mrTag + ' · ' + scoreLbl; }
     } else {
       badgeCls = 'badge-wait'; badgeTxt = 'WAIT FOR SETUP · ' + scoreLbl;
@@ -4015,6 +4017,9 @@ function applyServerScores(s) {
     mslScore:  s.msl ? s.msl.score : null,
     mslWeighted: s.msl ? s.msl.weighted : null,
     mslT1Pass: s.msl ? s.msl.t1Pass : null,
+    msl3xFail: s.msl ? s.msl.threeXFail : null,
+    mslTarget3x: s.msl ? s.msl.target3x : null,
+    mslMove3xPct: s.msl ? s.msl.move3xPct : null,
     mslExpiry: s.mslExpiry || (s.msl ? s.msl.expiry : null),
     mslMR:     s.msl ? s.msl.mr : null,
     mslCallRatio:  s.msl ? s.msl.callRatio : null,
