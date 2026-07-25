@@ -2951,6 +2951,36 @@ function maxCriteriaFor(strategy) {
   return 6;
 }
 
+// ── Manual MR confirmation ─────────────────────────────────────────────
+// MR isn't scored (the app reads regular-hours data and can't read the ETH Mean-BT Laura/James
+// use). Instead the user ticks a box when THEIR TradingView ETH chart shows the trigger:
+// dir 'bottom' = MR ≤ −2 (CSP / Synth / MSL), dir 'top' = MR ≥ +2 (Covered Call). Per ticker+dir,
+// this device.
+function mrConfirmLoad() { try { return JSON.parse(localStorage.getItem('owp-mr-confirm') || '{}') || {}; } catch (e) { return {}; } }
+function mrConfirmGet(ticker, dir) { return !!mrConfirmLoad()[(ticker || '').toUpperCase() + '|' + dir]; }
+function toggleMrConfirm(ticker, dir) {
+  ticker = (ticker || '').toUpperCase();
+  var m = mrConfirmLoad(), k = ticker + '|' + dir;
+  if (m[k]) { delete m[k]; }
+  else { delete m[ticker + '|' + (dir === 'bottom' ? 'top' : 'bottom')]; m[k] = true; } // a name is at a bottom OR a top, not both
+  try { localStorage.setItem('owp-mr-confirm', JSON.stringify(m)); } catch (e) {}
+  try { renderColumns(); } catch (e) {}                         // refresh dashboard badges
+  var rows = document.querySelectorAll('[data-mrc="' + ticker + '|' + dir + '"]');
+  for (var i = 0; i < rows.length; i++) { rows[i].outerHTML = mrConfirmRow(ticker, dir); } // refresh any open analyzer row in place
+}
+// A scorecard row that is a manual toggle, not a scored criterion.
+function mrConfirmRow(ticker, dir) {
+  var trig = dir === 'top' ? '≥ +2 (Deeply Overbought)' : '≤ −2 (Deeply Oversold)';
+  var on = mrConfirmGet(ticker, dir);
+  return '<div class="criterion" data-mrc="' + (ticker || '').toUpperCase() + '|' + dir + '" onclick="toggleMrConfirm(\'' + (ticker || '').toUpperCase() + '\',\'' + dir + '\')" style="cursor:pointer;border-left:3px solid ' + (on ? 'var(--green)' : 'var(--yellow)') + '" title="Tick this when your TradingView ETH chart shows MR ' + trig + '. The app can\'t read extended-hours data, so this is your call.">' +
+    '<span class="rank-pip" style="background:transparent">⏱</span>' +
+    '<div class="' + (on ? 'badge-pass' : 'badge-na') + '">' + (on ? '✓' : '☐') + '</div>' +
+    '<span class="crit-label"><strong>Timing — your call:</strong> MR · 4H ' + trig + ' confirmed on my <strong>ETH</strong> chart ' +
+      (on ? '<span style="color:var(--green)">— confirmed</span>' : '<span style="color:var(--text-muted)">— tap to confirm (not scored)</span>') + '</span>' +
+    '<span class="crit-val ' + (on ? 'up' : '') + '">' + (on ? '✓ SET' : 'tap') + '</span>' +
+  '</div>';
+}
+
 var COL_IDS = { put: 'col-put', cc: 'col-cc', synth: 'col-synth', msl: 'col-msl' };
 
 function renderSkeletons() {
@@ -3019,6 +3049,10 @@ function buildColCard(ticker, d, strategy, rank, isBestTrade) {
   if (_mrCrit === true) score = Math.max(0, score - 1);
   totalCriteria = Math.max(1, totalCriteria - 1);
 
+  // Has the user hand-confirmed MR on their ETH chart? (CC wants +2 top; the rest want −2 bottom)
+  var _mrDir = strategy === 'cc' ? 'top' : 'bottom';
+  var mrTag  = mrConfirmGet(ticker, _mrDir) ? 'MR ✓' : 'CONFIRM MR';
+
   // Grade — percentage-based, scales per-strategy max (structure only)
   var grade = '';
   if (d.phase >= 2) {
@@ -3054,20 +3088,20 @@ function buildColCard(ticker, d, strategy, rank, isBestTrade) {
     var mslStructOK = (d.msl_c2 === true && d.msl_c8 === true); // credit + risk both pass
     if (mslStructOK) {
       // Structure is sound — grade it, then remind to confirm MR on the chart.
-      if (structW >= 6)        { badgeCls = 'badge-ideal';    badgeTxt = 'IDEAL · CONFIRM MR · ' + scoreLbl; }
-      else                     { badgeCls = 'badge-watch';    badgeTxt = 'WATCH · CONFIRM MR · ' + scoreLbl; }
+      if (structW >= 6)        { badgeCls = 'badge-ideal';    badgeTxt = 'IDEAL · ' + mrTag + ' · ' + scoreLbl; }
+      else                     { badgeCls = 'badge-watch';    badgeTxt = 'WATCH · ' + mrTag + ' · ' + scoreLbl; }
     } else {
       badgeCls = 'badge-wait'; badgeTxt = 'WAIT FOR SETUP · ' + scoreLbl;
     }
   } else if (isScored) {
     // CSP — MR not scored (your timing call). Grade the structure; remind to confirm MR on the chart.
-    if (pctScore >= 0.70)      { badgeCls = 'badge-ideal';    badgeTxt = 'IDEAL · CONFIRM MR · ' + scoreLbl; }
-    else if (pctScore >= 0.40) { badgeCls = 'badge-watch';    badgeTxt = 'WATCH · CONFIRM MR · ' + scoreLbl; }
+    if (pctScore >= 0.70)      { badgeCls = 'badge-ideal';    badgeTxt = 'IDEAL · ' + mrTag + ' · ' + scoreLbl; }
+    else if (pctScore >= 0.40) { badgeCls = 'badge-watch';    badgeTxt = 'WATCH · ' + mrTag + ' · ' + scoreLbl; }
     else                       { badgeCls = 'badge-notready'; badgeTxt = 'NO TRADE · ' + scoreLbl; }
   } else {
     // CC / Synth — MR not scored (your timing call). Grade the structure; remind to confirm MR.
-    if (pctScore >= 0.70)      { badgeCls = 'badge-ideal';    badgeTxt = 'IDEAL · CONFIRM MR · ' + scoreLbl; }
-    else if (pctScore >= 0.40) { badgeCls = 'badge-watch';    badgeTxt = 'WATCH · CONFIRM MR · ' + scoreLbl; }
+    if (pctScore >= 0.70)      { badgeCls = 'badge-ideal';    badgeTxt = 'IDEAL · ' + mrTag + ' · ' + scoreLbl; }
+    else if (pctScore >= 0.40) { badgeCls = 'badge-watch';    badgeTxt = 'WATCH · ' + mrTag + ' · ' + scoreLbl; }
     else                       { badgeCls = 'badge-notready'; badgeTxt = 'WAIT · ' + scoreLbl; }
   }
 
@@ -4328,7 +4362,7 @@ async function runPut(forceTicker) {
     var c5 = premPct !== null ? premPct > 2 : null;
     var c6 = deltaOk;
     var c7 = acq ? dte >= 60 : (dte >= 30 && dte <= 45);
-    var score = [c2,c3,c4,c5,c6,c7].filter(function(x){return x===true;}).length;
+    var score = [c3,c4,c5,c6,c7].filter(function(x){return x===true;}).length; // MR (c2) not scored — manual timing
 
     setStatus('put-status', 'Done', 'ok');
 
@@ -4398,16 +4432,16 @@ async function runPut(forceTicker) {
     }
 
     html += '<div class="scorecard"><h3>Cash-Secured Put — Score</h3><div class="criteria-list">';
-    html += critRow(1, acq ? 'MR · 4H ≤ −1 (looser entry OK for accumulation)' : 'MR · 4H ≤ −2 (Deeply Oversold)', c2, mrZone(pd.meanRev).label);
-    html += critRow(2, acq ? 'Price Above 200 SMA (Confirmed Uptrend)' : 'Breakeven Above 200 SMA (Buffer to Support)', c3,
+    html += mrConfirmRow(ticker, 'bottom'); // MR not scored — manual confirm on the user's ETH chart
+    html += critRow(1, acq ? 'Price Above 200 SMA (Confirmed Uptrend)' : 'Breakeven Above 200 SMA (Buffer to Support)', c3,
       acq ? (pd.sma200 ? fmtDollar(pd.price) + ' vs ' + fmtDollar(pd.sma200) : 'N/A')
           : (costBasis != null && pd.sma200 ? 'BE ' + fmtDollar(costBasis) + ' vs SMA ' + fmtDollar(pd.sma200) : 'N/A'));
-    html += critRow(3, acq ? 'Earnings (informational — accumulation)' : 'No Earnings Before Expiry', c4,
+    html += critRow(2, acq ? 'Earnings (informational — accumulation)' : 'No Earnings Before Expiry', c4,
       earningsRisk ? 'Earnings: ' + EARNINGS[ticker] + (acq ? ' (OK — you want the shares)' : '') : 'Clear');
-    html += critRow(4,'Premium > 2% of Price', c5, premPct !== null ? fmt(premPct,2)+'%' : 'N/A');
-    html += critRow(5, acq ? 'Strike ATM · Δ 0.40–0.60 (buy near current price)' : 'Strike Delta 0.15–0.25 (OTM income)', c6, bestDelta !== null ? fmt(bestDelta,2) : 'N/A');
-    html += critRow(6, acq ? 'Duration ≥ 60 DTE (longer = bigger credit)' : 'Duration 30–45 DTE', c7, dte+' days');
-    html += '</div>' + scoreSummaryHtml(score,6) + '</div>';
+    html += critRow(3,'Premium > 2% of Price', c5, premPct !== null ? fmt(premPct,2)+'%' : 'N/A');
+    html += critRow(4, acq ? 'Strike ATM · Δ 0.40–0.60 (buy near current price)' : 'Strike Delta 0.15–0.25 (OTM income)', c6, bestDelta !== null ? fmt(bestDelta,2) : 'N/A');
+    html += critRow(5, acq ? 'Duration ≥ 60 DTE (longer = bigger credit)' : 'Duration 30–45 DTE', c7, dte+' days');
+    html += '</div>' + scoreSummaryHtml(score,5) + '</div>';
 
     // ── Contextual suggestions (warnings first, positives last) ──
     var suggWarnP = [], suggGoodP = [];
@@ -4534,7 +4568,7 @@ async function runCC(forceTicker) {
     var c5 = premPct !== null ? premPct >= 2 : null;
     var c6 = otmOk;
     var c7 = dte >= 30 && dte <= 45;
-    var score = [c2,c3,c4,c5,c6,c7].filter(function(x){return x===true;}).length;
+    var score = [c3,c4,c5,c6,c7].filter(function(x){return x===true;}).length; // MR (c2) not scored — manual confirm on the user's ETH chart
 
     setStatus('cc-status', 'Done', 'ok');
 
@@ -4580,13 +4614,13 @@ async function runCC(forceTicker) {
     '</div></div>';
 
     html += '<div class="scorecard"><h3>Covered Call — Score</h3><div class="criteria-list">';
-    html += critRow(1,'MR · 4H ≥ +2 (Deeply Overbought)', c2, mrZone(pd.meanRev).label);
-    html += critRow(2,'Price Above 200 SMA (Confirmed Uptrend)', c3, pd.sma200 ? fmtDollar(pd.price) + ' vs ' + fmtDollar(pd.sma200) : 'N/A');
-    html += critRow(3,'No Earnings Before Expiry', c4, earningsRisk ? 'Earnings: '+EARNINGS[ticker] : 'Clear');
-    html += critRow(4,'Premium ≥ 2% of Price', c5, premPct !== null ? fmt(premPct,2)+'%' : 'N/A');
-    html += critRow(5,'Strike Near Resistance (5–12% OTM)', c6, (upsidePct !== null ? fmt(upsidePct,1)+'% OTM' + (bestDelta !== null ? ' · Δ'+fmt(bestDelta,2) : '') : 'N/A'));
-    html += critRow(6,'Duration 30–45 DTE', c7, dte+' days');
-    html += '</div>' + scoreSummaryHtml(score,6) + '</div>';
+    html += mrConfirmRow(ticker, 'top'); // MR not scored — manual confirm on the user's ETH chart
+    html += critRow(1,'Price Above 200 SMA (Confirmed Uptrend)', c3, pd.sma200 ? fmtDollar(pd.price) + ' vs ' + fmtDollar(pd.sma200) : 'N/A');
+    html += critRow(2,'No Earnings Before Expiry', c4, earningsRisk ? 'Earnings: '+EARNINGS[ticker] : 'Clear');
+    html += critRow(3,'Premium ≥ 2% of Price', c5, premPct !== null ? fmt(premPct,2)+'%' : 'N/A');
+    html += critRow(4,'Strike Near Resistance (5–12% OTM)', c6, (upsidePct !== null ? fmt(upsidePct,1)+'% OTM' + (bestDelta !== null ? ' · Δ'+fmt(bestDelta,2) : '') : 'N/A'));
+    html += critRow(5,'Duration 30–45 DTE', c7, dte+' days');
+    html += '</div>' + scoreSummaryHtml(score,5) + '</div>';
 
     // ── Contextual suggestions (warnings first, positives last) ──
     var suggWarnC = [], suggGoodC = [];
@@ -4743,7 +4777,7 @@ async function runSynth(forceTicker) {
     var c3 = dte >= 540;                                                       // Duration ≥ 540 DTE
     var c4 = netCostPct !== null ? netCostPct <= 5 : null;                     // Net Debit ≤ 5% (credit always passes)
     var c7 = (callSpreadPct !== null && putSpreadPct !== null) ? (callSpreadPct <= 10 && putSpreadPct <= 10) : null; // Spreads ≤ 10%
-    var score = [c1,c3,c4,c7].filter(function(x){return x===true;}).length;
+    var score = [c3,c4,c7].filter(function(x){return x===true;}).length; // MR (c1) not scored — manual confirm on the user's ETH chart
 
     setStatus('synth-status', 'Done', 'ok');
 
@@ -4839,11 +4873,11 @@ async function runSynth(forceTicker) {
     }
 
     html += '<div class="scorecard"><h3>Synthetic Long — Score</h3><div class="criteria-list">';
-    html += critRow(1,'MR · 4H ≤ −2 (Deeply Oversold — Buy the Dip)', c1, mrZone(pd.meanRev).label);
-    html += critRow(2,'Duration ≥ 540 DTE (LEAPS-Length)', c3, dte + ' days');
-    html += critRow(3,'Net Debit ≤ 5% (Put Funds the Call)', c4, netCostPct !== null ? fmt(Math.abs(netCostPct),2) + '%' : 'N/A');
-    html += critRow(4,'Both Spreads ≤ 10% (Tight)', c7, (callSpreadPct !== null ? fmt(callSpreadPct,1)+'%' : '—')+' / '+(putSpreadPct !== null ? fmt(putSpreadPct,1)+'%' : '—'));
-    html += '</div>' + scoreSummaryHtml(score,4) + '</div>';
+    html += mrConfirmRow(ticker, 'bottom'); // MR not scored — manual confirm on the user's ETH chart
+    html += critRow(1,'Duration ≥ 540 DTE (LEAPS-Length)', c3, dte + ' days');
+    html += critRow(2,'Net Debit ≤ 5% (Put Funds the Call)', c4, netCostPct !== null ? fmt(Math.abs(netCostPct),2) + '%' : 'N/A');
+    html += critRow(3,'Both Spreads ≤ 10% (Tight)', c7, (callSpreadPct !== null ? fmt(callSpreadPct,1)+'%' : '—')+' / '+(putSpreadPct !== null ? fmt(putSpreadPct,1)+'%' : '—'));
+    html += '</div>' + scoreSummaryHtml(score,3) + '</div>';
 
     // ── Contextual suggestions ──
     var suggWarn = [], suggGood = [];
@@ -5166,7 +5200,7 @@ async function gradeMsl() {
 
     // Scorecard on the USER's legs
     html += '<div class="scorecard"><h3>Your MSL — Grade</h3><div class="criteria-list">';
-    html += '<div class="criterion" style="border-left:3px solid var(--yellow)"><span class="rank-pip" style="background:transparent">⏱</span><div class="badge-na">—</div><span class="crit-label"><strong>Timing — your call:</strong> confirm MR ≤ −2 on your <strong>ETH</strong> chart (app MR regular-hours, not scored)</span><span class="crit-val ' + mrZone(pd.meanRev).cls + '">' + (!isNaN(pd.meanRev) ? fmt(pd.meanRev,2) + ' · ' + mrZone(pd.meanRev).short : '—') + '</span></div>';
+    html += mrConfirmRow(ticker, 'bottom'); // MR not scored — manual confirm on the user's ETH chart
     html += critRow(1, 'Put Credit ≥ 42% of Width (≥50% = Ideal)', um.c2, um.putCreditPct != null ? fmt(um.putCreditPct, 1) + '%' : 'N/A');
     html += critRow(2, 'MSL Risk ≤ 50% of Owning Stock (≤40% = Ideal)', um.c8, um.riskVsStockPct != null ? fmt(um.riskVsStockPct, 0) + '% of stock' : 'N/A');
     html += critRow(3, 'Call Intrinsic/Extrinsic 40–60% (45–55% = Ideal)', um.c3, um.callRatio != null ? fmt(um.callRatio * 100, 0) + '/' + fmt((1 - um.callRatio) * 100, 0) : 'N/A');
@@ -5712,12 +5746,7 @@ async function runMsl(forceTicker) {
     html += '<div class="scorecard"><h3>MSL — Modified Synthetic Long — Score</h3><div class="criteria-list">';
     // TIMING — NOT scored. It's the user's call: the app reads regular-hours data and can't match
     // the extended-hours (ETH) Mean-BT Laura/James use, so MR must not drive the grade.
-    html += '<div class="criterion" style="border-left:3px solid var(--yellow)">' +
-      '<span class="rank-pip" style="background:transparent">⏱</span>' +
-      '<div class="badge-na">—</div>' +
-      '<span class="crit-label"><strong>Timing — your call:</strong> confirm MR ≤ −2 (and a buy divergence) on your own <strong>ETH</strong> chart. App MR is regular-hours, shown for reference only — not scored.</span>' +
-      '<span class="crit-val ' + mrZone(pd.meanRev).cls + '">' + (!isNaN(pd.meanRev) ? fmt(pd.meanRev,2) + ' · ' + mrZone(pd.meanRev).short : '—') + '</span>' +
-    '</div>';
+    html += mrConfirmRow(ticker, 'bottom');
     // Structure criteria (SCORED) — Tier 1 gates (credit, risk) then quality/formality.
     html += critRow(1,'Put Credit ≥ 42% of Width (≥50% = Ideal) ' + pPill2, c2, putCreditPct !== null ? fmt(putCreditPct,1) + '%' + (c2Ideal ? ' ✨ IDEAL' : '') : 'N/A');
     html += critRow(2,'MSL Risk ≤ 50% of Owning Stock (≤40% = Ideal) ' + pPill2, c8, riskVsStockPct !== null ? fmt(riskVsStockPct,0) + '% of stock' + (c8Ideal ? ' ✨ IDEAL' : '') : 'N/A');
