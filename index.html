@@ -3322,9 +3322,13 @@ function checkGradeAlerts() {
   if (el) {
     if (current.length) {
       el.style.display = '';
-      el.innerHTML = '<div class="grade-alert-box">🎯 <strong>A-GRADE SETUP' + (current.length > 1 ? 'S' : '') + ' (' + current.length + '):</strong> ' +
-        current.map(function(c) { return '<span class="ga-chip" onclick="navigateToAnalyzer(\'' + c.t + '\',\'' + strats.filter(function(s){return s.label===c.label;})[0].key + '\')">' + c.t + ' · ' + c.label + '</span>'; }).join('') +
-        '<div class="ga-sub">Top grade — the −2 MR trigger and the quality checks all line up. Click a setup to open its analyzer and confirm.</div></div>';
+      var CAP = 8;
+      var shown = current.slice(0, CAP);
+      var moreN = current.length - shown.length;
+      el.innerHTML = '<div class="grade-alert-box">🎯 <strong>TOP-STRUCTURE SETUP' + (current.length > 1 ? 'S' : '') + ' (' + current.length + '):</strong> ' +
+        shown.map(function(c) { return '<span class="ga-chip" onclick="navigateToAnalyzer(\'' + c.t + '\',\'' + strats.filter(function(s){return s.label===c.label;})[0].key + '\')">' + c.t + ' · ' + c.label + '</span>'; }).join('') +
+        (moreN > 0 ? '<span class="ga-chip" style="opacity:.7;cursor:default">+' + moreN + ' more</span>' : '') +
+        '<div class="ga-sub">Structure grades an A — <strong>confirm the −2 on your ETH chart</strong> (MR isn\'t scored). Click a setup to open its analyzer.</div></div>';
     } else { el.style.display = 'none'; el.innerHTML = ''; }
   }
   // Fire a browser notification only for setups that just crossed INTO A this cycle.
@@ -3333,7 +3337,7 @@ function checkGradeAlerts() {
   _alertedA = next;
   if (newOnes.length && _alertsOn && typeof Notification !== 'undefined' && Notification.permission === 'granted') {
     try {
-      new Notification('🎯 ' + newOnes.length + ' A-grade setup' + (newOnes.length > 1 ? 's' : '') + ' — OptionsEdge Pro', {
+      new Notification('🎯 ' + newOnes.length + ' top-structure setup' + (newOnes.length > 1 ? 's' : '') + ' — confirm MR on your chart', {
         body: newOnes.map(function(c) { return c.t + ' · ' + c.label; }).join('\n'),
         tag: 'oep-a-grade'
       });
@@ -3363,41 +3367,15 @@ function toggleAlerts() {
   }
 }
 
-// "Ready Now" — surface every ticker/strategy at its MR entry trigger (badge not gated to WAIT FOR SETUP),
-// so a follower instantly sees what's actionable today instead of a wall of WAIT FOR SETUP.
+// Standing MR caveat banner. MR is no longer scored (the app reads regular-hours data and can't
+// match the ETH Mean-BT Laura/James use), so this is one concise reminder — the top-setups row
+// above handles surfacing. No chip walls here.
 function renderReadyBanner() {
   var el = document.getElementById('ready-banner');
   if (!el) return;
-  var ready = [], confirm = [];
-  tickers.forEach(function(t) {
-    var d = cardData[t];
-    if (!d || d.loading || d.phase < 2) return;
-    if (d.put_c2   === true) ready.push({ t: t, s: 'Cash-Secured Put', mr: d.meanRev });
-    if (d.cc_c2    === true) ready.push({ t: t, s: 'Covered Call',      mr: d.meanRev });
-    if (d.synth_c1 === true) ready.push({ t: t, s: 'Synthetic Long',    mr: (d.synthMR != null ? d.synthMR : d.meanRev) });
-    if (d.mslT1Pass === true) ready.push({ t: t, s: 'MSL',              mr: (d.mslMR != null ? d.mslMR : d.meanRev) });
-    // "Structure ready — confirm MR": app MR trigger unmet (may be RTH under-reading) but price is
-    // leaning the right way and the STRUCTURE passes. Surface these so a real ETH −2 isn't hidden.
-    var mMR = (d.mslMR != null ? d.mslMR : d.meanRev), sMR = (d.synthMR != null ? d.synthMR : d.meanRev);
-    if (d.mslT1Pass !== true && d.msl_c2 === true && d.msl_c8 === true && d.msl_c1 === false && !isNaN(mMR) && mMR <= 0.5) confirm.push({ t: t, s: 'MSL', mr: mMR });
-    if (d.put_c2 === false && !isNaN(d.meanRev) && d.meanRev <= 0.5) confirm.push({ t: t, s: 'Cash-Secured Put', mr: d.meanRev });
-    if (d.synth_c1 === false && !isNaN(sMR) && sMR <= 0.5) confirm.push({ t: t, s: 'Synthetic Long', mr: sMR });
-    if (d.cc_c2 === false && !isNaN(d.meanRev) && d.meanRev >= -0.5) confirm.push({ t: t, s: 'Covered Call', mr: d.meanRev });
-  });
-  var confirmHtml = confirm.length ? '<div style="margin-top:9px"><span style="font-size:11px;font-weight:800;color:#f5c877">👀 Structure ready — confirm MR on your ETH chart (' + confirm.length + '):</span> ' +
-    confirm.map(function(c){ return '<span class="ready-chip" style="border-color:rgba(245,200,120,.4)">' + c.t + ' · ' + c.s + (isNaN(c.mr) ? '' : ' (app MR ' + fmt(c.mr,2) + ')') + '</span>'; }).join('') + '</div>' : '';
-  // MR data caveat — the app reads REGULAR-hours data; Laura/James trade the EXTENDED-hours (ETH)
-  // Mean-BT, which this plan can't read. RTH under-reads, so the app can miss a real −2. ALWAYS verify.
-  var mrCaveat = '<div style="font-size:11px;color:var(--yellow);margin-top:7px;line-height:1.5">⚠ <strong>Mean Reversion here is regular-hours data</strong> and can under-read the extended-hours Mean-BT that Laura & James use — so a real −2 may show as Neutral here. <strong>Always confirm the −2 (and buy divergence) on your own TradingView ETH chart before acting</strong> — don\'t let this app\'s MR alone stop you.</div>';
-  if (ready.length === 0) {
-    el.innerHTML = '<div class="ready-banner ' + (confirm.length ? 'ready-go' : 'ready-none') + '">⏳ <strong>Nothing at a trigger by the app\'s (regular-hours) MR.</strong> Setups wait for −2 (puts / synthetic / MSL) or +2 (covered calls) Mean Reversion.' + confirmHtml + mrCaveat + '</div>';
-    return;
-  }
-  var chips = ready.map(function(r) {
-    return '<span class="ready-chip">' + r.t + ' · ' + r.s + (isNaN(r.mr) ? '' : ' (MR ' + fmt(r.mr, 2) + ')') + '</span>';
-  }).join('');
-  el.innerHTML = '<div class="ready-banner ready-go">🎯 <strong>At a trigger now (' + ready.length + '):</strong> ' + chips +
-    '<div style="font-size:11px;color:var(--text-muted);margin-top:6px">These are at Laura\'s entry signal — open the card\'s analyzer to confirm the rest of the setup.</div>' + confirmHtml + mrCaveat + '</div>';
+  el.innerHTML = '<div class="ready-banner ready-none" style="padding:8px 14px">' +
+    '<span style="font-size:11.5px;color:var(--yellow);line-height:1.5">⚠ <strong>Grades below are structure-only.</strong> MR is <strong>your timing call</strong> — the app\'s Mean Reversion is regular-hours and can under-read the extended-hours Mean-BT Laura &amp; James use (a real −2 may show as Neutral here). <strong>Confirm the −2 (and a buy divergence) on your own TradingView ETH chart before acting.</strong></span>' +
+  '</div>';
 }
 
 // Keep renderSorted as a no-op alias so existing call in fetchTickerData still works
