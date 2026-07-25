@@ -3362,15 +3362,18 @@ function renderReadyBanner() {
     if (d.synth_c1 === true) ready.push({ t: t, s: 'Synthetic Long',    mr: (d.synthMR != null ? d.synthMR : d.meanRev) });
     if (d.mslT1Pass === true) ready.push({ t: t, s: 'MSL',              mr: (d.mslMR != null ? d.mslMR : d.meanRev) });
   });
+  // MR data caveat — the app reads REGULAR-hours data; Laura/James trade the EXTENDED-hours (ETH)
+  // Mean-BT, which this plan can't read. RTH under-reads, so the app can miss a real −2. ALWAYS verify.
+  var mrCaveat = '<div style="font-size:11px;color:var(--yellow);margin-top:7px;line-height:1.5">⚠ <strong>Mean Reversion here is regular-hours data</strong> and can under-read the extended-hours Mean-BT that Laura & James use — so a real −2 may show as Neutral here. <strong>Always confirm the −2 (and buy divergence) on your own TradingView ETH chart before acting</strong> — don\'t let this app\'s MR alone stop you.</div>';
   if (ready.length === 0) {
-    el.innerHTML = '<div class="ready-banner ready-none">⏳ <strong>Nothing at a trigger yet.</strong> Every setup is waiting for its −2 (puts / synthetic / MSL) or +2 (covered calls) Mean-Reversion signal. Patience — Laura only acts at the trigger.</div>';
+    el.innerHTML = '<div class="ready-banner ready-none">⏳ <strong>Nothing at a trigger by the app\'s (regular-hours) MR.</strong> Setups wait for −2 (puts / synthetic / MSL) or +2 (covered calls) Mean Reversion.' + mrCaveat + '</div>';
     return;
   }
   var chips = ready.map(function(r) {
     return '<span class="ready-chip">' + r.t + ' · ' + r.s + (isNaN(r.mr) ? '' : ' (MR ' + fmt(r.mr, 2) + ')') + '</span>';
   }).join('');
   el.innerHTML = '<div class="ready-banner ready-go">🎯 <strong>At a trigger now (' + ready.length + '):</strong> ' + chips +
-    '<div style="font-size:11px;color:var(--text-muted);margin-top:6px">These are at Laura\'s entry signal — open the card\'s analyzer to confirm the rest of the setup.</div></div>';
+    '<div style="font-size:11px;color:var(--text-muted);margin-top:6px">These are at Laura\'s entry signal — open the card\'s analyzer to confirm the rest of the setup.</div>' + mrCaveat + '</div>';
 }
 
 // Keep renderSorted as a no-op alias so existing call in fetchTickerData still works
