@@ -3040,22 +3040,37 @@ function buildColCard(ticker, d, strategy, rank, isBestTrade) {
     badgeCls = 'badge-watch'; badgeTxt = 'Scoring…';
   } else if (strategy === 'msl' && d.phase >= 3) {
     var mslW = d.mslWeighted != null ? d.mslWeighted : 0;
-    // Thesis gate: any Tier-1 fail → WAIT FOR SETUP regardless of total
-    if (d.mslT1Pass === false) {
+    // MR is NOT a hard gate anymore — the app reads regular-hours data and can't see the ETH
+    // Mean-BT Laura/James use, so it must not hide a structurally-ready setup. If the STRUCTURE
+    // passes (credit + risk) but only the MR trigger is unmet AND price is leaning oversold,
+    // show "CONFIRM MR" (check your ETH chart); real structure failures still say WAIT.
+    var mslMRv = (d.mslMR != null ? d.mslMR : d.meanRev);
+    var mslStructOK = (d.msl_c2 === true && d.msl_c8 === true);
+    if (d.mslT1Pass === true) {
+      if (mslW >= 7)           { badgeCls = 'badge-ideal';    badgeTxt = 'IDEAL · ' + scoreLbl; }
+      else if (mslW >= 5)      { badgeCls = 'badge-watch';    badgeTxt = 'WATCH · ' + scoreLbl; }
+      else                     { badgeCls = 'badge-notready'; badgeTxt = 'WAIT · ' + scoreLbl; }
+    } else if (mslStructOK && d.msl_c1 === false && !isNaN(mslMRv) && mslMRv <= 0.5) {
+      badgeCls = 'badge-watch'; badgeTxt = 'CONFIRM MR · ' + scoreLbl;
+    } else {
       badgeCls = 'badge-wait'; badgeTxt = 'WAIT FOR SETUP · ' + scoreLbl;
-    } else if (mslW >= 7)      { badgeCls = 'badge-ideal';    badgeTxt = 'IDEAL · ' + scoreLbl; }
-    else if (mslW >= 5)        { badgeCls = 'badge-watch';    badgeTxt = 'WATCH · ' + scoreLbl; }
-    else                       { badgeCls = 'badge-notready'; badgeTxt = 'WAIT · ' + scoreLbl; }
+    }
   } else if (isScored) {
-    // Put: entry-timing gate (Laura sells CSP into MR ≤ −2) overrides the score
-    if (d.put_c2 === false)    { badgeCls = 'badge-wait';     badgeTxt = 'WAIT FOR SETUP · ' + scoreLbl; }
+    // Put: MR ≤ −2 is the entry trigger. If it's unmet but price is leaning oversold, don't hide it —
+    // show CONFIRM MR (verify on your ETH chart). Clearly-overbought (wrong direction) still says WAIT.
+    var putMRlean = !isNaN(d.meanRev) && d.meanRev <= 0.5;
+    if (d.put_c2 === false && putMRlean) { badgeCls = 'badge-watch'; badgeTxt = 'CONFIRM MR · ' + scoreLbl; }
+    else if (d.put_c2 === false){ badgeCls = 'badge-wait';     badgeTxt = 'WAIT FOR SETUP · ' + scoreLbl; }
     else if (pctScore >= 0.70) { badgeCls = 'badge-ideal';    badgeTxt = 'IDEAL · ' + scoreLbl; }
     else if (pctScore >= 0.40) { badgeCls = 'badge-watch';    badgeTxt = 'WATCH · ' + scoreLbl; }
     else                       { badgeCls = 'badge-notready'; badgeTxt = 'NO TRADE · ' + scoreLbl; }
   } else {
-    // CC (sell into MR ≥ +2) / Synth (enter MR ≤ −2): entry-timing gate overrides the score
-    var _mrEntryFail = (strategy === 'cc') ? (d.cc_c2 === false) : (d.synth_c1 === false);
-    if (_mrEntryFail)          { badgeCls = 'badge-wait';     badgeTxt = 'WAIT FOR SETUP · ' + scoreLbl; }
+    // CC (needs MR ≥ +2) / Synth (needs MR ≤ −2): MR unmet but leaning the right way → CONFIRM MR, not WAIT.
+    var _mrv = (strategy === 'cc') ? d.meanRev : (d.synthMR != null ? d.synthMR : d.meanRev);
+    var _mrFail = (strategy === 'cc') ? (d.cc_c2 === false) : (d.synth_c1 === false);
+    var _mrLean = (strategy === 'cc') ? (!isNaN(_mrv) && _mrv >= -0.5) : (!isNaN(_mrv) && _mrv <= 0.5);
+    if (_mrFail && _mrLean)    { badgeCls = 'badge-watch';    badgeTxt = 'CONFIRM MR · ' + scoreLbl; }
+    else if (_mrFail)          { badgeCls = 'badge-wait';     badgeTxt = 'WAIT FOR SETUP · ' + scoreLbl; }
     else if (pctScore >= 0.70) { badgeCls = 'badge-ideal';    badgeTxt = 'IDEAL · ' + scoreLbl; }
     else if (pctScore >= 0.40) { badgeCls = 'badge-watch';    badgeTxt = 'WATCH · ' + scoreLbl; }
     else                       { badgeCls = 'badge-notready'; badgeTxt = 'WAIT · ' + scoreLbl; }
@@ -3353,7 +3368,7 @@ function toggleAlerts() {
 function renderReadyBanner() {
   var el = document.getElementById('ready-banner');
   if (!el) return;
-  var ready = [];
+  var ready = [], confirm = [];
   tickers.forEach(function(t) {
     var d = cardData[t];
     if (!d || d.loading || d.phase < 2) return;
@@ -3361,19 +3376,28 @@ function renderReadyBanner() {
     if (d.cc_c2    === true) ready.push({ t: t, s: 'Covered Call',      mr: d.meanRev });
     if (d.synth_c1 === true) ready.push({ t: t, s: 'Synthetic Long',    mr: (d.synthMR != null ? d.synthMR : d.meanRev) });
     if (d.mslT1Pass === true) ready.push({ t: t, s: 'MSL',              mr: (d.mslMR != null ? d.mslMR : d.meanRev) });
+    // "Structure ready — confirm MR": app MR trigger unmet (may be RTH under-reading) but price is
+    // leaning the right way and the STRUCTURE passes. Surface these so a real ETH −2 isn't hidden.
+    var mMR = (d.mslMR != null ? d.mslMR : d.meanRev), sMR = (d.synthMR != null ? d.synthMR : d.meanRev);
+    if (d.mslT1Pass !== true && d.msl_c2 === true && d.msl_c8 === true && d.msl_c1 === false && !isNaN(mMR) && mMR <= 0.5) confirm.push({ t: t, s: 'MSL', mr: mMR });
+    if (d.put_c2 === false && !isNaN(d.meanRev) && d.meanRev <= 0.5) confirm.push({ t: t, s: 'Cash-Secured Put', mr: d.meanRev });
+    if (d.synth_c1 === false && !isNaN(sMR) && sMR <= 0.5) confirm.push({ t: t, s: 'Synthetic Long', mr: sMR });
+    if (d.cc_c2 === false && !isNaN(d.meanRev) && d.meanRev >= -0.5) confirm.push({ t: t, s: 'Covered Call', mr: d.meanRev });
   });
+  var confirmHtml = confirm.length ? '<div style="margin-top:9px"><span style="font-size:11px;font-weight:800;color:#f5c877">👀 Structure ready — confirm MR on your ETH chart (' + confirm.length + '):</span> ' +
+    confirm.map(function(c){ return '<span class="ready-chip" style="border-color:rgba(245,200,120,.4)">' + c.t + ' · ' + c.s + (isNaN(c.mr) ? '' : ' (app MR ' + fmt(c.mr,2) + ')') + '</span>'; }).join('') + '</div>' : '';
   // MR data caveat — the app reads REGULAR-hours data; Laura/James trade the EXTENDED-hours (ETH)
   // Mean-BT, which this plan can't read. RTH under-reads, so the app can miss a real −2. ALWAYS verify.
   var mrCaveat = '<div style="font-size:11px;color:var(--yellow);margin-top:7px;line-height:1.5">⚠ <strong>Mean Reversion here is regular-hours data</strong> and can under-read the extended-hours Mean-BT that Laura & James use — so a real −2 may show as Neutral here. <strong>Always confirm the −2 (and buy divergence) on your own TradingView ETH chart before acting</strong> — don\'t let this app\'s MR alone stop you.</div>';
   if (ready.length === 0) {
-    el.innerHTML = '<div class="ready-banner ready-none">⏳ <strong>Nothing at a trigger by the app\'s (regular-hours) MR.</strong> Setups wait for −2 (puts / synthetic / MSL) or +2 (covered calls) Mean Reversion.' + mrCaveat + '</div>';
+    el.innerHTML = '<div class="ready-banner ' + (confirm.length ? 'ready-go' : 'ready-none') + '">⏳ <strong>Nothing at a trigger by the app\'s (regular-hours) MR.</strong> Setups wait for −2 (puts / synthetic / MSL) or +2 (covered calls) Mean Reversion.' + confirmHtml + mrCaveat + '</div>';
     return;
   }
   var chips = ready.map(function(r) {
     return '<span class="ready-chip">' + r.t + ' · ' + r.s + (isNaN(r.mr) ? '' : ' (MR ' + fmt(r.mr, 2) + ')') + '</span>';
   }).join('');
   el.innerHTML = '<div class="ready-banner ready-go">🎯 <strong>At a trigger now (' + ready.length + '):</strong> ' + chips +
-    '<div style="font-size:11px;color:var(--text-muted);margin-top:6px">These are at Laura\'s entry signal — open the card\'s analyzer to confirm the rest of the setup.</div>' + mrCaveat + '</div>';
+    '<div style="font-size:11px;color:var(--text-muted);margin-top:6px">These are at Laura\'s entry signal — open the card\'s analyzer to confirm the rest of the setup.</div>' + confirmHtml + mrCaveat + '</div>';
 }
 
 // Keep renderSorted as a no-op alias so existing call in fetchTickerData still works
@@ -5743,15 +5767,21 @@ async function runMsl(forceTicker) {
       oiRejReasons.push('bought put OI ' + boughtPutOI + ' (<' + MSL_OI_FLOOR_PUT + ')');
     }
     var t1Pass = (c1 === true && c2 === true && c8 === true) && !oiHardReject;
+    // Structure ready = credit + risk + tradeable, MR aside (the app can't read the ETH Mean-BT).
+    var structReady = (c2 === true && c8 === true) && !oiHardReject;
     var sumCls, sumLabel;
-    if (!t1Pass) {
+    if (!t1Pass && structReady && c1 !== true) {
+      // Only the MR trigger is unmet — don't bury a ready structure; tell the user to confirm on their chart.
+      sumCls = 'moderate';
+      sumLabel = '🟡 Structure ready — confirm the −2 on your ETH chart (app MR is regular-hours; ' + (isNaN(pd.meanRev) ? 'n/a' : fmt(pd.meanRev,2)) + ')';
+    } else if (!t1Pass) {
       sumCls = 'wait';
       // List which Tier-1 gates failed
       var failed = [];
-      if (c1 !== true) failed.push('MR Oversold');
       if (c2 !== true) failed.push('Put Credit ≥42%');
       if (c8 !== true) failed.push('Risk ≤ 50% of Stock');
       if (oiHardReject) failed.push('Untradeable Liquidity');
+      if (c1 !== true) failed.push('MR (confirm on your chart)');
       sumLabel = '⏳ Wait for Setup — missing: ' + failed.join(', ');
     } else if (mslWeighted >= 7) {
       sumCls = 'strong';
@@ -5768,7 +5798,7 @@ async function runMsl(forceTicker) {
         '<span class="score-label">' + sumLabel + '</span>' +
         '<span class="score-num">' + score + '/6</span>' +
       '</div>' +
-      '<div style="margin-top:6px;font-size:11px;color:var(--text-muted);text-align:right">Weighted: <strong style="color:var(--accent)">' + mslWeighted + '/9</strong> · Tier-1 gates (MR · Put Credit · Risk) must all pass</div>' +
+      '<div style="margin-top:6px;font-size:11px;color:var(--text-muted);text-align:right">Weighted: <strong style="color:var(--accent)">' + mslWeighted + '/9</strong> · Structure gates = Put Credit · Risk. MR is your timing call — confirm the −2 on your ETH chart (app MR is regular-hours).</div>' +
       '</div>';
 
     // Contextual suggestions
