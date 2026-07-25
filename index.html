@@ -5754,6 +5754,16 @@ async function runMsl(forceTicker) {
     html += critRow(3,'Call Intrinsic/Extrinsic 40–60% (45–55% = Ideal) ' + pPill1, c3, (callRatio !== null && !isNaN(callRatio)) ? fmt(callRatio*100,0) + '/' + fmt((1-callRatio)*100,0) + (c3Ideal ? ' ✨ IDEAL' : '') : 'N/A');
     html += critRow(4,'Net Debit ≤ 40% of Price (≤33% = Ideal) ' + pPill1, c5, netDebitPct !== null ? fmt(netDebitPct,1) + '%' + (c5Ideal ? ' ✨ IDEAL' : '') : 'N/A');
     html += critRow(5,'Duration ≥ 365 DTE (LEAPS — ≥540 = Ideal) ' + pPill1, c4, dte + ' days' + (c4Ideal ? ' ✨ IDEAL' : ''));
+    // Reward-quality flag (NOT scored, but caps the grade below IDEAL). Laura's 3× test: the price
+    // needed for a 3× return is above the 52-wk high, so the reward side is thin at this entry.
+    if (target3xAboveHigh === true) {
+      html += '<div class="criterion" style="border-left:3px solid var(--red)" title="Laura\'s 3× test: for a 3× return the stock must reach the call strike + 3× your risk. When that sits above the 52-week high, the reward is unrealistic at this entry — a fail, but not a structure flaw, so it caps the grade rather than dinging a box.">' +
+        '<span class="rank-pip" style="background:transparent">⚠</span>' +
+        '<div class="badge-fail">✕</div>' +
+        '<span class="crit-label"><strong>Reward flag — caps the grade (not a scored box):</strong> fails Laura\'s 3× test — needs ' + (target3x != null ? fmtDollar(target3x) : '—') + (move3xPct != null ? ' (+' + fmt(move3xPct,0) + '% from here)' : '') + ', above the 52-wk high ' + (pd.week52H != null ? fmtDollar(pd.week52H) : '—') + '. Reward side is thin — enter smaller, or wait for a deeper dip.</span>' +
+        '<span class="crit-val down">3× ✕</span>' +
+      '</div>';
+    }
     // Structure-only weighted score (0-7): credit + risk (2 each) + I/E + debit + DTE (1 each). MR excluded.
     var mslWeighted = (c2 === true ? 2 : 0) + (c8 === true ? 2 : 0) +
                       (c3 === true ? 1 : 0) + (c5 === true ? 1 : 0) + (c4 === true ? 1 : 0);
@@ -5788,6 +5798,10 @@ async function runMsl(forceTicker) {
       if (c8 !== true) failed.push('Risk ≤ 50% of Stock');
       if (oiHardReject) failed.push('Untradeable Liquidity');
       sumLabel = '⏳ Structure not ready — missing: ' + failed.join(', ') + '. (MR is your timing call — not scored.)';
+    } else if (mslWeighted >= 6 && target3xAboveHigh === true) {
+      // Structure is ideal/strong, but the 3× reward test fails — cap below IDEAL.
+      sumCls = 'moderate';
+      sumLabel = '⚠️ Strong structure, thin reward — fails the 3× test (target above the 52-wk high). Confirm the −2 on your ETH chart and size down.';
     } else if (mslWeighted >= 6) {
       sumCls = 'strong';
       sumLabel = '✅ ' + (mslWeighted === 7 ? 'Ideal' : 'Strong') + ' structure — now confirm the −2 on your ETH chart';
