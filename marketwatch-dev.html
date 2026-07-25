@@ -3073,7 +3073,7 @@ function buildColCard(ticker, d, strategy, rank, isBestTrade) {
   var badgeCls, badgeTxt;
   var pctScore = totalCriteria > 0 ? score / totalCriteria : 0;
   var scoreLbl = score + '/' + totalCriteria;
-  // MSL uses weighted score (0-9) for grade band + thesis gate override
+  // MSL uses structure-only weighted score (0-7, MR's 2 pts excluded) for grade band + thesis gate override
   if (strategy === 'msl' && d.phase < 3 && d.phase3Failed) {
     // Chain data couldn't be loaded (rate limit / no LEAPS chain) — don't sit on "Scoring…" forever
     badgeCls = 'badge-notready'; badgeTxt = 'No chain data';
@@ -5129,7 +5129,7 @@ function mslComputeGrade(pd, callChain, putChain, cIdx, sIdx, bIdx, dte) {
   m.c8 = riskVsStockPct != null ? riskVsStockPct <= 50 : null; // MM60: risk ≤ 50% of owning stock
   m.score = [m.c1, m.c2, m.c3, m.c4, m.c5, m.c8].filter(function(x) { return x === true; }).length;
   m.weighted = (m.c1 === true ? 2 : 0) + (m.c2 === true ? 2 : 0) + (m.c8 === true ? 2 : 0) + (m.c3 === true ? 1 : 0) + (m.c5 === true ? 1 : 0) + (m.c4 === true ? 1 : 0);
-  m.t1Pass = m.c1 === true && m.c2 === true && m.c8 === true;
+  m.t1Pass = m.c2 === true && m.c8 === true; // MR (c1) not scored — user's manual timing call
   return m;
 }
 
@@ -5240,8 +5240,9 @@ async function gradeMsl() {
     if (um.c3 !== true && um.callRatio != null) sw.push('💡 <strong>Call I/E off 50/50 (' + fmt(um.callRatio * 100, 0) + '/' + fmt((1 - um.callRatio) * 100, 0) + '):</strong> ' + (um.callRatio > 0.60 ? 'too deep — try a higher strike' : 'not deep enough — try a lower strike') + ' (app picks ' + (rm ? fmtDollar(rm.callStrike) : '—') + ').');
     if (um.c5 !== true && um.netDebitPct != null) sw.push('💡 <strong>Net debit ' + fmt(um.netDebitPct, 1) + '% (> 40%):</strong> the put-spread credit isn\'t offsetting enough of the call cost.');
     if (um.c4 !== true) sw.push('💡 <strong>Under 365 DTE:</strong> Laura anchors MSLs in LEAPS — prefer ≥540 days.');
-    if (um.t1Pass && um.weighted >= 7) sg.push('✅ <strong>Strong structure (' + um.weighted + '/9):</strong> all Tier-1 gates pass. Only timing/entry remains.');
-    else if (um.t1Pass) sg.push('✅ <strong>Tier-1 thesis passes:</strong> credit, risk, and MR structure all clear.');
+    var umStructW = um.weighted - (um.c1 === true ? 2 : 0); // structure only — MR not scored
+    if (um.t1Pass && umStructW >= 6) sg.push('✅ <strong>Strong structure (' + umStructW + '/7):</strong> both Tier-1 gates pass. Confirm MR on your ETH chart, then enter.');
+    else if (um.t1Pass) sg.push('✅ <strong>Tier-1 thesis passes:</strong> credit and risk both clear. Confirm MR on your ETH chart.');
     if (um.c2 === true && um.putCreditPct != null && um.putCreditPct >= 50) sg.push('✅ <strong>Excellent put credit (' + fmt(um.putCreditPct, 1) + '%):</strong> the spread more than pays for itself.');
     html += renderGroupedSuggestions(sw, sg);
 
@@ -5756,6 +5757,8 @@ async function runMsl(forceTicker) {
     // Structure-only weighted score (0-7): credit + risk (2 each) + I/E + debit + DTE (1 each). MR excluded.
     var mslWeighted = (c2 === true ? 2 : 0) + (c8 === true ? 2 : 0) +
                       (c3 === true ? 1 : 0) + (c5 === true ? 1 : 0) + (c4 === true ? 1 : 0);
+    // Tier-1 thesis gates (structure only — MR is the user's manual timing call, not scored).
+    var t1Pass = (c2 === true && c8 === true);
     // Liquidity hard-reject thresholds — below these, no real market exists.
     // Deep ITM calls naturally have thinner books (acts like stock on a limit), so allow looser threshold.
     // ATM puts on a spread leg need real OI — slippage on entry AND exit kills the trade math.
@@ -5869,13 +5872,12 @@ async function runMsl(forceTicker) {
       suggGood.push('ℹ️ <strong>Strikes chosen for open interest:</strong> Among the strikes that pass the rules, the analyzer picks the one with the higher open interest (usually the round/even strike) — Laura\'s roll-ability rule, so future rolls & adjustments fill cleanly.');
     }
     if (t1Pass && mslWeighted >= 7) {
-      suggGood.push('✅ <strong>' + (mslWeighted === 9 ? 'All Tier-1 + quality criteria met' : 'Tier-1 thesis confirmed (' + mslWeighted + '/9)') + '</strong> — strong MSL setup. Enter as a multi-leg order to avoid leg risk.');
+      suggGood.push('✅ <strong>All structure criteria met (' + mslWeighted + '/7)</strong> — strong MSL setup. Confirm MR on your ETH chart, then enter as a multi-leg order to avoid leg risk.');
     } else if (!t1Pass) {
       if (oiHardReject) {
         suggWarn.push('⏳ <strong>Wait for setup:</strong> Strike liquidity is too thin to trade (' + oiRejReasons.join(', ') + '). MSL math assumes mid-quote fills — when OI is this low, the quote is stale and the spread won\'t fill at the price the analyzer shows.');
       } else {
         var t1Need = [];
-        if (c1 !== true) t1Need.push('MR Oversold (≤ −2)');
         if (c2 !== true) t1Need.push('Put Credit ≥ 42%');
         if (c8 !== true) t1Need.push('Risk ≤ 50% of Stock');
         var t1Lbl = t1Need.length === 1 ? t1Need[0] : t1Need.join(' + ');
