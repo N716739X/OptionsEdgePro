@@ -2986,7 +2986,7 @@ function buildSkeletonRow(ticker) {
 
 // Plain-English tooltips for the dashboard mini-box abbreviations (Laura's framing)
 var GLOSSARY = {
-  'MR':    'Mean Reversion (4H). ≤ −2 = deeply oversold (buy / sell-put / synthetic / MSL trigger); ≥ +2 = deeply overbought (sell-call trigger).',
+  'MR':    'Mean Reversion (4H) — REFERENCE ONLY, not scored. This is regular-hours data and can under-read the extended-hours Mean-BT Laura/James use. Your timing call: confirm the −2 (buy) / +2 (sell-call) on your own TradingView ETH chart.',
   'SMA':   'Price vs the 200-day moving average — Laura wants price ABOVE it (confirmed uptrend).',
   'EARN':  'No earnings before expiry — avoids the earnings gap and IV crush.',
   'PREM':  'Premium collected as a % of the stock price (income yield).',
@@ -3111,7 +3111,7 @@ function buildColCard(ticker, d, strategy, rank, isBestTrade) {
     var putEarnDisp = cx.c4 === true ? 'OK' : cx.c4 === false ? 'RISK' : (d.phase < 2 ? '…' : '—');
     var putDeltaDisp = d.phase < 2 ? '…' : (cx.c6 === true ? '✓' : cx.c6 === false ? '✗' : '—');
     criteriaHtml =
-      mb('MR',    cx.c2, mrDisp) +
+      mb('MR',    null, mrDisp) + // reference only — MR is not scored (your timing call)
       mb('SMA',   cx.c3, putSmaDisp) +
       mb('EARN',  cx.c4, putEarnDisp) +
       mb('PREM',  cx.c5, premDisp) +
@@ -3126,7 +3126,7 @@ function buildColCard(ticker, d, strategy, rank, isBestTrade) {
     var ccPremDisp = (d.ccPremPct !== null && d.ccPremPct !== undefined) ? fmt(d.ccPremPct, 1) + '%' : (d.phase < 2 ? '…' : '—');
     var ccDteDisp  = (d.ccDte !== null && d.ccDte !== undefined) ? d.ccDte + 'd' : (d.phase < 2 ? '…' : '—');
     criteriaHtml =
-      mb('MR',    cx.c2, mrDisp) +
+      mb('MR',    null, mrDisp) + // reference only — MR is not scored (your timing call)
       mb('SMA',   cx.c3, ccSmaDisp) +
       mb('EARN',  cx.c4, ccEarnDisp) +
       mb('PREM',  cx.c5, ccPremDisp) +
@@ -3135,7 +3135,7 @@ function buildColCard(ticker, d, strategy, rank, isBestTrade) {
   } else if (strategy === 'synth') {
     // Synthetic Long: 4 criteria — MR≤-2 Wkly, DTE≥540, Debit≤5%, Spreads (IV>50% removed)
     criteriaHtml =
-      mb('MR',    d.synth_c1, mrDisp) +
+      mb('MR',    null, mrDisp) + // reference only — MR is not scored (your timing call)
       mb('DUR',   d.synth_c3, d.synth_c3 === true ? '✓' : d.synth_c3 === false ? '✗' : '—') +
       mb('DEBIT', d.synth_c4, d.synth_c4 === null ? '—' : (d.synth_c4 ? '✓' : '✗')) +
       mb('SPRD',  d.synth_c7, d.synth_c7 === null ? '—' : (d.synth_c7 ? '✓' : '✗'));
@@ -3146,7 +3146,7 @@ function buildColCard(ticker, d, strategy, rank, isBestTrade) {
     var mPend = d.phase < 3 && !d.phase3Failed;
     var mslBox = function(v) { return mPend ? '…' : ((v === null || v === undefined) ? '—' : (v ? '✓' : '✗')); };
     criteriaHtml =
-      mb('MR',    d.msl_c1, mrDisp) +
+      mb('MR',    null, mrDisp) + // reference only — MR is not scored (your timing call)
       mb('P-CR',  d.msl_c2, mslBox(d.msl_c2)) +
       mb('I/E',   d.msl_c3, mslBox(d.msl_c3)) +
       mb('DUR',   d.msl_c4, d.msl_c4 === true ? '✓' : d.msl_c4 === false ? '✗' : '—') +
@@ -3184,7 +3184,7 @@ function buildColCard(ticker, d, strategy, rank, isBestTrade) {
         '<div class="range-dot" style="left:' + rangePos + '%"></div>' +
       '</div>' +
     '</div>' +
-    '<div class="criteria-row criteria-' + totalCriteria + '">' + criteriaHtml + '</div>' +
+    '<div class="criteria-row criteria-' + (totalCriteria + 1) + '">' + criteriaHtml + '</div>' +
     '<div style="display:flex;align-items:center;gap:6px;padding:2px 10px;font-size:9px;color:var(--text-muted);min-height:20px;">' +
       (d.atrSeries && d.atrSeries.length >= 3
         ? 'VOL 30D ' + sparklineSVG(d.atrSeries, 60, 16)
