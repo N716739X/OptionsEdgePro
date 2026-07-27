@@ -2124,6 +2124,29 @@ var currentSort     = localStorage.getItem('owp-sort')     || 'score';
 var currentTab      = localStorage.getItem('owp-tab')      || 'dashboard';
 var tickers         = JSON.parse(localStorage.getItem('owp-tickers') || 'null') || DEFAULT_TICKERS.slice();
 var cardData        = {}; // ticker -> data object
+// Last-good MSL scoring per ticker — survives the cardData wipe on refresh so a transient
+// LEAPS-chain rate-limit doesn't drop an A-grade setup out of the banner (it shows stale instead).
+var _lastGoodMsl    = {};
+// Fields that make up a scored MSL card — snapshotted/restored as a unit.
+var MSL_SNAP_KEYS = ['mslScore','mslWeighted','mslT1Pass','msl3xFail','mslTarget3x','mslMove3xPct',
+  'mslExpiry','mslMR','mslCallRatio','mslNetDebitPct','mslRiskRatio',
+  'msl_c1','msl_c2','msl_c3','msl_c4','msl_c5','msl_c6','msl_c7','msl_c8'];
+function snapshotMsl(d) {
+  if (!d || d.mslScore == null) return;
+  var snap = {};
+  MSL_SNAP_KEYS.forEach(function(k){ snap[k] = d[k]; });
+  _lastGoodMsl[d.ticker] = snap;
+}
+// Restore a stale MSL score onto a card whose chain couldn't be re-fetched this cycle.
+// Returns true if a snapshot existed and was applied.
+function restoreStaleMsl(d) {
+  if (!d) return false;
+  var snap = _lastGoodMsl[d.ticker];
+  if (!snap || snap.mslScore == null) return false;
+  MSL_SNAP_KEYS.forEach(function(k){ d[k] = snap[k]; });
+  d.mslChainStale = true;
+  return true;
+}
 var refreshTimer    = null;
 
 
@@ -3074,13 +3097,13 @@ function buildColCard(ticker, d, strategy, rank, isBestTrade) {
   var pctScore = totalCriteria > 0 ? score / totalCriteria : 0;
   var scoreLbl = score + '/' + totalCriteria;
   // MSL uses structure-only weighted score (0-7, MR's 2 pts excluded) for grade band + thesis gate override
-  if (strategy === 'msl' && d.phase < 3 && d.phase3Failed) {
+  if (strategy === 'msl' && d.phase < 3 && !d.mslChainStale && d.phase3Failed) {
     // Chain data couldn't be loaded (rate limit / no LEAPS chain) — don't sit on "Scoring…" forever
     badgeCls = 'badge-notready'; badgeTxt = 'No chain data';
-  } else if (strategy === 'msl' && d.phase < 3) {
+  } else if (strategy === 'msl' && d.phase < 3 && !d.mslChainStale) {
     // Chain criteria are scored in phase 3 — show a pending state, not a misleading score
     badgeCls = 'badge-watch'; badgeTxt = 'Scoring…';
-  } else if (strategy === 'msl' && d.phase >= 3) {
+  } else if (strategy === 'msl' && (d.phase >= 3 || d.mslChainStale)) {
     // Structure-only weighted score (0–7): the full weighted minus MR's 2 points. MR is the
     // user's timing call, not scored — the app can't read the ETH Mean-BT.
     var structW = (d.mslWeighted != null ? d.mslWeighted : 0) - (d.msl_c1 === true ? 2 : 0);
@@ -3095,6 +3118,7 @@ function buildColCard(ticker, d, strategy, rank, isBestTrade) {
     } else {
       badgeCls = 'badge-wait'; badgeTxt = 'WAIT FOR SETUP · ' + scoreLbl;
     }
+    if (d.mslChainStale) badgeTxt += ' · STALE'; // score carried from a prior cycle; chain didn't refresh
   } else if (isScored) {
     // CSP — MR not scored (your timing call). Grade the structure; remind to confirm MR on the chart.
     if (pctScore >= 0.70)      { badgeCls = 'badge-ideal';    badgeTxt = 'IDEAL · ' + mrTag + ' · ' + scoreLbl; }
@@ -3913,7 +3937,14 @@ async function runMslPhase3(ticker) {
     // Thesis gate: all 3 Tier-1 criteria must pass AND legs must be tradeable; otherwise badge → "WAIT FOR SETUP"
     d.mslT1Pass = (d.msl_c1 === true && d.msl_c2 === true && d.msl_c8 === true && !d.mslOiHardReject);
     d.mslExpiry = bestExpiry; // LEAPS expiry actually scored — for the card subtitle
+    // Laura's 3× reward test — mirrors the server (caps the dashboard badge below IDEAL).
+    var _t3x = (mslRiskPh3 !== null && callStrike != null) ? (callStrike + 3 * mslRiskPh3) : null;
+    d.mslTarget3x = _t3x;
+    d.mslMove3xPct = (_t3x !== null && pd.price) ? ((_t3x / pd.price - 1) * 100) : null;
+    d.msl3xFail = (_t3x !== null && d.week52H) ? (_t3x > d.week52H) : null;
+    d.mslChainStale = false;
     d.phase = 3;
+    snapshotMsl(d); // remember a good client MSL score for carry-forward
     console.log('[MSLp3]', ticker, 'DONE weighted=', d.mslWeighted, 't1Pass=', d.mslT1Pass);
     renderColumns();
     renderMiniRankings('msl');
@@ -3951,8 +3982,13 @@ function _runPhase3Pass(list, round) {
       // back off and retry only the tickers that failed — gives the upstream limit time to clear
       setTimeout(function(){ _runPhase3Pass(stuck, round + 1); }, 1500 * (round + 1));
     } else if (stuck.length) {
-      // out of retries — mark so cards show "No chain data" instead of a perpetual "Scoring…"
-      stuck.forEach(function(t){ if (cardData[t]) cardData[t].phase3Failed = true; });
+      // Out of retries. If we scored this ticker's MSL on an earlier cycle, carry that score
+      // forward (marked stale) so a transient chain rate-limit doesn't drop an A-grade setup out
+      // of the banner. Otherwise mark it so the card shows "No chain data" instead of "Scoring…".
+      stuck.forEach(function(t){
+        if (!cardData[t]) return;
+        if (!restoreStaleMsl(cardData[t])) cardData[t].phase3Failed = true;
+      });
       renderColumns(); renderMiniRankings('msl'); renderMiniRankings('synth');
     }
   }
@@ -4032,6 +4068,7 @@ function applyServerScores(s) {
     c1: s.put.c1, c2: s.put.c2, c3: s.put.c3, c4: s.put.c4, c5: s.put.c5, c6: s.put.c6, c7: s.put.c7
   };
   cardData[s.ticker] = d;
+  snapshotMsl(d); // remember a good server MSL score for carry-forward
   updateCard(s.ticker);
 }
 
