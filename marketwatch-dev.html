@@ -1668,7 +1668,7 @@ input, textarea, select { -webkit-user-select: text; user-select: text; }
       <div class="dash-col-header">
         <div class="dash-col-header-top">
           <span class="dash-col-title">Synthetic Long</span>
-          <span class="dash-col-sub">Ranked by MR ↑</span>
+          <span class="dash-col-sub">Ranked by structure</span>
         </div>
         <span class="dash-col-desc">Replicate stock ownership with options</span>
       </div>
@@ -1679,7 +1679,7 @@ input, textarea, select { -webkit-user-select: text; user-select: text; }
       <div class="dash-col-header">
         <div class="dash-col-header-top">
           <span class="dash-col-title">MSL</span>
-          <span class="dash-col-sub">Ranked by MR ↑</span>
+          <span class="dash-col-sub">Ranked by structure</span>
         </div>
         <span class="dash-col-desc" title="Modified Synthetic Long — sell put + buy put + buy deep ITM call">Risk-reduced synthetic via put spread + ITM call</span>
       </div>
@@ -3082,11 +3082,19 @@ function buildColCard(ticker, d, strategy, rank, isBestTrade) {
   var _mrDir = strategy === 'cc' ? 'top' : 'bottom';
   var mrTag  = mrConfirmGet(ticker, _mrDir) ? 'MR ✓' : 'CONFIRM MR';
 
-  // Grade — percentage-based, scales per-strategy max (structure only)
+  // MSL structure-weighted score (credit & risk gates count double) — the ONE metric MSL uses for
+  // the letter grade, the IDEAL/WATCH badge, and the column sort, so all three always agree.
+  var _mslStructW    = (d.mslWeighted != null ? d.mslWeighted : 0) - (d.msl_c1 === true ? 2 : 0);
+  var _mslStructWMax = _mslHasC9 ? 8 : 7;
+
+  // Grade — percentage-based, scales per-strategy max (structure only). MSL grades off its
+  // weighted score (not a flat pass-count) so the letter can never contradict the sort/badge.
   var grade = '';
   if (d.phase >= 2) {
     if (d.phase < 3 && !isScored && strategy !== 'cc' && score <= 0) {
       grade = '';
+    } else if (strategy === 'msl') {
+      grade = scoreToGrade(_mslStructW, _mslStructWMax, d.phase);
     } else {
       grade = scoreToGrade(score, totalCriteria, d.phase);
     }
@@ -3110,9 +3118,8 @@ function buildColCard(ticker, d, strategy, rank, isBestTrade) {
     // Chain criteria are scored in phase 3 — show a pending state, not a misleading score
     badgeCls = 'badge-watch'; badgeTxt = 'Scoring…';
   } else if (strategy === 'msl' && (d.phase >= 3 || d.mslChainStale)) {
-    // Structure-only weighted score (0–7): the full weighted minus MR's 2 points. MR is the
-    // user's timing call, not scored — the app can't read the ETH Mean-BT.
-    var structW = (d.mslWeighted != null ? d.mslWeighted : 0) - (d.msl_c1 === true ? 2 : 0);
+    // Structure-only weighted score (0–8, MR's 2 points already excluded) — same metric as the letter grade & sort.
+    var structW = _mslStructW;
     var mslMRv = (d.mslMR != null ? d.mslMR : d.meanRev);
     var mslStructOK = (d.msl_c2 === true && d.msl_c8 === true); // credit + risk both pass
     if (mslStructOK) {
@@ -3257,6 +3264,46 @@ function buildColCard(ticker, d, strategy, rank, isBestTrade) {
   '</div>';
 }
 
+// ── Shared column/mini-ranking sort (MR is NEVER a sort key) ───────────────────────────────────
+// CSP/CC/Synth rank by their MR-excluded structure pass-count (matching their letter grade); MSL
+// ranks by its MR-excluded weighted structure score (matching its grade & badge). Not-yet-scored
+// names sink to the bottom; ties break alphabetically (stable).
+function _structCountOf(d, rawKey, mrPass) {
+  var raw = d[rawKey];
+  if (raw == null) return null;
+  return raw - (mrPass === true ? 1 : 0);
+}
+function byStructSort(rawKey, mrKey) {
+  return function(a, b) {
+    var da = cardData[a], db = cardData[b];
+    var sa = _structCountOf(da, rawKey, da[mrKey]);
+    var sb = _structCountOf(db, rawKey, db[mrKey]);
+    var ta = sa == null ? 0 : 1, tb = sb == null ? 0 : 1;
+    if (tb !== ta) return tb - ta;
+    if (sa != null && sb != null && sb !== sa) return sb - sa;
+    return a < b ? -1 : a > b ? 1 : 0;
+  };
+}
+function _mslStructWeightedOf(d) {
+  if (d.mslWeighted == null) return null;
+  return d.mslWeighted - (d.msl_c1 === true ? 2 : 0); // exclude MR's 2 points
+}
+function _mslStructCountOf(d) {
+  if (d.mslScore == null) return null;
+  return d.mslScore - (d.msl_c1 === true ? 1 : 0);    // exclude the MR criterion
+}
+function mslStructSort(a, b) {
+  var da = cardData[a], db = cardData[b];
+  var ta = _mslStructWeightedOf(da) == null ? 0 : 1;
+  var tb = _mslStructWeightedOf(db) == null ? 0 : 1;
+  if (tb !== ta) return tb - ta;                       // no-chain names to the bottom
+  var wa = _mslStructWeightedOf(da), wb = _mslStructWeightedOf(db);
+  if (wa != null && wb != null && wb !== wa) return wb - wa;
+  var ca = _mslStructCountOf(da), cb = _mslStructCountOf(db);
+  if (ca != null && cb != null && cb !== ca) return cb - ca;
+  return a < b ? -1 : a > b ? 1 : 0;                   // stable alphabetical, never MR
+}
+
 function renderColumns() {
   // Build sorted lists for each column
   var putSorted   = tickers.slice().filter(function(t){ return cardData[t] && !cardData[t].loading; });
@@ -3264,52 +3311,13 @@ function renderColumns() {
   var synthSorted = putSorted.slice();
   var mslSorted   = putSorted.slice();
 
-  // CSP: sort by putScore desc, ties broken by MR asc (most oversold first)
-  putSorted.sort(function(a, b) {
-    var sa = cardData[a].putScore !== null ? cardData[a].putScore : -1;
-    var sb = cardData[b].putScore !== null ? cardData[b].putScore : -1;
-    if (sb !== sa) return sb - sa;
-    return (cardData[a].meanRev || 999) - (cardData[b].meanRev || 999);
-  });
-
-  // CC: sort by ccScore desc, ties broken by MR desc (most overbought first)
-  ccSorted.sort(function(a, b) {
-    var sa = cardData[a].ccScore !== null ? cardData[a].ccScore : -1;
-    var sb = cardData[b].ccScore !== null ? cardData[b].ccScore : -1;
-    if (sb !== sa) return sb - sa;
-    return (cardData[b].meanRev || -999) - (cardData[a].meanRev || -999);
-  });
-
-  // Synthetic Long: sort by synthScore desc, ties broken by weekly MR asc (most oversold first)
-  synthSorted.sort(function(a, b) {
-    var sa = cardData[a].synthScore !== null ? cardData[a].synthScore : -1;
-    var sb = cardData[b].synthScore !== null ? cardData[b].synthScore : -1;
-    if (sb !== sa) return sb - sa;
-    return ((cardData[a].weeklyMeanRev != null ? cardData[a].weeklyMeanRev : cardData[a].meanRev) || 999) - ((cardData[b].weeklyMeanRev != null ? cardData[b].weeklyMeanRev : cardData[b].meanRev) || 999);
-  });
-
-  // Laura's MSL ranking tiers (high → low):
-  //   2 = scored + passes all Tier-1 gates (a real setup)
-  //   1 = scored but gated ("wait for setup")
-  //   0 = not scored / ineligible (e.g. no LEAPS chain) → bottom
-  // Within a tier: mslWeighted desc, then mslScore desc, then weekly MR asc (most oversold).
-  function _mslTier(t) {
-    var d = cardData[t];
-    if (d.mslWeighted == null) return 0;   // never completed phase 3 → sink to bottom
-    if (d.mslT1Pass === true) return 2;
-    return 1;
-  }
-  mslSorted.sort(function(a, b) {
-    var ta = _mslTier(a), tb = _mslTier(b);
-    if (tb !== ta) return tb - ta;
-    var wa = cardData[a].mslWeighted != null ? cardData[a].mslWeighted : -1;
-    var wb = cardData[b].mslWeighted != null ? cardData[b].mslWeighted : -1;
-    if (wb !== wa) return wb - wa;
-    var sa = cardData[a].mslScore !== null ? cardData[a].mslScore : -1;
-    var sb = cardData[b].mslScore !== null ? cardData[b].mslScore : -1;
-    if (sb !== sa) return sb - sa;
-    return ((cardData[a].weeklyMeanRev != null ? cardData[a].weeklyMeanRev : cardData[a].meanRev) || 999) - ((cardData[b].weeklyMeanRev != null ? cardData[b].weeklyMeanRev : cardData[b].meanRev) || 999);
-  });
+  // Every column ranks by the SAME structure metric that drives its letter grade, with the MR
+  // criterion excluded (MR is the user's manual timing call — never a sort key). See the shared
+  // byStructSort / mslStructSort helpers above renderColumns (also used by the mini-rankings).
+  putSorted.sort(byStructSort('putScore', 'put_c2'));
+  ccSorted.sort(byStructSort('ccScore', 'cc_c2'));
+  synthSorted.sort(byStructSort('synthScore', 'synth_c1'));
+  mslSorted.sort(mslStructSort);
 
   // Render each column
   var colPut   = document.getElementById('col-put');
@@ -6185,37 +6193,12 @@ function buildMiniRankings(strategy, activeTicker) {
 
   if (loaded.length === 0) return ''; // data not ready yet
 
-  // Sort same logic as dashboard columns
+  // Sort with the SAME shared helpers as the dashboard columns (structure-only, MR never a key)
   var sorted = loaded.slice();
-  if (strategy === 'put') {
-    sorted.sort(function(a, b) {
-      var sa = cardData[a].putScore !== null ? cardData[a].putScore : -1;
-      var sb = cardData[b].putScore !== null ? cardData[b].putScore : -1;
-      if (sb !== sa) return sb - sa;
-      return (cardData[a].meanRev || 999) - (cardData[b].meanRev || 999);
-    });
-  } else if (strategy === 'cc') {
-    sorted.sort(function(a, b) {
-      var sa = cardData[a].ccScore !== null ? cardData[a].ccScore : -1;
-      var sb = cardData[b].ccScore !== null ? cardData[b].ccScore : -1;
-      if (sb !== sa) return sb - sa;
-      return (cardData[b].meanRev || 0) - (cardData[a].meanRev || 0);
-    });
-  } else if (strategy === 'msl') {
-    sorted.sort(function(a, b) {
-      var sa = cardData[a].mslScore !== null ? cardData[a].mslScore : -1;
-      var sb = cardData[b].mslScore !== null ? cardData[b].mslScore : -1;
-      if (sb !== sa) return sb - sa;
-      return (cardData[a].meanRev || 999) - (cardData[b].meanRev || 999);
-    });
-  } else {
-    sorted.sort(function(a, b) {
-      var sa = cardData[a].synthScore !== null ? cardData[a].synthScore : -1;
-      var sb = cardData[b].synthScore !== null ? cardData[b].synthScore : -1;
-      if (sb !== sa) return sb - sa;
-      return (cardData[a].meanRev || 999) - (cardData[b].meanRev || 999);
-    });
-  }
+  if (strategy === 'put')       sorted.sort(byStructSort('putScore', 'put_c2'));
+  else if (strategy === 'cc')   sorted.sort(byStructSort('ccScore', 'cc_c2'));
+  else if (strategy === 'msl')  sorted.sort(mslStructSort);
+  else                          sorted.sort(byStructSort('synthScore', 'synth_c1'));
 
   var top3 = sorted.slice(0, 3);
 
