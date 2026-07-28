@@ -635,7 +635,7 @@ function badgeInfo(score, total, isScored) {
 // cards match the analyzers, without the client needing to fetch chains (phase 3).
 function scoreMslChains(price, mr, expiry, dte, callChain, putChain, week52H) {
   const out = { chainScored: false, expiry: expiry, mr: mr,
-    c1: !isNaN(mr) ? mr <= -2 : null, c2: null, c3: null, c4: dte >= 365, c5: null, c6: null, c7: null, c8: null,
+    c1: !isNaN(mr) ? mr <= -2 : null, c2: null, c3: null, c4: dte >= 365, c5: null, c6: null, c7: null, c8: null, c9: null,
     weighted: null, t1Pass: null, score: null, callRatio: null, netDebitPct: null, putCreditPct: null, riskRatio: null,
     threeXFail: null, target3x: null, move3xPct: null };
   if (!callChain || !callChain.strike || !putChain || !putChain.strike || !callChain.strike.length || !putChain.strike.length) return out;
@@ -805,10 +805,11 @@ function scoreMslChains(price, mr, expiry, dte, callChain, putChain, week52H) {
   const riskVsStockPct = (mslRisk !== null && price) ? (mslRisk / price * 100) : null;
   out.c2 = putCreditPct !== null ? putCreditPct >= 42 : null;
   out.c3 = (callRatio !== null && !isNaN(callRatio)) ? (callRatio >= 0.40 && callRatio <= 0.60) : null;
-  out.c5 = netDebitPct !== null ? netDebitPct <= 40 : null;
+  out.c5 = netDebitPct !== null ? netDebitPct <= 33 : null; // Laura's ≤1/3-of-price cap
   out.c6 = callOI !== null ? callOI >= 500 : null;
   out.c7 = soldPutOI !== null ? soldPutOI >= 500 : null;
   out.c8 = riskVsStockPct !== null ? riskVsStockPct <= 50 : null; // MM60: ≤ 50% of owning stock
+  out.c9 = (putSpreadCredit !== null && price) ? ((putSpreadCredit / price * 100) >= 6) : null; // credit ≥6% of stock price
   out.callRatio = callRatio; out.netDebitPct = netDebitPct; out.putCreditPct = putCreditPct; out.riskRatio = riskRatio; out.riskVsStockPct = riskVsStockPct;
   // Laura's 3x test: price for a 3x return = call strike + 3 x per-share risk. Flag when that
   // sits above the 52-wk high (upside proxy) — reward is thin at this entry (caps the grade).
@@ -816,9 +817,9 @@ function scoreMslChains(price, mr, expiry, dte, callChain, putChain, week52H) {
   out.target3x = target3x;
   out.move3xPct = (target3x !== null && price) ? ((target3x / price - 1) * 100) : null;
   out.threeXFail = (target3x !== null && week52H) ? (target3x > week52H) : null;
-  out.score = [out.c1, out.c2, out.c3, out.c4, out.c5, out.c8].filter(x => x === true).length;
+  out.score = [out.c1, out.c2, out.c3, out.c4, out.c5, out.c8, out.c9].filter(x => x === true).length;
   out.weighted = (out.c1 === true ? 2 : 0) + (out.c2 === true ? 2 : 0) + (out.c8 === true ? 2 : 0) +
-                 (out.c3 === true ? 1 : 0) + (out.c5 === true ? 1 : 0) + (out.c4 === true ? 1 : 0);
+                 (out.c3 === true ? 1 : 0) + (out.c5 === true ? 1 : 0) + (out.c4 === true ? 1 : 0) + (out.c9 === true ? 1 : 0);
   const oiHardReject = (callOI !== null && callOI < 10) || (soldPutOI !== null && soldPutOI < 25);
   out.t1Pass = (out.c1 === true && out.c2 === true && out.c8 === true && !oiHardReject);
   out.chainScored = true;
@@ -1088,13 +1089,13 @@ async function scoreTicker(ticker, env) {
   const chainScored = synthCh.chainScored && mslCh.chainScored;
 
   const synthScore = synthCh.score !== null ? synthCh.score : [synthCh.c1, synthCh.c3, synthCh.c4, synthCh.c7].filter(x => x === true).length;
-  const mslScore   = mslCh.score   !== null ? mslCh.score   : [mslCh.c1, mslCh.c2, mslCh.c3, mslCh.c4, mslCh.c5, mslCh.c8].filter(x => x === true).length;
+  const mslScore   = mslCh.score   !== null ? mslCh.score   : [mslCh.c1, mslCh.c2, mslCh.c3, mslCh.c4, mslCh.c5, mslCh.c8, mslCh.c9].filter(x => x === true).length;
 
   // Build response — grades + badge info + display data
   const putBadge = badgeInfo(putScore, 6, true);
   const ccBadge = badgeInfo(ccScore, 6, true);
   const synthBadge = badgeInfo(synthScore, 4, false);
-  const mslBadge = badgeInfo(mslScore, 6, false);
+  const mslBadge = badgeInfo(mslScore, 7, false);
 
   return {
     ticker,
@@ -1107,10 +1108,10 @@ async function scoreTicker(ticker, env) {
     cc:    { score: ccScore, total: 6, grade: scoreToGrade(ccScore, 6), badge: ccBadge, c1: cc_c1, c2: cc_c2, c3: cc_c3, c4: cc_c4, c5: cc_c5, c6: cc_c6, c7: cc_c7 },
     synth: { score: synthScore, total: 4, grade: scoreToGrade(synthScore, 4), badge: synthBadge, mr: synthCh.mr, netCostPct: synthCh.netCostPct,
              c1: synthCh.c1, c2: null, c3: synthCh.c3, c4: synthCh.c4, c5: synthCh.c5, c6: synthCh.c6, c7: synthCh.c7 },
-    msl:   { score: mslScore, total: 6, grade: scoreToGrade(mslScore, 6), badge: mslBadge, weighted: mslCh.weighted, t1Pass: mslCh.t1Pass,
+    msl:   { score: mslScore, total: 7, grade: scoreToGrade(mslScore, 7), badge: mslBadge, weighted: mslCh.weighted, t1Pass: mslCh.t1Pass,
              mr: mslCh.mr, callRatio: mslCh.callRatio, netDebitPct: mslCh.netDebitPct, riskRatio: mslCh.riskRatio, riskVsStockPct: mslCh.riskVsStockPct, expiry: mslCh.expiry,
              threeXFail: mslCh.threeXFail, target3x: mslCh.target3x, move3xPct: mslCh.move3xPct,
-             c1: mslCh.c1, c2: mslCh.c2, c3: mslCh.c3, c4: mslCh.c4, c5: mslCh.c5, c6: mslCh.c6, c7: mslCh.c7, c8: mslCh.c8 },
+             c1: mslCh.c1, c2: mslCh.c2, c3: mslCh.c3, c4: mslCh.c4, c5: mslCh.c5, c6: mslCh.c6, c7: mslCh.c7, c8: mslCh.c8, c9: mslCh.c9 },
   };
 }
 
