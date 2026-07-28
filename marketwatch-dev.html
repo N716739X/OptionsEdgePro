@@ -2965,6 +2965,26 @@ function scoreToGrade(score, max, phase) {
   return 'F';
 }
 
+// Grade ordering helper + "cap at no better than" — so the letter grade can be pinned down when a
+// gate fails or the reward test caps it, exactly as the badge is.
+function gradeRank(g) { return { A: 5, B: 4, C: 3, D: 2, F: 1 }[g] || 0; }
+function capGrade(g, maxG) { return (g && gradeRank(g) > gradeRank(maxG)) ? maxG : g; }
+
+// The ONE MSL letter grade — weighted structure score, then capped to match the badge:
+//   fails a Tier-1 gate (credit c2 or risk c8) → "WAIT FOR SETUP" → no better than D
+//   passes the gates but fails the 3× reward test → "REWARD THIN" → no better than B
+// Returns '' when the LEAPS chain hasn't been scored yet. Keeps the letter, the badge and the sort
+// telling the same story (a B never sits above a C; a gate-failing setup never shows a healthy grade).
+function mslLetterGrade(d, phase) {
+  if (d.mslWeighted == null) return '';
+  var hasC9 = (d.msl_c9 === true || d.msl_c9 === false);
+  var structW = d.mslWeighted - (d.msl_c1 === true ? 2 : 0);
+  var g = scoreToGrade(structW, hasC9 ? 8 : 7, phase != null ? phase : 3);
+  if (d.msl_c2 !== true || d.msl_c8 !== true) return capGrade(g, 'D'); // gate fail → WAIT FOR SETUP
+  if (d.msl3xFail === true) return capGrade(g, 'B');                    // reward-capped → REWARD THIN
+  return g;
+}
+
 // Per-strategy max criteria count (after OI + IV Rank removal)
 function maxCriteriaFor(strategy) {
   if (strategy === 'put')   return 6;
@@ -3094,7 +3114,7 @@ function buildColCard(ticker, d, strategy, rank, isBestTrade) {
     if (d.phase < 3 && !isScored && strategy !== 'cc' && score <= 0) {
       grade = '';
     } else if (strategy === 'msl') {
-      grade = scoreToGrade(_mslStructW, _mslStructWMax, d.phase);
+      grade = mslLetterGrade(d, d.phase); // weighted, then capped to match the badge (gates / 3× reward)
     } else {
       grade = scoreToGrade(score, totalCriteria, d.phase);
     }
@@ -3382,13 +3402,18 @@ function checkGradeAlerts() {
     strats.forEach(function(s) {
       var sc = d[s.score];
       if (sc == null) return;
-      // Structure-only grade — exclude the MR criterion (the user's timing call), matching the cards.
-      var mrCrit = s.key === 'msl' ? d.msl_c1 : s.key === 'put' ? d.put_c2 : s.key === 'cc' ? d.cc_c2 : d.synth_c1;
-      var mx = Math.max(1, maxCriteriaFor(s.key) - 1); // MR always excluded
-      // Null-safety: don't count MSL's c9 (premium%price) until the score source provides it.
-      if (s.key === 'msl' && !(d.msl_c9 === true || d.msl_c9 === false)) mx = Math.max(1, mx - 1);
-      if (mrCrit === true) sc = Math.max(0, sc - 1);
-      if (scoreToGrade(sc, mx, d.phase) === 'A') current.push({ t: t, label: s.label, key: t + '|' + s.key });
+      // Use the SAME grade the card shows: MSL is weighted + gate/3×-capped; the rest are the
+      // MR-excluded structure pass-count. This keeps the banner's "A" identical to the card's "A".
+      var g;
+      if (s.key === 'msl') {
+        g = mslLetterGrade(d, d.phase);
+      } else {
+        var mrCrit = s.key === 'put' ? d.put_c2 : s.key === 'cc' ? d.cc_c2 : d.synth_c1;
+        var mx = Math.max(1, maxCriteriaFor(s.key) - 1); // MR always excluded
+        if (mrCrit === true) sc = Math.max(0, sc - 1);
+        g = scoreToGrade(sc, mx, d.phase);
+      }
+      if (g === 'A') current.push({ t: t, label: s.label, key: t + '|' + s.key });
     });
   });
   var el = document.getElementById('grade-alert');
