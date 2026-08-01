@@ -2147,6 +2147,25 @@ function restoreStaleMsl(d) {
   d.mslChainStale = true;
   return true;
 }
+// Same carry-forward for Synthetic Long — a transient LEAPS-chain miss shouldn't blank DEBIT/SPRD/IV
+// (and sink the card to WAIT · 1/3) when we scored it fine a moment ago.
+var _lastGoodSynth = {};
+var SYNTH_SNAP_KEYS = ['synthScore','synthMR','synth_c1','synth_c2','synth_c3','synth_c4','synth_c5','synth_c6','synth_c7'];
+function _synthChainScored(d) { return d && d.synth_c4 != null && d.synth_c7 != null; } // c4/c7 need the chain
+function snapshotSynth(d) {
+  if (!_synthChainScored(d)) return;
+  var snap = {};
+  SYNTH_SNAP_KEYS.forEach(function(k){ snap[k] = d[k]; });
+  _lastGoodSynth[d.ticker] = snap;
+}
+function restoreStaleSynth(d) {
+  if (!d) return false;
+  var snap = _lastGoodSynth[d.ticker];
+  if (!snap) return false;
+  SYNTH_SNAP_KEYS.forEach(function(k){ d[k] = snap[k]; });
+  d.synthChainStale = true;
+  return true;
+}
 var refreshTimer    = null;
 
 
@@ -3167,6 +3186,7 @@ function buildColCard(ticker, d, strategy, rank, isBestTrade) {
     if (pctScore >= 0.70)      { badgeCls = 'badge-ideal';    badgeTxt = 'IDEAL · ' + mrTag + ' · ' + scoreLbl; }
     else if (pctScore >= 0.40) { badgeCls = 'badge-watch';    badgeTxt = 'WATCH · ' + mrTag + ' · ' + scoreLbl; }
     else                       { badgeCls = 'badge-notready'; badgeTxt = 'WAIT · ' + scoreLbl; }
+    if (strategy === 'synth' && d.synthChainStale) badgeTxt += ' · STALE'; // Synth score carried from a prior cycle
   }
 
   // Price / change
@@ -3745,7 +3765,9 @@ async function runSynthPhase3(ticker) {
     d.synth_c7 = (callSpreadPct !== null && putSpreadPct !== null) ? (callSpreadPct <= 10 && putSpreadPct <= 10) : null; // Spreads ≤ 10%
     d.synthScore = [d.synth_c1,d.synth_c2,d.synth_c3,d.synth_c4,d.synth_c7]
       .filter(function(x){return x===true;}).length;
+    d.synthChainStale = false;
     d.phase = 3;
+    snapshotSynth(d); // remember a good client Synth score for carry-forward
     renderColumns();
     renderMiniRankings('synth');
   } catch(e) { /* silently skip */ }
@@ -4036,6 +4058,7 @@ function _runPhase3Pass(list, round) {
       // of the banner. Otherwise mark it so the card shows "No chain data" instead of "Scoring…".
       stuck.forEach(function(t){
         if (!cardData[t]) return;
+        restoreStaleSynth(cardData[t]); // carry a good Synth score forward too (marked stale)
         if (!restoreStaleMsl(cardData[t])) cardData[t].phase3Failed = true;
       });
       renderColumns(); renderMiniRankings('msl'); renderMiniRankings('synth');
@@ -4117,7 +4140,8 @@ function applyServerScores(s) {
     c1: s.put.c1, c2: s.put.c2, c3: s.put.c3, c4: s.put.c4, c5: s.put.c5, c6: s.put.c6, c7: s.put.c7
   };
   cardData[s.ticker] = d;
-  snapshotMsl(d); // remember a good server MSL score for carry-forward
+  snapshotMsl(d);   // remember a good server MSL score for carry-forward
+  snapshotSynth(d); // …and a good Synth score
   updateCard(s.ticker);
 }
 
