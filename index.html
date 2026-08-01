@@ -4171,8 +4171,9 @@ function priceBarHtml(ticker, pd, tfLabel) {
     '<span class="pb-price ' + chgColor + '">' + fmtDollar(pd.price) +
       '<span style="font-size:13px;margin-left:8px">' + chgSign + fmt(pd.change) + ' (' + chgSign + fmt(pd.changePct,2) + '%)</span>' +
     '</span>' +
-    '<div class="stat-group"><span class="stat-label">' + mrLabel + '</span>' +
-      '<span class="stat-value ' + mrZ.cls + '">' + mrZ.label + '</span></div>' +
+    '<div class="stat-group" title="The app\'s REGULAR-HOURS MR estimate — it can under-read the true extended-hours (ETH) Mean-BT that Laura/James use. Not scored; confirm ≤ −2 / ≥ +2 on your own ETH chart.">' +
+      '<span class="stat-label">' + mrLabel + ' <span style="opacity:.55;font-weight:600;letter-spacing:0">(RTH est.)</span></span>' +
+      '<span class="stat-value ' + mrZ.cls + '">' + (!isNaN(mrVal) ? fmt(mrVal,2) + ' · ' + mrZ.short : mrZ.label) + '</span></div>' +
     '<div class="stat-group"><span class="stat-label">200 SMA</span>' +
       '<span class="stat-value">' + fmtDollar(pd.sma200) + '</span></div>' +
     '<div class="stat-group"><span class="stat-label">vs SMA</span>' +
@@ -4472,7 +4473,7 @@ async function runPut(forceTicker) {
       '<div class="info-item"><div class="info-label">Bid / Ask</div><div class="info-val ' + (wideSpread ? 'down' : '') + '">' + ((bestBid != null && bestAsk != null) ? fmtDollar(bestBid) + ' / ' + fmtDollar(bestAsk) + (spreadPct !== null ? ' · ' + fmt(spreadPct,0) + '%' : '') : '—') + '</div></div>' +
       '<div class="info-item"><div class="info-label">Prem %</div><div class="info-val">' + (premPct !== null ? fmt(premPct,2) + '%' : '—') + '</div></div>' +
       '<div class="info-item"><div class="info-label">200 SMA</div><div class="info-val">' + (pd.sma200 ? fmtDollar(pd.sma200) : '—') + '</div></div>' +
-      '<div class="info-item"><div class="info-label">MR · 4H</div><div class="info-val ' + mrZone(pd.meanRev).cls + '">' + (!isNaN(pd.meanRev) ? fmt(pd.meanRev,2) + ' · ' + mrZone(pd.meanRev).short : '—') + '</div></div>' +
+      '<div class="info-item" title="App regular-hours MR estimate — can under-read the true ETH Mean-BT. Not scored; confirm on your ETH chart."><div class="info-label">MR · 4H (RTH est.)</div><div class="info-val ' + mrZone(pd.meanRev).cls + '">' + (!isNaN(pd.meanRev) ? fmt(pd.meanRev,2) + ' · ' + mrZone(pd.meanRev).short : '—') + '</div></div>' +
       (acq ?
         '<div class="info-item"><div class="info-label">Cost Basis if Assigned</div><div class="info-val">' + (costBasis ? fmtDollar(costBasis) : '—') + '</div></div>' +
         '<div class="info-item"><div class="info-label">Discount vs Price</div><div class="info-val ' + (discountPct > 0 ? 'up' : '') + '">' + (discountPct !== null ? fmt(discountPct,1) + '%' : '—') + '</div></div>' +
@@ -4677,7 +4678,7 @@ async function runCC(forceTicker) {
       '<div class="info-item"><div class="info-label">Premium (Mid)</div><div class="info-val">' + (bestPremium ? fmtDollar(bestPremium) : '—') + '</div></div>' +
       '<div class="info-item"><div class="info-label">Bid / Ask</div><div class="info-val ' + (wideSpread ? 'down' : '') + '">' + ((bestBid != null && bestAsk != null) ? fmtDollar(bestBid) + ' / ' + fmtDollar(bestAsk) + (spreadPct !== null ? ' · ' + fmt(spreadPct,0) + '%' : '') : '—') + '</div></div>' +
       '<div class="info-item"><div class="info-label">200 SMA</div><div class="info-val">' + (pd.sma200 ? fmtDollar(pd.sma200) : '—') + '</div></div>' +
-      '<div class="info-item"><div class="info-label">MR · 4H</div><div class="info-val ' + mrZone(pd.meanRev).cls + '">' + (!isNaN(pd.meanRev) ? fmt(pd.meanRev,2) + ' · ' + mrZone(pd.meanRev).short : '—') + '</div></div>' +
+      '<div class="info-item" title="App regular-hours MR estimate — can under-read the true ETH Mean-BT. Not scored; confirm on your ETH chart."><div class="info-label">MR · 4H (RTH est.)</div><div class="info-val ' + mrZone(pd.meanRev).cls + '">' + (!isNaN(pd.meanRev) ? fmt(pd.meanRev,2) + ' · ' + mrZone(pd.meanRev).short : '—') + '</div></div>' +
     '</div>';
     // Trade Summary calculations for CC
     var ccMaxGain  = (bestStrike && bestPremium && pd.price) ? ((bestStrike - pd.price) + bestPremium) * 100 : null;
@@ -4897,7 +4898,7 @@ async function runSynth(forceTicker) {
       '<div class="info-item"><div class="info-label">Strike</div><div class="info-val">' + fmtDollar(atmStrike) + ' (same for both legs)</div></div>' +
       '<div class="info-item"><div class="info-label">Net Cost</div><div class="info-val">' + (netCost !== null ? (netCost >= 0 ? fmtDollar(netCost) + ' debit' : fmtDollar(Math.abs(netCost)) + ' credit') : '—') + ' (' + (netCostPct !== null ? fmt(Math.abs(netCostPct),2)+'%' : '—') + ')</div></div>' +
       '<div class="info-item"><div class="info-label">Breakeven</div><div class="info-val">' + (breakeven !== null ? fmtDollar(breakeven) : '—') + (beAboveCur !== null ? ' ('+fmt(beAboveCur,1)+'% away)' : '') + '</div></div>' +
-      '<div class="info-item"><div class="info-label">MR · 4H</div><div class="info-val ' + mrZone(pd.meanRev).cls + '">' + (!isNaN(pd.meanRev) ? fmt(pd.meanRev,2) + ' · ' + mrZone(pd.meanRev).short : '—') + '</div></div>' +
+      '<div class="info-item" title="App regular-hours MR estimate — can under-read the true ETH Mean-BT. Not scored; confirm on your ETH chart."><div class="info-label">MR · 4H (RTH est.)</div><div class="info-val ' + mrZone(pd.meanRev).cls + '">' + (!isNaN(pd.meanRev) ? fmt(pd.meanRev,2) + ' · ' + mrZone(pd.meanRev).short : '—') + '</div></div>' +
     '</div>';
 
     // ── Trade Summary ──
@@ -5639,7 +5640,7 @@ async function runMsl(forceTicker) {
       '<span style="color:var(--text-muted);text-transform:uppercase;letter-spacing:0.8px;font-weight:700;margin-left:8px">DTE</span><span style="color:var(--accent);font-weight:800">' + dte + ' days</span>' +
       '<span style="color:var(--text-muted);text-transform:uppercase;letter-spacing:0.8px;font-weight:700;margin-left:8px">Net Debit % of Price</span><span style="color:' + (netDebitPct !== null && netDebitPct <= 33 ? 'var(--green)' : 'var(--accent)') + ';font-weight:800">' + (netDebitPct !== null ? fmt(netDebitPct,1) + '%' : '—') + '</span>' +
       '<span style="color:var(--text-muted);text-transform:uppercase;letter-spacing:0.8px;font-weight:700;margin-left:8px" title="IV Rank at this LEAPS expiry — informational, not scored. High IV inflates the call; watch the debit & risk criteria.">IV Rank</span><span style="color:' + (mslIVHigh ? 'var(--red)' : mslIVRank !== null ? 'var(--green)' : 'var(--text-muted)') + ';font-weight:800">' + (mslIVRank !== null ? fmt(mslIVRank,0) + (mslIVHigh ? ' · high' : '') : '—') + '</span>' +
-      '<span style="color:var(--text-muted);text-transform:uppercase;letter-spacing:0.8px;font-weight:700;margin-left:8px">MR · 4H</span><span style="color:var(--' + (mrZone(pd.meanRev).cls === 'down' ? 'green' : mrZone(pd.meanRev).cls === 'up' ? 'red' : 'text-muted') + ');font-weight:800">' + (!isNaN(pd.meanRev) ? fmt(pd.meanRev,2) + ' · ' + mrZone(pd.meanRev).short : '—') + '</span>' +
+      '<span style="color:var(--text-muted);text-transform:uppercase;letter-spacing:0.8px;font-weight:700;margin-left:8px" title="App regular-hours MR estimate — not scored; confirm on your ETH chart">MR · 4H (RTH est.)</span><span style="color:var(--' + (mrZone(pd.meanRev).cls === 'down' ? 'green' : mrZone(pd.meanRev).cls === 'up' ? 'red' : 'text-muted') + ');font-weight:800">' + (!isNaN(pd.meanRev) ? fmt(pd.meanRev,2) + ' · ' + mrZone(pd.meanRev).short : '—') + '</span>' +
     '</div>';
 
     // Trade Summary
@@ -6730,7 +6731,7 @@ async function runMslAdjust() {
     html += '<div class="info-box">' +
       '<div class="info-item"><div class="info-label">Expiry (' + (expIsYours ? 'Yours' : 'Farthest') + ')</div><div class="info-val">' + expiry + '</div></div>' +
       '<div class="info-item"><div class="info-label">DTE</div><div class="info-val">' + dte + '</div></div>' +
-      '<div class="info-item"><div class="info-label">MR · 4H</div><div class="info-val ' + mrZ.cls + '">' + (hasMR ? fmt(mr,2) + ' · ' + mrZ.short : '—') + '</div></div>' +
+      '<div class="info-item" title="App regular-hours MR estimate — can under-read the true ETH Mean-BT. Not scored; confirm on your ETH chart."><div class="info-label">MR · 4H (RTH est.)</div><div class="info-val ' + mrZ.cls + '">' + (hasMR ? fmt(mr,2) + ' · ' + mrZ.short : '—') + '</div></div>' +
       '<div class="info-item"><div class="info-label">vs 200-day SMA</div><div class="info-val ' + (atOrBelowSMA ? 'up' : '') + '">' + (smaDistPct !== null ? (smaDistPct >= 0 ? '+' : '') + fmt(smaDistPct,1) + '%' : '—') + '</div></div>' +
       '<div class="info-item"><div class="info-label">Current BE' + (effBE !== null ? ' · est' : '') + '</div><div class="info-val">' + (effBE !== null ? fmtDollar(effBE) : '—') + '</div></div>' +
     '</div>';
