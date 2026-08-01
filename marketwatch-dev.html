@@ -295,21 +295,7 @@ header {
 /* ═══════════════════════════════════════════════════════
    DASHBOARD GRID
 ═══════════════════════════════════════════════════════ */
-/* "Ready Now" banner — surfaces tickers at their MR entry trigger */
-.grade-alert-box { border-radius:10px; padding:11px 16px; margin:8px 20px 4px; font-size:13px; line-height:1.55;
-  background:rgba(0,255,150,0.10); border:1px solid var(--green); color:var(--text);
-  box-shadow:0 0 20px rgba(0,255,150,0.16); animation:gaPulse 2.2s ease-in-out infinite; }
-@keyframes gaPulse { 0%,100%{ box-shadow:0 0 14px rgba(0,255,150,0.12);} 50%{ box-shadow:0 0 26px rgba(0,255,150,0.26);} }
-@media (prefers-reduced-motion: reduce) { .grade-alert-box { animation:none; } }
-.grade-alert-box .ga-chip { display:inline-block; background:rgba(0,255,150,0.14); border:1px solid var(--green);
-  color:var(--text); border-radius:20px; padding:3px 11px; margin:3px 5px 0 0; font-size:11px; font-weight:800; cursor:pointer; }
-.grade-alert-box .ga-chip:hover { background:var(--green); color:#03121f; }
-.grade-alert-box .ga-sub { font-size:11px; color:var(--text-muted); margin-top:6px; }
 .hbtn.on { border-color:var(--green); color:var(--green); }
-.ready-banner { border-radius:10px; padding:11px 16px; margin:0 20px 4px; font-size:13px; line-height:1.55; }
-.ready-banner.ready-go { background:rgba(0,255,170,0.08); border:1px solid var(--green); color:var(--text); box-shadow:0 0 16px rgba(0,255,170,0.10); }
-.ready-banner.ready-none { background:rgba(255,255,255,0.03); border:1px solid var(--border2); color:var(--text-muted); }
-.ready-chip { display:inline-block; background:rgba(0,255,170,0.14); color:var(--green); border:1px solid rgba(0,255,170,0.4); border-radius:6px; padding:2px 9px; margin:3px 5px 0 0; font-weight:700; font-size:12px; }
 
 .dash-columns {
   display: grid;
@@ -1638,8 +1624,6 @@ input, textarea, select { -webkit-user-select: text; user-select: text; }
   <div class="dash-toolbar">
     <div id="refresh-info">Auto-refresh: market hours only</div>
   </div>
-  <div id="grade-alert" style="display:none"></div>
-  <div id="ready-banner"></div>
   <div class="dash-columns">
     <!-- CSP Column -->
     <div class="dash-col">
@@ -3405,7 +3389,6 @@ function renderColumns() {
     renderMiniRankings(tid, activeTicker);
   });
 
-  renderReadyBanner();
   checkGradeAlerts();
 }
 
@@ -3441,19 +3424,8 @@ function checkGradeAlerts() {
       if (g === 'A') current.push({ t: t, label: s.label, key: t + '|' + s.key });
     });
   });
-  var el = document.getElementById('grade-alert');
-  if (el) {
-    if (current.length) {
-      el.style.display = '';
-      var CAP = 8;
-      var shown = current.slice(0, CAP);
-      var moreN = current.length - shown.length;
-      el.innerHTML = '<div class="grade-alert-box">🎯 <strong>TOP-STRUCTURE SETUP' + (current.length > 1 ? 'S' : '') + ' (' + current.length + '):</strong> ' +
-        shown.map(function(c) { return '<span class="ga-chip" onclick="navigateToAnalyzer(\'' + c.t + '\',\'' + strats.filter(function(s){return s.label===c.label;})[0].key + '\')">' + c.t + ' · ' + c.label + '</span>'; }).join('') +
-        (moreN > 0 ? '<span class="ga-chip" style="opacity:.7;cursor:default">+' + moreN + ' more</span>' : '') +
-        '<div class="ga-sub">Structure grades an A — <strong>confirm the −2 on your ETH chart</strong> (MR isn\'t scored). Click a setup to open its analyzer.</div></div>';
-    } else { el.style.display = 'none'; el.innerHTML = ''; }
-  }
+  // (On-screen top-structure banner removed.) The opt-in ALERTS bell still fires a browser
+  // notification when a setup newly crosses into an A grade — see below.
   // Fire a browser notification only for setups that just crossed INTO A this cycle.
   var newOnes = current.filter(function(c) { return !_alertedA[c.key]; });
   var next = {}; current.forEach(function(c) { next[c.key] = true; });
@@ -3474,7 +3446,7 @@ function updateAlertBtn() {
   b.innerHTML = (_alertsOn ? '🔔' : '🔕') + ' ALERTS';
 }
 function toggleAlerts() {
-  if (typeof Notification === 'undefined') { alert('This browser doesn\'t support desktop notifications — the on-screen A-grade banner still works.'); return; }
+  if (typeof Notification === 'undefined') { alert('This browser doesn\'t support desktop notifications.'); return; }
   if (Notification.permission === 'granted') {
     _alertsOn = !_alertsOn;
     localStorage.setItem('owp-alerts', _alertsOn ? '1' : '0');
@@ -3493,14 +3465,6 @@ function toggleAlerts() {
 // Standing MR caveat banner. MR is no longer scored (the app reads regular-hours data and can't
 // match the ETH Mean-BT Laura/James use), so this is one concise reminder — the top-setups row
 // above handles surfacing. No chip walls here.
-function renderReadyBanner() {
-  var el = document.getElementById('ready-banner');
-  if (!el) return;
-  el.innerHTML = '<div class="ready-banner ready-none" style="padding:8px 14px">' +
-    '<span style="font-size:11.5px;color:var(--yellow);line-height:1.5">⚠ <strong>Grades below are structure-only.</strong> MR is <strong>your timing call</strong> — the app\'s Mean Reversion is regular-hours and can under-read the extended-hours Mean-BT Laura &amp; James use (a real −2 may show as Neutral here). <strong>Confirm the −2 (and a buy divergence) on your own TradingView ETH chart before acting.</strong></span>' +
-  '</div>';
-}
-
 // Keep renderSorted as a no-op alias so existing call in fetchTickerData still works
 function renderSorted() { renderColumns(); }
 
