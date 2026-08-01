@@ -828,7 +828,7 @@ function scoreMslChains(price, mr, expiry, dte, callChain, putChain, week52H) {
 
 function scoreSynthChains(price, mr, expiry, dte, callChain, putChain) {
   const out = { chainScored: false, expiry: expiry, dte: dte, mr: mr,
-    c1: !isNaN(mr) ? mr <= -2 : null, c3: dte >= 540, c4: null, c5: null, c6: null, c7: null, ivRank: null, netCostPct: null, score: null };
+    c1: !isNaN(mr) ? mr <= -2 : null, c2: null, c3: dte >= 540, c4: null, c5: null, c6: null, c7: null, ivRank: null, netCostPct: null, score: null };
   let slCall = null, slPut = null;
   if (callChain && callChain.strike && putChain && putChain.strike) {
     const putMap = {};
@@ -858,11 +858,12 @@ function scoreSynthChains(price, mr, expiry, dte, callChain, putChain) {
     if (ivs.length > 0) { ivs.sort((a, b) => a - b); const atmIV = ivs[Math.floor(ivs.length / 2)]; const range = ivs[ivs.length - 1] - ivs[0]; out.ivRank = range > 0 ? Math.min(100, Math.max(0, (atmIV - ivs[0]) / range * 100)) : 50; }
   }
   out.netCostPct = netCostPct;
+  out.c2 = out.ivRank !== null ? out.ivRank <= 50 : null; // IV not inflated (Laura: don't buy LEAPS at high IV); ≤30 = ideal
   out.c4 = netCostPct !== null ? netCostPct <= 5 : null;
   out.c5 = slCall.oi !== null ? slCall.oi >= 500 : null;
   out.c6 = slPut.oi !== null ? slPut.oi >= 500 : null;
   out.c7 = (callSpreadPct !== null && putSpreadPct !== null) ? (callSpreadPct <= 10 && putSpreadPct <= 10) : null;
-  out.score = [out.c1, out.c3, out.c4, out.c7].filter(x => x === true).length;
+  out.score = [out.c1, out.c2, out.c3, out.c4, out.c7].filter(x => x === true).length;
   out.chainScored = true;
   return out;
 }
@@ -1088,13 +1089,13 @@ async function scoreTicker(ticker, env) {
   if (synthCh.ivRank !== null) ivRank = synthCh.ivRank; // match the analyzer's LEAPS-expiry IV rank
   const chainScored = synthCh.chainScored && mslCh.chainScored;
 
-  const synthScore = synthCh.score !== null ? synthCh.score : [synthCh.c1, synthCh.c3, synthCh.c4, synthCh.c7].filter(x => x === true).length;
+  const synthScore = synthCh.score !== null ? synthCh.score : [synthCh.c1, synthCh.c2, synthCh.c3, synthCh.c4, synthCh.c7].filter(x => x === true).length;
   const mslScore   = mslCh.score   !== null ? mslCh.score   : [mslCh.c1, mslCh.c2, mslCh.c3, mslCh.c4, mslCh.c5, mslCh.c8, mslCh.c9].filter(x => x === true).length;
 
   // Build response — grades + badge info + display data
   const putBadge = badgeInfo(putScore, 6, true);
   const ccBadge = badgeInfo(ccScore, 6, true);
-  const synthBadge = badgeInfo(synthScore, 4, false);
+  const synthBadge = badgeInfo(synthScore, 5, false);
   const mslBadge = badgeInfo(mslScore, 7, false);
 
   return {
@@ -1106,8 +1107,8 @@ async function scoreTicker(ticker, env) {
     ccExpiry, ccDte, ccStrike, ccPremium, ccPremPct,
     put:   { score: putScore, total: 6, grade: scoreToGrade(putScore, 6), badge: putBadge, c1: put_c1, c2: put_c2, c3: put_c3, c4: put_c4, c5: put_c5, c6: put_c6, c7: put_c7 },
     cc:    { score: ccScore, total: 6, grade: scoreToGrade(ccScore, 6), badge: ccBadge, c1: cc_c1, c2: cc_c2, c3: cc_c3, c4: cc_c4, c5: cc_c5, c6: cc_c6, c7: cc_c7 },
-    synth: { score: synthScore, total: 4, grade: scoreToGrade(synthScore, 4), badge: synthBadge, mr: synthCh.mr, netCostPct: synthCh.netCostPct,
-             c1: synthCh.c1, c2: null, c3: synthCh.c3, c4: synthCh.c4, c5: synthCh.c5, c6: synthCh.c6, c7: synthCh.c7 },
+    synth: { score: synthScore, total: 5, grade: scoreToGrade(synthScore, 5), badge: synthBadge, mr: synthCh.mr, netCostPct: synthCh.netCostPct, ivRank: synthCh.ivRank,
+             c1: synthCh.c1, c2: synthCh.c2, c3: synthCh.c3, c4: synthCh.c4, c5: synthCh.c5, c6: synthCh.c6, c7: synthCh.c7 },
     msl:   { score: mslScore, total: 7, grade: scoreToGrade(mslScore, 7), badge: mslBadge, weighted: mslCh.weighted, t1Pass: mslCh.t1Pass,
              mr: mslCh.mr, callRatio: mslCh.callRatio, netDebitPct: mslCh.netDebitPct, riskRatio: mslCh.riskRatio, riskVsStockPct: mslCh.riskVsStockPct, expiry: mslCh.expiry,
              threeXFail: mslCh.threeXFail, target3x: mslCh.target3x, move3xPct: mslCh.move3xPct,
