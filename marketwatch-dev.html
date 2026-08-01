@@ -4447,8 +4447,10 @@ async function runPut(forceTicker) {
 
     // Income needs precision entry (−2 MR); accumulation allows a looser entry (Laura's lesson)
     var c2 = !isNaN(pd.meanRev) ? (acq ? pd.meanRev <= -1 : pd.meanRev <= -2) : null;
-    // Income: breakeven must clear the 200 SMA (Laura's buffer-to-support). Accumulation: basic uptrend.
-    var c3 = !isNaN(pd.sma200) ? (acq ? (pd.price > pd.sma200) : (beAboveSma === null ? (pd.price > pd.sma200) : beAboveSma)) : null;
+    // Both modes: Laura's core filter is price above the 200 SMA (confirmed uptrend). Breakeven-vs-SMA
+    // is NOT scored — for an income put a breakeven below the SMA is a cushion (support above your loss
+    // point), so it's shown as an informational note below, not a pass/fail.
+    var c3 = !isNaN(pd.sma200) ? (pd.price > pd.sma200) : null;
     // Income must expire before earnings; accumulation is happy to take the shares, so earnings is informational.
     var c4 = acq ? true : !earningsRisk;
     var c5 = premPct !== null ? premPct > 2 : null;
@@ -4525,9 +4527,8 @@ async function runPut(forceTicker) {
 
     html += '<div class="scorecard"><h3>Cash-Secured Put — Score</h3><div class="criteria-list">';
     html += mrConfirmRow(ticker, 'bottom'); // MR not scored — manual confirm on the user's ETH chart
-    html += critRow(1, acq ? 'Price Above 200 SMA (Confirmed Uptrend)' : 'Breakeven Above 200 SMA (Buffer to Support)', c3,
-      acq ? (pd.sma200 ? fmtDollar(pd.price) + ' vs ' + fmtDollar(pd.sma200) : 'N/A')
-          : (costBasis != null && pd.sma200 ? 'BE ' + fmtDollar(costBasis) + ' vs SMA ' + fmtDollar(pd.sma200) : 'N/A'));
+    html += critRow(1, 'Price Above 200 SMA (Confirmed Uptrend)', c3,
+      pd.sma200 ? fmtDollar(pd.price) + ' vs ' + fmtDollar(pd.sma200) : 'N/A');
     html += critRow(2, acq ? 'Earnings (informational — accumulation)' : 'No Earnings Before Expiry', c4,
       earningsRisk ? 'Earnings: ' + EARNINGS[ticker] + (acq ? ' (OK — you want the shares)' : '') : 'Clear');
     html += critRow(3,'Premium > 2% of Price', c5, premPct !== null ? fmt(premPct,2)+'%' : 'N/A');
@@ -4548,6 +4549,14 @@ async function runPut(forceTicker) {
     }
     if (!c3 && pd.sma200 && pd.price) {
       suggWarnP.push('💡 <strong>Below 200 SMA:</strong> Price is ' + fmtDollar(pd.price) + ' vs SMA ' + fmtDollar(pd.sma200) + ' — stock is below its 200-day MA, suggesting a sustained downtrend. Wait for price to reclaim the 200 SMA before selling puts to avoid catching a falling knife.');
+    }
+    // Breakeven vs 200 SMA — informational (not scored). A breakeven below the SMA is a cushion.
+    if (!acq && c3 && costBasis != null && beVsSmaPct !== null) {
+      if (beVsSmaPct < 0) {
+        suggGoodP.push('ℹ️ <strong>Support cushion:</strong> your breakeven ' + fmtDollar(costBasis) + ' sits ' + fmt(Math.abs(beVsSmaPct),1) + '% below the 200 SMA ' + fmtDollar(pd.sma200) + ' — the SMA is a support level above your loss point, so the stock would have to break it before you\'re underwater. <span style="color:var(--text-muted)">(Informational — not scored.)</span>');
+      } else {
+        suggWarnP.push('💡 <strong>Breakeven above the 200 SMA:</strong> your breakeven ' + fmtDollar(costBasis) + ' is ' + fmt(beVsSmaPct,1) + '% above the SMA ' + fmtDollar(pd.sma200) + ' — less support between the price and your loss point. A lower strike would put the SMA support above your breakeven. <span style="color:var(--text-muted)">(Informational — not scored.)</span>');
+      }
     }
     if (!c5 && premPct !== null && premPct >= 1.5) {
       suggWarnP.push('💡 <strong>Premium close:</strong> Premium is ' + fmt(premPct,2) + '% — just below the 2% floor. Try a slightly lower strike to collect more premium.');
