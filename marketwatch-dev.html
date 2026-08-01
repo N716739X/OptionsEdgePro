@@ -5613,12 +5613,32 @@ async function runMsl(forceTicker) {
 
     setStatus('msl-status', 'Done', 'ok');
 
+    // IV Rank at this LEAPS expiry — INFORMATIONAL for MSL, NOT scored. High IV inflates the deep-ITM
+    // call, but that already shows up in the I/E, net-debit and risk criteria, so an extra IV gate would
+    // double-count. Shown (with a warning below) so the user sees WHY a high-IV name fails debit/risk.
+    var mslIVRank = null;
+    if (putChain && putChain.iv && putChain.iv.length > 0) {
+      var _mivs = [];
+      for (var _mivi = 0; _mivi < putChain.iv.length; _mivi++) {
+        var _mivv = putChain.iv[_mivi];
+        if (_mivv !== null && _mivv !== undefined && !isNaN(_mivv) && _mivv > 0) _mivs.push(_mivv <= 1 ? _mivv * 100 : _mivv);
+      }
+      if (_mivs.length > 0) {
+        _mivs.sort(function(a,b){return a-b;});
+        var _mivAtm = _mivs[Math.floor(_mivs.length/2)];
+        var _mivRange = _mivs[_mivs.length-1] - _mivs[0];
+        mslIVRank = _mivRange > 0 ? Math.min(100, Math.max(0, (_mivAtm - _mivs[0]) / _mivRange * 100)) : 50;
+      }
+    }
+    var mslIVHigh = mslIVRank !== null && mslIVRank > 50;
+
     var html = priceBarHtml(ticker, pd, '4H');
     // Compact expiry/DTE chip (everything else moved into Trade Summary to avoid duplication)
     html += '<div style="display:flex;gap:14px;align-items:center;padding:8px 14px;margin-bottom:10px;background:var(--surface2);border-radius:8px;border:1px solid var(--border);font-size:11px">' +
       '<span style="color:var(--text-muted);text-transform:uppercase;letter-spacing:0.8px;font-weight:700">Expiry</span><span style="color:var(--accent);font-weight:800">' + expiryDisplay(bestExpiry) + '</span>' +
       '<span style="color:var(--text-muted);text-transform:uppercase;letter-spacing:0.8px;font-weight:700;margin-left:8px">DTE</span><span style="color:var(--accent);font-weight:800">' + dte + ' days</span>' +
       '<span style="color:var(--text-muted);text-transform:uppercase;letter-spacing:0.8px;font-weight:700;margin-left:8px">Net Debit % of Price</span><span style="color:' + (netDebitPct !== null && netDebitPct <= 33 ? 'var(--green)' : 'var(--accent)') + ';font-weight:800">' + (netDebitPct !== null ? fmt(netDebitPct,1) + '%' : '—') + '</span>' +
+      '<span style="color:var(--text-muted);text-transform:uppercase;letter-spacing:0.8px;font-weight:700;margin-left:8px" title="IV Rank at this LEAPS expiry — informational, not scored. High IV inflates the call; watch the debit & risk criteria.">IV Rank</span><span style="color:' + (mslIVHigh ? 'var(--red)' : mslIVRank !== null ? 'var(--green)' : 'var(--text-muted)') + ';font-weight:800">' + (mslIVRank !== null ? fmt(mslIVRank,0) + (mslIVHigh ? ' · high' : '') : '—') + '</span>' +
       '<span style="color:var(--text-muted);text-transform:uppercase;letter-spacing:0.8px;font-weight:700;margin-left:8px">MR · 4H</span><span style="color:var(--' + (mrZone(pd.meanRev).cls === 'down' ? 'green' : mrZone(pd.meanRev).cls === 'up' ? 'red' : 'text-muted') + ');font-weight:800">' + (!isNaN(pd.meanRev) ? fmt(pd.meanRev,2) + ' · ' + mrZone(pd.meanRev).short : '—') + '</span>' +
     '</div>';
 
@@ -5977,6 +5997,12 @@ async function runMsl(forceTicker) {
       suggWarn.push('💡 <strong>Net debit too high:</strong> ' + fmt(netDebitPct,1) + '% of price — above Laura\'s ≤1/3 cap (33%). The put spread credit isn\'t offsetting enough of the call cost.');
     } else if (c5 && netDebitPct !== null && netDebitPct > 25) {
       suggWarn.push('⚠️ <strong>Net debit elevated:</strong> ' + fmt(netDebitPct,1) + '% of price — passes the ≤1/3 cap but above the ≤25% ideal zone.');
+    }
+    // High IV isn't a separate MSL gate (it already lands on debit/risk) — but explain it when those fail.
+    if (mslIVHigh && (c5 !== true || c8 !== true)) {
+      suggWarn.push('💡 <strong>Elevated IV (IV Rank ' + fmt(mslIVRank,0) + '):</strong> high IV is inflating the deep-ITM call, which is pushing your ' + ((c5 !== true && c8 !== true) ? 'net debit and risk' : c5 !== true ? 'net debit' : 'risk') + ' over the line. Laura doesn\'t score IV separately on an MSL — she waits for lower price / lower IV (near the 200 SMA), where the call prices under Laura\'s limits. Not scored — informational.');
+    } else if (mslIVHigh) {
+      suggGood.push('ℹ️ <strong>IV Rank ' + fmt(mslIVRank,0) + ' (elevated):</strong> IV is on the high side but your debit and risk still pass — the deep-ITM call keeps vega low enough that it isn\'t hurting the structure. Not scored — informational.');
     }
     if (!c9 && premOfPricePct !== null) {
       suggWarn.push('💡 <strong>Thin premium credit:</strong> the put spread collects ' + fmt(premOfPricePct,1) + '% of the stock price — under Laura\'s ≥6% target, so the income relative to the stock is light.');
