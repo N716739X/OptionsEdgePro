@@ -4466,23 +4466,22 @@ async function runPut(forceTicker) {
       (acq ? '<strong>want the shares.</strong> Sell the at-the-money strike <strong>nearest the current price</strong> (~0.50Δ in normal conditions), 60–90+ DTE for a bigger credit and a lower effective buy price. Looser entry OK. Effective cost = strike − credit; if assigned you own at a discount, if not you keep the credit — then sell covered calls (the wheel).'
            : '<strong>want the premium.</strong> OTM strike with a buffer (~0.20Δ), 30–45 DTE, precision entry at −2 MR near the 200 SMA. Goal: expire worthless or buy back at 80–90% profit.') +
     '</div>';
+    // Strip holds only what's unique to the setup — 200 SMA & MR are in the header above, and
+    // Assignment Capital = Margin Req. in the Trade Summary below, so they're not repeated here.
     html += '<div class="info-box">' +
-      '<div class="info-item"><div class="info-label">Assignment Capital</div><div class="info-val">' + (assignCap ? '$' + assignCap.toLocaleString() : '—') + '</div></div>' +
       '<div class="info-item"><div class="info-label">Expiry</div><div class="info-val">' + expiryDisplay(bestExpiry) + '</div></div>' +
       '<div class="info-item"><div class="info-label">DTE</div><div class="info-val">' + dte + '</div></div>' +
       '<div class="info-item"><div class="info-label">Target Strike</div><div class="info-val">' + (bestStrike ? fmtDollar(bestStrike) : '—') + '</div></div>' +
       '<div class="info-item"><div class="info-label">Premium (Mid)</div><div class="info-val">' + (bestPremium ? fmtDollar(bestPremium) : '—') + '</div></div>' +
       '<div class="info-item"><div class="info-label">Bid / Ask</div><div class="info-val ' + (wideSpread ? 'down' : '') + '">' + ((bestBid != null && bestAsk != null) ? fmtDollar(bestBid) + ' / ' + fmtDollar(bestAsk) + (spreadPct !== null ? ' · ' + fmt(spreadPct,0) + '%' : '') : '—') + '</div></div>' +
       '<div class="info-item"><div class="info-label">Prem %</div><div class="info-val">' + (premPct !== null ? fmt(premPct,2) + '%' : '—') + '</div></div>' +
-      '<div class="info-item"><div class="info-label">200 SMA</div><div class="info-val">' + (pd.sma200 ? fmtDollar(pd.sma200) : '—') + '</div></div>' +
-      '<div class="info-item" title="App regular-hours MR estimate — can under-read the true ETH Mean-BT. Not scored; confirm on your ETH chart."><div class="info-label">MR · 4H (RTH est.)</div><div class="info-val ' + mrZone(pd.meanRev).cls + '">' + (!isNaN(pd.meanRev) ? fmt(pd.meanRev,2) + ' · ' + mrZone(pd.meanRev).short : '—') + '</div></div>' +
       (acq ?
         '<div class="info-item"><div class="info-label">Cost Basis if Assigned</div><div class="info-val">' + (costBasis ? fmtDollar(costBasis) : '—') + '</div></div>' +
         '<div class="info-item"><div class="info-label">Discount vs Price</div><div class="info-val ' + (discountPct > 0 ? 'up' : '') + '">' + (discountPct !== null ? fmt(discountPct,1) + '%' : '—') + '</div></div>' +
         '<div class="info-item"><div class="info-label">Assignment Prob (~Δ)</div><div class="info-val">' + (assignProb !== null ? fmt(assignProb,0) + '%' : '—') + '</div></div>'
         :
         '<div class="info-item"><div class="info-label">Buffer (OTM)</div><div class="info-val ' + (otmPct > 0 ? 'up' : 'down') + '">' + (otmPct !== null ? fmt(otmPct,1) + '%' : '—') + '</div></div>' +
-        '<div class="info-item"><div class="info-label">BE vs 200 SMA</div><div class="info-val ' + (beAboveSma ? 'up' : 'down') + '">' + (beVsSmaPct !== null ? (beVsSmaPct >= 0 ? '+' : '') + fmt(beVsSmaPct,1) + '%' : '—') + '</div></div>' +
+        '<div class="info-item" title="Breakeven vs the 200 SMA — informational (not scored). Below the SMA = the SMA is support above your loss point."><div class="info-label">BE vs 200 SMA</div><div class="info-val ' + (beAboveSma ? 'up' : 'down') + '">' + (beVsSmaPct !== null ? (beVsSmaPct >= 0 ? '+' : '') + fmt(beVsSmaPct,1) + '%' : '—') + '</div></div>' +
         '<div class="info-item"><div class="info-label">Assignment Risk (~Δ)</div><div class="info-val">' + (assignProb !== null ? fmt(assignProb,0) + '%' : '—') + '</div></div>'
       ) +
     '</div>';
@@ -4686,9 +4685,7 @@ async function runCC(forceTicker) {
       '<div class="info-item"><div class="info-label">Target Strike</div><div class="info-val">' + (bestStrike ? fmtDollar(bestStrike) : '—') + '</div></div>' +
       '<div class="info-item"><div class="info-label">Premium (Mid)</div><div class="info-val">' + (bestPremium ? fmtDollar(bestPremium) : '—') + '</div></div>' +
       '<div class="info-item"><div class="info-label">Bid / Ask</div><div class="info-val ' + (wideSpread ? 'down' : '') + '">' + ((bestBid != null && bestAsk != null) ? fmtDollar(bestBid) + ' / ' + fmtDollar(bestAsk) + (spreadPct !== null ? ' · ' + fmt(spreadPct,0) + '%' : '') : '—') + '</div></div>' +
-      '<div class="info-item"><div class="info-label">200 SMA</div><div class="info-val">' + (pd.sma200 ? fmtDollar(pd.sma200) : '—') + '</div></div>' +
-      '<div class="info-item" title="App regular-hours MR estimate — can under-read the true ETH Mean-BT. Not scored; confirm on your ETH chart."><div class="info-label">MR · 4H (RTH est.)</div><div class="info-val ' + mrZone(pd.meanRev).cls + '">' + (!isNaN(pd.meanRev) ? fmt(pd.meanRev,2) + ' · ' + mrZone(pd.meanRev).short : '—') + '</div></div>' +
-    '</div>';
+    '</div>'; // 200 SMA & MR are shown in the header above — not repeated here
     // Trade Summary calculations for CC
     var ccMaxGain  = (bestStrike && bestPremium && pd.price) ? ((bestStrike - pd.price) + bestPremium) * 100 : null;
     var ccMaxLoss  = (bestPremium && pd.price) ? (pd.price - bestPremium) * 100 : null;
@@ -4907,8 +4904,7 @@ async function runSynth(forceTicker) {
       '<div class="info-item"><div class="info-label">Strike</div><div class="info-val">' + fmtDollar(atmStrike) + ' (same for both legs)</div></div>' +
       '<div class="info-item"><div class="info-label">Net Cost</div><div class="info-val">' + (netCost !== null ? (netCost >= 0 ? fmtDollar(netCost) + ' debit' : fmtDollar(Math.abs(netCost)) + ' credit') : '—') + ' (' + (netCostPct !== null ? fmt(Math.abs(netCostPct),2)+'%' : '—') + ')</div></div>' +
       '<div class="info-item"><div class="info-label">Breakeven</div><div class="info-val">' + (breakeven !== null ? fmtDollar(breakeven) : '—') + (beAboveCur !== null ? ' ('+fmt(beAboveCur,1)+'% away)' : '') + '</div></div>' +
-      '<div class="info-item" title="App regular-hours MR estimate — can under-read the true ETH Mean-BT. Not scored; confirm on your ETH chart."><div class="info-label">MR · 4H (RTH est.)</div><div class="info-val ' + mrZone(pd.meanRev).cls + '">' + (!isNaN(pd.meanRev) ? fmt(pd.meanRev,2) + ' · ' + mrZone(pd.meanRev).short : '—') + '</div></div>' +
-    '</div>';
+    '</div>'; // MR is shown in the header above — not repeated here
 
     // ── Trade Summary ──
     var synthDebit100  = netCost !== null ? netCost * 100 : null;
