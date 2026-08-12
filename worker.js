@@ -605,13 +605,17 @@ function findBestExpiry(expirations, minDTE, maxDTE) {
   return null;
 }
 
+// true = earnings before expiry, false = confident next earnings is after expiry,
+// null = UNKNOWN (no date, or the stored date is already in the past → next one unknown).
+// null must NOT read as "clear" — the hardcoded table goes stale, so unknown means "verify".
 function earningsBeforeExpiry(ticker, expiryStr) {
   const eDate = EARNINGS[ticker];
-  if (!eDate) return false;
+  if (!eDate) return null;
   const earningsDate = new Date(eDate);
   const expiryDate = new Date(expiryStr);
   const today = new Date();
-  return earningsDate > today && earningsDate < expiryDate;
+  if (!(earningsDate > today)) return null; // stored date is stale → next one unknown
+  return earningsDate < expiryDate;
 }
 
 function scoreToGrade(score, total) {

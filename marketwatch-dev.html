@@ -2937,13 +2937,17 @@ async function fetchChain(ticker, expiration, side) {
 }
 
 // Earnings before expiry check (uses hardcoded dates)
+// Returns: true = earnings fall before expiry, false = confident next earnings is AFTER expiry,
+// null = UNKNOWN (no date, or the stored date is already in the past → we don't know the next one).
+// null must NOT be treated as "clear" — the hardcoded table goes stale, so unknown means "verify".
 function earningsBeforeExpiry(ticker, expiryStr) {
   var eDate = EARNINGS[ticker];
-  if (!eDate) return false; // no known earnings
+  if (!eDate) return null;                    // no known date → unknown, not "clear"
   var earningsDate = new Date(eDate);
   var expiryDate   = new Date(expiryStr);
   var today        = new Date();
-  return earningsDate > today && earningsDate < expiryDate;
+  if (!(earningsDate > today)) return null;   // stored date is stale (in the past) → next one unknown
+  return earningsDate < expiryDate;
 }
 
 // ═══════════════════════════════════════════════════════
@@ -3104,6 +3108,10 @@ function buildColCard(ticker, d, strategy, rank, isBestTrade) {
   // Same null-safety for Synthetic Long's IV criterion (c2): absent until the Worker is redeployed.
   var _synthHasC2 = (d.synth_c2 === true || d.synth_c2 === false);
   if (strategy === 'synth' && !_synthHasC2) totalCriteria = Math.max(1, totalCriteria - 1);
+  // Earnings (put_c4 / cc_c4): when the date is unknown the criterion is null — drop it from the
+  // denominator (shown as "verify" on the card) rather than counting a false pass or unfair fail.
+  var _earnCrit = strategy === 'put' ? d.put_c4 : strategy === 'cc' ? d.cc_c4 : undefined;
+  if ((strategy === 'put' || strategy === 'cc') && _earnCrit == null) totalCriteria = Math.max(1, totalCriteria - 1);
 
   // Has the user hand-confirmed MR on their ETH chart? (CC wants +2 top; the rest want −2 bottom)
   var _mrDir = strategy === 'cc' ? 'top' : 'bottom';
@@ -3213,7 +3221,7 @@ function buildColCard(ticker, d, strategy, rank, isBestTrade) {
     var putDeltaDisp = d.phase < 2 ? '…' : (cx.c6 === true ? '✓' : cx.c6 === false ? '✗' : '—');
     criteriaHtml =
       mb('SMA',   cx.c3, putSmaDisp) +
-      mb('EARN',  cx.c4, putEarnDisp) +
+      (cx.c4 != null ? mb('EARN', cx.c4, putEarnDisp) : '') + // earnings hidden when date unknown (not scored)
       mb('PREM',  cx.c5, premDisp) +
       mb('DELTA', cx.c6, putDeltaDisp) +
       mb('DTE',   cx.c7, dteDisp);
@@ -3227,7 +3235,7 @@ function buildColCard(ticker, d, strategy, rank, isBestTrade) {
     var ccDteDisp  = (d.ccDte !== null && d.ccDte !== undefined) ? d.ccDte + 'd' : (d.phase < 2 ? '…' : '—');
     criteriaHtml =
       mb('SMA',   cx.c3, ccSmaDisp) +
-      mb('EARN',  cx.c4, ccEarnDisp) +
+      (cx.c4 != null ? mb('EARN', cx.c4, ccEarnDisp) : '') + // earnings hidden when date unknown (not scored)
       mb('PREM',  cx.c5, ccPremDisp) +
       mb('DELTA', cx.c6, ccDeltaDisp) +
       mb('DTE',   cx.c7, ccDteDisp);
@@ -3418,6 +3426,10 @@ function checkGradeAlerts() {
       } else {
         var mrCrit = s.key === 'put' ? d.put_c2 : s.key === 'cc' ? d.cc_c2 : d.synth_c1;
         var mx = Math.max(1, maxCriteriaFor(s.key) - 1); // MR always excluded
+        // Match the card's null-safe denominator: drop Synth IV and CSP/CC earnings when unknown.
+        if (s.key === 'synth' && !(d.synth_c2 === true || d.synth_c2 === false)) mx = Math.max(1, mx - 1);
+        var _en = s.key === 'put' ? d.put_c4 : s.key === 'cc' ? d.cc_c4 : undefined;
+        if ((s.key === 'put' || s.key === 'cc') && _en == null) mx = Math.max(1, mx - 1);
         if (mrCrit === true) sc = Math.max(0, sc - 1);
         g = scoreToGrade(sc, mx, d.phase);
       }
@@ -4440,11 +4452,14 @@ async function runPut(forceTicker) {
     // point), so it's shown as an informational note below, not a pass/fail.
     var c3 = !isNaN(pd.sma200) ? (pd.price > pd.sma200) : null;
     // Income must expire before earnings; accumulation is happy to take the shares, so earnings is informational.
-    var c4 = acq ? true : !earningsRisk;
+    // earningsRisk null = UNKNOWN date → c4 null (not scored) so we never show a false "clear".
+    var c4 = acq ? true : (earningsRisk === null ? null : !earningsRisk);
     var c5 = premPct !== null ? premPct > 2 : null;
     var c6 = deltaOk;
     var c7 = acq ? dte >= 60 : (dte >= 30 && dte <= 45);
-    var score = [c3,c4,c5,c6,c7].filter(function(x){return x===true;}).length; // MR (c2) not scored — manual timing
+    var _putCrits = [c3,c4,c5,c6,c7]; // MR (c2) not scored — manual timing
+    var score = _putCrits.filter(function(x){return x===true;}).length;
+    var _putTotal = _putCrits.filter(function(x){return x !== null && x !== undefined;}).length; // drop unknown (e.g. earnings date unavailable)
 
     setStatus('put-status', 'Done', 'ok');
 
@@ -4517,11 +4532,13 @@ async function runPut(forceTicker) {
     html += critRow(1, 'Price Above 200 SMA (Confirmed Uptrend)', c3,
       pd.sma200 ? fmtDollar(pd.price) + ' vs ' + fmtDollar(pd.sma200) : 'N/A');
     html += critRow(2, acq ? 'Earnings (informational — accumulation)' : 'No Earnings Before Expiry', c4,
-      earningsRisk ? 'Earnings: ' + EARNINGS[ticker] + (acq ? ' (OK — you want the shares)' : '') : 'Clear');
+      earningsRisk === true ? 'Earnings: ' + EARNINGS[ticker] + (acq ? ' (OK — you want the shares)' : '')
+        : earningsRisk === null ? '⚠ Verify — no date' : 'Clear');
     html += critRow(3,'Premium > 2% of Price', c5, premPct !== null ? fmt(premPct,2)+'%' : 'N/A');
     html += critRow(4, acq ? 'Strike ATM · Δ 0.40–0.60 (buy near current price)' : 'Strike Delta 0.15–0.25 (OTM income)', c6, bestDelta !== null ? fmt(bestDelta,2) : 'N/A');
     html += critRow(5, acq ? 'Duration ≥ 60 DTE (longer = bigger credit)' : 'Duration 30–45 DTE', c7, dte+' days');
-    html += '</div>' + scoreSummaryHtml(score,5) + '</div>';
+    html += '</div>' + scoreSummaryHtml(score,_putTotal) + '</div>';
+    if (c4 === null) html += '<div class="btc-note" style="border-color:var(--yellow);color:var(--text-muted);margin:8px 0;font-size:11.5px">⚠ <strong>Earnings date unavailable</strong> — the app can\'t confirm whether ' + ticker + ' reports before ' + expiryDisplay(bestExpiry) + '. Check your broker / earnings calendar; earnings inside your expiry adds gap &amp; IV-crush risk. <span style="opacity:.7">(Not scored until a date is available.)</span></div>';
 
     // ── Contextual suggestions (warnings first, positives last) ──
     var suggWarnP = [], suggGoodP = [];
@@ -4652,11 +4669,13 @@ async function runCC(forceTicker) {
 
     var c2 = !isNaN(pd.meanRev) ? pd.meanRev >= 2 : null; // Laura OG: sell into +2 MR (Deeply Overbought) on the 4H IADSS chart
     var c3 = !isNaN(pd.sma200) ? pd.price > pd.sma200 : null;
-    var c4 = !earningsRisk;
+    var c4 = earningsRisk === null ? null : !earningsRisk; // null = earnings date unknown → not scored (no false "clear")
     var c5 = premPct !== null ? premPct >= 2 : null;
     var c6 = otmOk;
     var c7 = dte >= 30 && dte <= 45;
-    var score = [c3,c4,c5,c6,c7].filter(function(x){return x===true;}).length; // MR (c2) not scored — manual confirm on the user's ETH chart
+    var _ccCrits = [c3,c4,c5,c6,c7]; // MR (c2) not scored — manual confirm on the user's ETH chart
+    var score = _ccCrits.filter(function(x){return x===true;}).length;
+    var _ccTotal = _ccCrits.filter(function(x){return x !== null && x !== undefined;}).length;
 
     setStatus('cc-status', 'Done', 'ok');
 
@@ -4702,11 +4721,12 @@ async function runCC(forceTicker) {
     html += '<div class="scorecard"><h3>Covered Call — Score</h3><div class="criteria-list">';
     html += mrConfirmRow(ticker, 'top'); // MR not scored — manual confirm on the user's ETH chart
     html += critRow(1,'Price Above 200 SMA (Confirmed Uptrend)', c3, pd.sma200 ? fmtDollar(pd.price) + ' vs ' + fmtDollar(pd.sma200) : 'N/A');
-    html += critRow(2,'No Earnings Before Expiry', c4, earningsRisk ? 'Earnings: '+EARNINGS[ticker] : 'Clear');
+    html += critRow(2,'No Earnings Before Expiry', c4, earningsRisk === true ? 'Earnings: '+EARNINGS[ticker] : earningsRisk === null ? '⚠ Verify — no date' : 'Clear');
     html += critRow(3,'Premium ≥ 2% of Price', c5, premPct !== null ? fmt(premPct,2)+'%' : 'N/A');
     html += critRow(4,'Strike Near Resistance (5–12% OTM)', c6, (upsidePct !== null ? fmt(upsidePct,1)+'% OTM' + (bestDelta !== null ? ' · Δ'+fmt(bestDelta,2) : '') : 'N/A'));
     html += critRow(5,'Duration 30–45 DTE', c7, dte+' days');
-    html += '</div>' + scoreSummaryHtml(score,5) + '</div>';
+    html += '</div>' + scoreSummaryHtml(score,_ccTotal) + '</div>';
+    if (c4 === null) html += '<div class="btc-note" style="border-color:var(--yellow);color:var(--text-muted);margin:8px 0;font-size:11.5px">⚠ <strong>Earnings date unavailable</strong> — can\'t confirm whether ' + ticker + ' reports before ' + expiryDisplay(bestExpiry) + '. Check your broker; earnings inside your expiry adds gap &amp; IV-crush risk. <span style="opacity:.7">(Not scored until a date is available.)</span></div>';
 
     // ── Contextual suggestions (warnings first, positives last) ──
     var suggWarnC = [], suggGoodC = [];
