@@ -3802,7 +3802,7 @@ async function runSynthPhase3(ticker) {
     d.synthMR  = weeklyMR; // store for card rendering
     d.synth_c2 = d.ivRank != null ? d.ivRank <= 50 : null;                       // IV not inflated (≤30 = ideal)
     d.synth_c3 = dte >= 540;                                                     // Duration ≥ 540 DTE
-    d.synth_c4 = netCostPct !== null ? netCostPct <= 5 : null;                   // Net Debit ≤ 5% (credit always passes)
+    d.synth_c4 = netCostPct !== null ? netCostPct <= 8 : null;                   // Net Debit ≤ 8% (course examples: MRVL 7.5%, CPER 5.6%); credit always passes
     d.synth_c5 = slCall.oi !== null ? slCall.oi >= 500 : null;                   // Call OI ≥ 500
     d.synth_c6 = slPut.oi  !== null ? slPut.oi  >= 500 : null;                   // Put OI ≥ 500
     d.synth_c7 = (callSpreadPct !== null && putSpreadPct !== null) ? (callSpreadPct <= 10 && putSpreadPct <= 10) : null; // Spreads ≤ 10%
@@ -5011,6 +5011,13 @@ async function runSynth(forceTicker) {
       tsItem('Assignment Risk', atmStrike ? '$' + fmt(atmStrike * 100,2) : '—', 'ts-neutral', 'Cash if put assigned at strike') +
     '</div></div>';
 
+    // Margin-call caution — the course stresses this hard: the SL is a leveraged margin play, not a
+    // capped-risk trade. You post ~50% margin up front, but a drop forces additional maintenance
+    // margin (margin-call risk) and the short put carries loss all the way to zero.
+    html += '<div class="btc-note" style="border-color:var(--red);color:var(--text);margin:0 0 16px">' +
+      '⚠ <strong>Margin & margin-call risk — read before entering.</strong> The SL is <strong>maximum leverage</strong>, not a defined-risk trade. You put up only <strong>' + (synthMargin ? '$' + fmt(synthMargin,0) : '~50% of the strike + debit') + '</strong> initially (½ × strike × 100 + debit), but the short put carries loss <strong>all the way to $0</strong> (max loss ' + (synthMaxLoss ? '$' + fmt(synthMaxLoss,0) : 'strike + debit') + '). If the stock falls you must post <strong>additional maintenance margin or face a margin call</strong>. Laura: <em>"You MUST understand how margin works before ever placing a Synthetic Long — plan for worst-case margin calls before entry."</em> Only for accounts with a large margin buffer.' +
+    '</div>';
+
     html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">';
     html += '<div class="scenario-card"><h4>BUY — Call (ATM)</h4>' +
       '<div class="sc-row"><span class="sc-key">Strike</span><span class="sc-val">' + fmtDollar(slCall.strike) + '</span></div>' +
@@ -5073,7 +5080,7 @@ async function runSynth(forceTicker) {
     html += mrConfirmRow(ticker, 'bottom'); // MR not scored — manual confirm on the user's ETH chart
     html += critRow(1,'IV Not Inflated — IV Rank ≤ 50 (≤30 = Ideal)', c2, synthIVRank !== null ? 'IVR ' + fmt(synthIVRank,0) + (c2Ideal ? ' ✨ IDEAL' : '') : 'N/A');
     html += critRow(2,'Duration ≥ 540 DTE (LEAPS-Length)', c3, dte + ' days');
-    html += critRow(3,'Net Debit ≤ 5% (Put Funds the Call)', c4, netCostPct !== null ? fmt(Math.abs(netCostPct),2) + '%' : 'N/A');
+    html += critRow(3,'Net Debit ≤ 8% (Put Funds the Call)', c4, netCostPct !== null ? fmt(Math.abs(netCostPct),2) + '%' : 'N/A');
     html += critRow(4,'Both Spreads ≤ 10% (Tight)', c7, (callSpreadPct !== null ? fmt(callSpreadPct,1)+'%' : '—')+' / '+(putSpreadPct !== null ? fmt(putSpreadPct,1)+'%' : '—'));
     html += '</div>' + scoreSummaryHtml(score,4) + '</div>';
 
@@ -5090,7 +5097,7 @@ async function runSynth(forceTicker) {
       suggWarn.push('💡 <strong>Short duration:</strong> ' + dte + ' DTE is below the 540-day target. Longer expirations give the thesis time to play out and reduce time decay pressure.');
     }
     if (!c4 && netCostPct !== null) {
-      suggWarn.push('💡 <strong>Net debit elevated:</strong> ' + fmt(Math.abs(netCostPct),2) + '% — above 5%. At ATM same-strike, high net debit means the call is much pricier than the put. This often improves during vol spikes when put premiums expand.');
+      suggWarn.push('💡 <strong>Net debit elevated:</strong> ' + fmt(Math.abs(netCostPct),2) + '% — above 8% (course SLs run ~5.5–7.5%). At ATM same-strike, high net debit means the call is much pricier than the put. This often improves during vol spikes when put premiums expand.');
     }
     if (!c7) {
       suggWarn.push('💡 <strong>Wide spreads:</strong> One or both legs have spreads above 10%. Trade during high-liquidity hours (9:45–11am ET) and use limit orders.');
