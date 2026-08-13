@@ -1011,11 +1011,12 @@ input[type=number] { -moz-appearance: textfield; appearance: textfield; }
 .msl-mode { background:var(--surface2); border:1px solid var(--border2); color:var(--text-muted);
   border-radius:7px; padding:6px 14px; font-size:12px; font-weight:800; cursor:pointer; letter-spacing:.4px; }
 .msl-mode.on { background:var(--accent); border-color:var(--accent); color:#03121f; }
-#msl-grade-inputs { display:none; flex-wrap:wrap; gap:10px 12px; align-items:flex-end; margin:0 0 14px;
+#msl-grade-inputs, #synth-grade-inputs { display:none; flex-wrap:wrap; gap:10px 12px; align-items:flex-end; margin:0 0 14px;
   padding:12px 14px; background:var(--surface2); border:1px solid var(--border); border-radius:9px; }
-#msl-grade-inputs label { display:flex; flex-direction:column; gap:4px; font-size:10px;
+#msl-grade-inputs label, #synth-grade-inputs label { display:flex; flex-direction:column; gap:4px; font-size:10px;
   text-transform:uppercase; letter-spacing:.7px; color:var(--text-muted); font-weight:700; }
-#msl-grade-inputs input, #msl-grade-inputs select { background:var(--surface); border:1px solid var(--border);
+#msl-grade-inputs input, #msl-grade-inputs select,
+#synth-grade-inputs input, #synth-grade-inputs select { background:var(--surface); border:1px solid var(--border);
   border-radius:6px; color:var(--text); padding:7px 9px; font-size:13px; font-weight:700; width:120px; }
 .msl-grade-go { background:var(--accent); border:none; border-radius:6px; color:#03121f;
   font-size:13px; font-weight:800; padding:9px 16px; cursor:pointer; }
@@ -1710,6 +1711,16 @@ input, textarea, select { -webkit-user-select: text; user-select: text; }
       <span class="analyzer-label">Synthetic Long</span>
       <span class="status-msg" id="synth-status"></span>
       <input type="hidden" id="synth-ticker" />
+    </div>
+    <div class="msl-mode-row">
+      <button id="synth-mode-find" class="msl-mode on" onclick="setSynthMode('find')">Find Best</button>
+      <button id="synth-mode-grade" class="msl-mode" onclick="setSynthMode('grade')">Grade Mine</button>
+    </div>
+    <div id="synth-grade-inputs">
+      <label>Expiry<select id="synth-grade-expiry"></select></label>
+      <label>Buy Call<input id="synth-grade-call" type="number" step="1" placeholder="strike" /></label>
+      <label>Sell Put<input id="synth-grade-put" type="number" step="1" placeholder="strike" /></label>
+      <button class="msl-grade-go" onclick="gradeSynth()">Grade my SL</button>
     </div>
     <div id="synth-results"><div class="placeholder"><div class="ph-icon">↑</div><p>Select a ticker above to analyze</p></div></div>
   </div>
@@ -4873,7 +4884,7 @@ async function runSynth(forceTicker) {
     var c2 = synthIVRank !== null ? synthIVRank <= 50 : null;                  // IV not inflated (≤30 = ideal)
     var c2Ideal = synthIVRank !== null && synthIVRank <= 30;
     var c3 = dte >= 540;                                                       // Duration ≥ 540 DTE
-    var c4 = netCostPct !== null ? netCostPct <= 5 : null;                     // Net Debit ≤ 5% (credit always passes)
+    var c4 = netCostPct !== null ? netCostPct <= 8 : null;                     // Net Debit ≤ 8% (course examples: MRVL 7.5%, CPER 5.6%); credit always passes
     var c7 = (callSpreadPct !== null && putSpreadPct !== null) ? (callSpreadPct <= 10 && putSpreadPct <= 10) : null; // Spreads ≤ 10%
     var score = [c2,c3,c4,c7].filter(function(x){return x===true;}).length; // MR (c1) not scored — manual confirm on the user's ETH chart
 
@@ -5197,6 +5208,188 @@ function mslComputeGrade(pd, callChain, putChain, cIdx, sIdx, bIdx, dte) {
   m.weighted = (m.c1 === true ? 2 : 0) + (m.c2 === true ? 2 : 0) + (m.c8 === true ? 2 : 0) + (m.c3 === true ? 1 : 0) + (m.c5 === true ? 1 : 0) + (m.c4 === true ? 1 : 0) + (m.c9 === true ? 1 : 0);
   m.t1Pass = m.c2 === true && m.c8 === true; // MR (c1) not scored — user's manual timing call
   return m;
+}
+
+// ===== Synthetic Long — Grade Mine (mirror of the MSL Grade-Mine) =====
+// IV rank from the put chain's IV distribution (same method runSynth uses).
+function synthIVRankFromChain(putChain) {
+  if (!putChain || !putChain.iv || !putChain.iv.length) return null;
+  var ivs = [];
+  for (var i = 0; i < putChain.iv.length; i++) {
+    var v = putChain.iv[i];
+    if (v !== null && v !== undefined && !isNaN(v) && v > 0) ivs.push(v <= 1 ? v * 100 : v);
+  }
+  if (!ivs.length) return null;
+  ivs.sort(function(a, b) { return a - b; });
+  var atm = ivs[Math.floor(ivs.length / 2)];
+  var range = ivs[ivs.length - 1] - ivs[0];
+  return range > 0 ? Math.min(100, Math.max(0, (atm - ivs[0]) / range * 100)) : 50;
+}
+// Breakeven of a (long call Kc + short put Kp) synthetic. Same-strike = K + net debit.
+// Different strikes: solve the piecewise expiry P&L = max(0,S-Kc) - max(0,Kp-S) - D = 0.
+function synthBreakeven(Kc, Kp, D) {
+  if (Kc == null || Kp == null || D == null) return null;
+  if (Math.abs(Kc - Kp) < 0.001) return Kc + D;         // pure synthetic: BE = strike + net debit
+  var hi = Math.max(Kc, Kp);
+  if (Kc < Kp) {                                         // long call below short put (straddling)
+    var mid = (Kc + Kp + D) / 2;
+    if (mid >= Kc && mid <= Kp) return mid;
+  }
+  if (Kc + D >= hi) return Kc + D;                       // breakeven in the upper region
+  return Kp + D;                                         // breakeven in the lower region
+}
+// Score arbitrary SL legs (call at callIdx, put at putIdx) — used for both the user's and the app's picks.
+function synthComputeGrade(pd, callChain, putChain, callIdx, putIdx, dte) {
+  if (callIdx < 0 || putIdx < 0) return null;
+  var callStrike = callChain.strike[callIdx], putStrike = putChain.strike[putIdx];
+  var callMid = callChain.mid ? callChain.mid[callIdx] : null;
+  var putMid  = putChain.mid ? putChain.mid[putIdx] : null;
+  var callBid = callChain.bid ? callChain.bid[callIdx] : null, callAsk = callChain.ask ? callChain.ask[callIdx] : null;
+  var putBid  = putChain.bid ? putChain.bid[putIdx] : null,  putAsk  = putChain.ask ? putChain.ask[putIdx] : null;
+  var callDelta = callChain.delta ? Math.abs(callChain.delta[callIdx]) : null;
+  var putDelta  = putChain.delta ? Math.abs(putChain.delta[putIdx]) : null;
+  var callOI = callChain.openInterest ? callChain.openInterest[callIdx] : null;
+  var putOI  = putChain.openInterest ? putChain.openInterest[putIdx] : null;
+  var netCost = (callMid !== null && putMid !== null) ? callMid - putMid : null;
+  var netCostPct = (netCost !== null && pd.price) ? (netCost / pd.price * 100) : null;
+  var callSpread = (callBid !== null && callAsk !== null) ? callAsk - callBid : null;
+  var putSpread  = (putBid !== null && putAsk !== null) ? putAsk - putBid : null;
+  var callSpreadPct = (callSpread !== null && callMid && callMid > 0) ? callSpread / callMid * 100 : null;
+  var putSpreadPct  = (putSpread !== null && putMid && putMid > 0) ? putSpread / putMid * 100 : null;
+  var sameStrike = Math.abs(callStrike - putStrike) < 0.001;
+  var breakeven = synthBreakeven(callStrike, putStrike, netCost);
+  var beAboveCur = (breakeven !== null && pd.price) ? (breakeven / pd.price - 1) * 100 : null;
+  var maxLoss = (putStrike != null && netCost !== null) ? (putStrike + netCost) * 100 : null; // stock→$0: short put assigned at Kp
+  var marginReq = (putStrike != null) ? (0.5 * putStrike * 100 + (netCost !== null ? netCost * 100 : 0)) : null;
+  var ivRank = synthIVRankFromChain(putChain);
+  var c2 = ivRank !== null ? ivRank <= 50 : null;
+  var c2Ideal = ivRank !== null && ivRank <= 30;
+  var c3 = dte >= 540;
+  var c4 = netCostPct !== null ? netCostPct <= 8 : null;
+  var c7 = (callSpreadPct !== null && putSpreadPct !== null) ? (callSpreadPct <= 10 && putSpreadPct <= 10) : null;
+  var score = [c2, c3, c4, c7].filter(function(x) { return x === true; }).length; // MR (c1) not scored
+  return { callStrike: callStrike, putStrike: putStrike, callMid: callMid, putMid: putMid,
+    callDelta: callDelta, putDelta: putDelta, callOI: callOI, putOI: putOI,
+    netCost: netCost, netCostPct: netCostPct, callSpreadPct: callSpreadPct, putSpreadPct: putSpreadPct,
+    sameStrike: sameStrike, breakeven: breakeven, beAboveCur: beAboveCur, maxLoss: maxLoss, marginReq: marginReq,
+    ivRank: ivRank, c2: c2, c2Ideal: c2Ideal, c3: c3, c4: c4, c7: c7, score: score };
+}
+// The app's SL pick = ATM same-strike (nearest to price, present in BOTH chains).
+function synthAtmIdx(callChain, putChain, price) {
+  var putMap = {};
+  for (var pi = 0; pi < putChain.strike.length; pi++) putMap[putChain.strike[pi]] = pi;
+  var bestDist = Infinity, bc = -1, bp = -1;
+  for (var i = 0; i < callChain.strike.length; i++) {
+    var s = callChain.strike[i];
+    if (!(s in putMap)) continue;
+    var d = Math.abs(s - price);
+    if (d < bestDist) { bestDist = d; bc = i; bp = putMap[s]; }
+  }
+  return { callIdx: bc, putIdx: bp };
+}
+var _synthMode = 'find';
+function setSynthMode(mode) {
+  _synthMode = mode;
+  var mf = document.getElementById('synth-mode-find'), mg = document.getElementById('synth-mode-grade'), gi = document.getElementById('synth-grade-inputs');
+  if (mf) mf.classList.toggle('on', mode === 'find');
+  if (mg) mg.classList.toggle('on', mode === 'grade');
+  if (gi) gi.style.display = mode === 'grade' ? 'flex' : 'none';
+  var t = document.getElementById('synth-ticker').value;
+  if (mode === 'grade') {
+    if (t) synthGradePrep(t);
+    else document.getElementById('synth-results').innerHTML = '<div class="placeholder"><div class="ph-icon">✎</div><p>Pick a ticker in the watchlist, choose an expiry, enter your Buy Call and Sell Put strikes, then <strong>Grade my SL</strong>.</p></div>';
+  } else if (t) {
+    runSynth(t);
+  }
+}
+// Fill the expiry dropdown (LEAPS ≥365 DTE, farthest first).
+function synthGradePrep(ticker) {
+  var sel = document.getElementById('synth-grade-expiry');
+  if (sel) sel.innerHTML = '<option>loading…</option>';
+  fetchExpirations(ticker).then(function(exps) {
+    if (!sel) return;
+    var leaps = (exps || []).filter(function(e) { return dteFromStr(e) >= 365; }).sort(function(a, b) { return dteFromStr(b) - dteFromStr(a); });
+    if (!leaps.length) leaps = (exps || []).slice().sort(function(a, b) { return dteFromStr(b) - dteFromStr(a); });
+    sel.innerHTML = leaps.map(function(e) { return '<option value="' + e + '">' + expiryDisplay(e) + ' · ' + dteFromStr(e) + 'd</option>'; }).join('');
+  }).catch(function() { if (sel) sel.innerHTML = '<option value="">(no expirations)</option>'; });
+}
+async function gradeSynth() {
+  var ticker = document.getElementById('synth-ticker').value.trim().toUpperCase();
+  if (!ticker) { setStatus('synth-status', 'Pick a ticker in the watchlist first', 'error'); return; }
+  var expiry = document.getElementById('synth-grade-expiry').value;
+  var cS = parseFloat(document.getElementById('synth-grade-call').value);
+  var pS = parseFloat(document.getElementById('synth-grade-put').value);
+  if (!expiry) { setStatus('synth-status', 'Choose an expiry', 'error'); return; }
+  if (isNaN(cS) || isNaN(pS)) { document.getElementById('synth-results').innerHTML = '<div class="notice">Enter both strikes: Buy Call and Sell Put.</div>'; return; }
+  try {
+    setStatus('synth-status', spinner() + 'Grading your SL…', 'loading');
+    var pd = await fetchPriceData(ticker, '4h');
+    try { pd.meanRev = await fetchMeanRev(ticker, '4h'); } catch (e) {}
+    var dte = dteFromStr(expiry);
+    var chains = await Promise.all([fetchChain(ticker, expiry, 'call'), fetchChain(ticker, expiry, 'put')]);
+    var callChain = chains[0], putChain = chains[1];
+    if (!callChain || !callChain.strike || !putChain || !putChain.strike) throw new Error('Could not load option chains for ' + expiry + '.');
+    function nearest(chain, k) { var idx = -1, best = Infinity; for (var i = 0; i < chain.strike.length; i++) { var d = Math.abs(chain.strike[i] - k); if (d < best) { best = d; idx = i; } } return idx; }
+    var uc = nearest(callChain, cS), up = nearest(putChain, pS);
+    var um = synthComputeGrade(pd, callChain, putChain, uc, up, dte);
+    if (!um) throw new Error('Could not price your legs from the chain.');
+    var ai = synthAtmIdx(callChain, putChain, pd.price);
+    var app = (ai.callIdx >= 0) ? synthComputeGrade(pd, callChain, putChain, ai.callIdx, ai.putIdx, dte) : null;
+    setStatus('synth-status', 'Done', 'ok');
+
+    var snapped = (Math.abs(callChain.strike[uc] - cS) > 0.001) || (Math.abs(putChain.strike[up] - pS) > 0.001);
+    var html = priceBarHtml(ticker, pd, '4H');
+    html += '<div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap;padding:8px 14px;margin-bottom:10px;background:var(--surface2);border-radius:8px;border:1px solid var(--border);font-size:11px">' +
+      '<span style="color:var(--text-muted);text-transform:uppercase;letter-spacing:.8px;font-weight:700">Your legs</span>' +
+      '<span style="color:var(--accent);font-weight:800">' + fmtDollar(um.callStrike) + 'C / ' + fmtDollar(um.putStrike) + 'P</span>' +
+      '<span style="color:var(--text-muted);text-transform:uppercase;letter-spacing:.8px;font-weight:700;margin-left:8px">Expiry</span><span style="color:var(--accent);font-weight:800">' + expiryDisplay(expiry) + ' · ' + dte + 'd</span>' +
+      '<span style="color:var(--text-muted);text-transform:uppercase;letter-spacing:.8px;font-weight:700;margin-left:8px">Net</span><span style="color:var(--accent);font-weight:800">' + (um.netCost !== null ? (um.netCost >= 0 ? fmtDollar(um.netCost) + ' debit' : fmtDollar(Math.abs(um.netCost)) + ' credit') : '—') + (um.netCostPct !== null ? ' (' + fmt(Math.abs(um.netCostPct), 2) + '%)' : '') + '</span>' +
+      (snapped ? '<span style="color:var(--text-muted);margin-left:8px">(snapped to nearest listed strikes)</span>' : '') +
+    '</div>';
+
+    if (!um.sameStrike) {
+      html += '<div style="border:1px solid var(--yellow);background:rgba(0,0,0,0.16);border-radius:8px;padding:10px 13px;margin-bottom:12px;font-size:11.5px;line-height:1.5;color:var(--text)">⚠️ <strong>Different strikes — not a pure synthetic long.</strong> A true Synthetic Long is the <em>same</em> strike for the call and the put (Course 301). With the call at ' + fmtDollar(um.callStrike) + ' and the put at ' + fmtDollar(um.putStrike) + ' this is a <strong>risk reversal</strong> — still a valid bullish trade, but the breakeven, margin, and delta behave differently. The comparison below shows how far it drifts from the clean same-strike SL.</div>';
+    }
+
+    // Scorecard on the USER's legs (MR not scored — manual timing call)
+    html += '<div class="scorecard"><h3>Your SL — Grade</h3><div class="criteria-list">';
+    html += mrConfirmRow(ticker, 'bottom');
+    html += critRow(1, 'IV Not Inflated — IV Rank ≤ 50 (≤30 = Ideal)', um.c2, um.ivRank !== null ? 'IVR ' + fmt(um.ivRank, 0) + (um.c2Ideal ? ' ✨ IDEAL' : '') : 'N/A');
+    html += critRow(2, 'Duration ≥ 540 DTE (LEAPS-Length)', um.c3, dte + ' days');
+    html += critRow(3, 'Net Debit ≤ 8% (Put Funds the Call)', um.c4, um.netCostPct !== null ? fmt(Math.abs(um.netCostPct), 2) + '%' : 'N/A');
+    html += critRow(4, 'Both Spreads ≤ 10% (Tight)', um.c7, (um.callSpreadPct !== null ? fmt(um.callSpreadPct, 1) + '%' : '—') + ' / ' + (um.putSpreadPct !== null ? fmt(um.putSpreadPct, 1) + '%' : '—'));
+    html += '</div>' + scoreSummaryHtml(um.score, 4) + '</div>';
+
+    // Side-by-side: your legs vs the app's same-strike ATM pick
+    if (app) {
+      var gmRow = function(label, you, appv, flag) {
+        var appCls = flag === 'diff' ? 'gm-diff' : (flag === 'ok' ? 'gm-ok' : '');
+        return '<div class="gm-you">' + label + '</div><div class="gm-you">' + you + '</div><div class="' + appCls + '">' + appv + '</div>';
+      };
+      html += '<div class="chain-section"><h3>Your legs vs the app\'s recommended <span style="color:var(--text-muted);font-weight:400;font-size:11px">— same ticker &amp; expiry</span></h3>' +
+        '<div class="gm-tr">' +
+          '<div class="gm-h">Metric</div><div class="gm-h">Yours</div><div class="gm-h">App picks</div>' +
+          gmRow('Buy Call', fmtDollar(um.callStrike), fmtDollar(app.callStrike), um.callStrike === app.callStrike ? 'ok' : 'diff') +
+          gmRow('Sell Put', fmtDollar(um.putStrike), fmtDollar(app.putStrike), um.putStrike === app.putStrike ? 'ok' : 'diff') +
+          gmRow('Same strike?', um.sameStrike ? 'Yes' : 'No', app.sameStrike ? 'Yes' : 'No', um.sameStrike ? 'ok' : 'diff') +
+          gmRow('Net debit', um.netCostPct != null ? fmt(um.netCostPct, 2) + '% of price' : '—', app.netCostPct != null ? fmt(app.netCostPct, 2) + '% of price' : '—', '') +
+          gmRow('IV Rank', um.ivRank != null ? fmt(um.ivRank, 0) : '—', app.ivRank != null ? fmt(app.ivRank, 0) : '—', '') +
+          gmRow('Breakeven', um.breakeven != null ? fmtDollar(um.breakeven) + (um.beAboveCur != null ? ' (' + (um.beAboveCur >= 0 ? '+' : '') + fmt(um.beAboveCur, 1) + '%)' : '') : '—', app.breakeven != null ? fmtDollar(app.breakeven) + (app.beAboveCur != null ? ' (' + (app.beAboveCur >= 0 ? '+' : '') + fmt(app.beAboveCur, 1) + '%)' : '') : '—', '') +
+          gmRow('Max loss (stock → $0)', um.maxLoss != null ? '$' + fmt(um.maxLoss, 0) : '—', app.maxLoss != null ? '$' + fmt(app.maxLoss, 0) : '—', '') +
+          gmRow('Margin req (est)', um.marginReq != null ? '$' + fmt(um.marginReq, 0) : '—', app.marginReq != null ? '$' + fmt(app.marginReq, 0) : '—', '') +
+        '</div>' +
+        '<div style="font-size:10.5px;color:var(--text-muted);margin-top:8px;line-height:1.5">Cyan = your leg differs from the app\'s pick. The app\'s Synthetic Long is the <strong>same-strike ATM</strong> call+put (Course 301). Matching it isn\'t mandatory — the comparison just shows how far your trade drifts from the clean synthetic.</div>' +
+      '</div>';
+    }
+
+    // Margin-call caution (SL is leveraged, not defined-risk)
+    html += '<div style="border:1px solid var(--red);background:rgba(0,0,0,0.16);border-radius:9px;padding:11px 14px;margin-top:12px;font-size:11px;line-height:1.5;color:var(--text)">⚠️ <strong>Margin &amp; margin-call risk.</strong> The short put carries loss all the way to $0 (max loss ' + (um.maxLoss != null ? '$' + fmt(um.maxLoss, 0) : '—') + '). If the stock falls you may have to post maintenance margin or face a margin call. Laura: <em>"You MUST understand how margin works before ever placing a Synthetic Long."</em></div>';
+
+    document.getElementById('synth-results').innerHTML = html;
+  } catch (err) {
+    setStatus('synth-status', 'Error', 'error');
+    document.getElementById('synth-results').innerHTML = '<div class="notice">' + (err && err.message ? err.message : 'Could not grade your SL.') + '</div>';
+  }
 }
 
 var _mslMode = 'find';
@@ -6044,7 +6237,7 @@ function stripSelect(ticker) {
   // Run the correct analyzer — pass ticker directly
   if (tabId === 'put')   runPut(ticker);
   else if (tabId === 'cc')    runCC(ticker);
-  else if (tabId === 'synth') runSynth(ticker);
+  else if (tabId === 'synth') { if (typeof _synthMode !== 'undefined' && _synthMode === 'grade') synthGradePrep(ticker); else runSynth(ticker); }
   else if (tabId === 'msl')   { if (typeof _mslMode !== 'undefined' && _mslMode === 'grade') mslGradePrep(ticker); else runMsl(ticker); }
 }
 
@@ -6793,7 +6986,7 @@ function navigateToAnalyzer(ticker, strategy) {
     if (e.key === 'Enter') {
       if (id === 'put-ticker')   runPut();
       if (id === 'cc-ticker')    runCC();
-      if (id === 'synth-ticker') runSynth();
+      if (id === 'synth-ticker') { if (typeof _synthMode !== 'undefined' && _synthMode === 'grade') synthGradePrep(document.getElementById('synth-ticker').value); else runSynth(); }
       if (id === 'msl-ticker')   { if (typeof _mslMode !== 'undefined' && _mslMode === 'grade') mslGradePrep(document.getElementById('msl-ticker').value); else runMsl(); }
     }
   });
