@@ -3140,7 +3140,7 @@ var GLOSSARY = {
   'P-CR':  'Put-spread credit as a % of the spread width — Laura wants ≥ 42% (targets 50%).',
   'I/E':   'Intrinsic vs extrinsic value of the deep-ITM call — target ~50/50.',
   'DUR':   'Duration (DTE). Synthetic Long / MSL use LEAPS — 540+ days preferred.',
-  'DEBIT': 'Net debit as a % of price — MSL wants ≤ 33% (Laura\'s ≤1/3 cap; ideal ≤ 25%).',
+  'DEBIT': 'Net debit as a % of price — MSL sanity cap ≤ 45% (course MSLs run 24-42%; ideal ≤ 33%).',
   'SPRD':  'Bid-ask spread ≤ 10% — confirms the option is liquid enough to fill near the mid.',
   'RISK':  'MSL max risk (debit + spread width) vs owning the stock — Laura wants ≤ 50% ("less than half of what the stock does", MM60).'
 };
@@ -5305,7 +5305,7 @@ async function gradeMsl() {
     if (um.c2 !== true && um.putCreditPct != null) sw.push('⚠️ <strong>Put credit ' + fmt(um.putCreditPct, 1) + '% (< 42%):</strong> move the short put further OTM or widen the spread until the credit reaches ~50% (app picks ' + fmtDollar(rm ? rm.soldPutStrike : um.soldPutStrike) + ').');
     if (um.c8 !== true && um.riskVsStockPct != null) sw.push('⚠️ <strong>Risk ' + fmt(um.riskVsStockPct, 0) + '% of owning the stock (> 50%):</strong> over Laura\'s "less than half" rule (MM60). A wider bull-put spread or a tighter (deeper) call lowers the max risk; usually it only clears 50% at a lower entry / lower IV.');
     if (um.c3 !== true && um.callRatio != null) sw.push('💡 <strong>Call I/E off 50/50 (' + fmt(um.callRatio * 100, 0) + '/' + fmt((1 - um.callRatio) * 100, 0) + '):</strong> ' + (um.callRatio > 0.60 ? 'too deep — try a higher strike' : 'not deep enough — try a lower strike') + ' (app picks ' + (rm ? fmtDollar(rm.callStrike) : '—') + ').');
-    if (um.c5 !== true && um.netDebitPct != null) sw.push('💡 <strong>Net debit ' + fmt(um.netDebitPct, 1) + '% (> 33%):</strong> the put-spread credit isn\'t offsetting enough of the call cost (Laura\'s cap is ≤1/3 of price).');
+    if (um.c5 !== true && um.netDebitPct != null) sw.push('💡 <strong>Net debit ' + fmt(um.netDebitPct, 1) + '% (> 45%):</strong> the put-spread credit isn\'t offsetting enough of the call cost (sanity cap is ≤45% of price; course MSLs run 24-42%).');
     if (um.c9 !== true && um.premOfPricePct != null) sw.push('💡 <strong>Thin premium credit ' + fmt(um.premOfPricePct, 1) + '% of price (< 6%):</strong> the put spread isn\'t collecting enough income relative to the stock — Laura targets ≥6%.');
     if (um.c4 !== true) sw.push('💡 <strong>Under 365 DTE:</strong> Laura anchors MSLs in LEAPS — prefer ≥540 days.');
     var umStructW = um.weighted - (um.c1 === true ? 2 : 0); // structure only — MR not scored
@@ -5732,7 +5732,7 @@ async function runMsl(forceTicker) {
     html += critRow(1,'Put Credit ≥ 42% of Width (≥50% = Ideal) ' + pPill2, c2, putCreditPct !== null ? fmt(putCreditPct,1) + '%' + (c2Ideal ? ' ✨ IDEAL' : '') : 'N/A');
     html += critRow(2,'MSL Risk ≤ 50% of Owning Stock (≤40% = Ideal) ' + pPill2, c8, riskVsStockPct !== null ? fmt(riskVsStockPct,0) + '% of stock' + (c8Ideal ? ' ✨ IDEAL' : '') : 'N/A');
     html += critRow(3,'Call Intrinsic/Extrinsic 40–60% (45–55% = Ideal) ' + pPill1, c3, (callRatio !== null && !isNaN(callRatio)) ? fmt(callRatio*100,0) + '/' + fmt((1-callRatio)*100,0) + (c3Ideal ? ' ✨ IDEAL' : '') : 'N/A');
-    html += critRow(4,'Net Debit ≤ 33% of Price (Laura\'s ≤1/3; ≤25% = Ideal) ' + pPill1, c5, netDebitPct !== null ? fmt(netDebitPct,1) + '%' + (c5Ideal ? ' ✨ IDEAL' : '') : 'N/A');
+    html += critRow(4,'Net Debit ≤ 45% of Price (≤33% = Ideal) ' + pPill1, c5, netDebitPct !== null ? fmt(netDebitPct,1) + '%' + (c5Ideal ? ' ✨ IDEAL' : '') : 'N/A');
     html += critRow(5,'Duration ≥ 365 DTE (LEAPS — ≥540 = Ideal) ' + pPill1, c4, dte + ' days' + (c4Ideal ? ' ✨ IDEAL' : ''));
     html += critRow(6,'Put-Spread Credit ≥ 6% of Stock Price (≥8% = Ideal) ' + pPill1, c9, premOfPricePct !== null ? fmt(premOfPricePct,1) + '%' + (c9Ideal ? ' ✨ IDEAL' : '') : 'N/A');
     // Reward-quality flag (NOT scored, but caps the grade below IDEAL). Laura's 3× test: the price
@@ -5842,9 +5842,9 @@ async function runMsl(forceTicker) {
       suggWarn.push('⚠️ <strong>Spread wider than Laura\'s 20% rule:</strong> the ' + fmtDollar(spreadWidth) + ' put spread is ' + fmt(spreadWidthPct,0) + '% of price — MM60 says "the widest I go is 20%." Allowed here to bring in credit (MM56), but a tighter spread hews closer to her rule.');
     }
     if (!c5 && netDebitPct !== null) {
-      suggWarn.push('💡 <strong>Net debit too high:</strong> ' + fmt(netDebitPct,1) + '% of price — above Laura\'s ≤1/3 cap (33%). The put spread credit isn\'t offsetting enough of the call cost.');
-    } else if (c5 && netDebitPct !== null && netDebitPct > 25) {
-      suggWarn.push('⚠️ <strong>Net debit elevated:</strong> ' + fmt(netDebitPct,1) + '% of price — passes the ≤1/3 cap but above the ≤25% ideal zone.');
+      suggWarn.push('💡 <strong>Net debit too high:</strong> ' + fmt(netDebitPct,1) + '% of price — above the 45% sanity cap (course MSLs run 24-42%). The put spread credit isn\'t offsetting enough of the call cost.');
+    } else if (c5 && netDebitPct !== null && netDebitPct > 33) {
+      suggWarn.push('⚠️ <strong>Net debit elevated:</strong> ' + fmt(netDebitPct,1) + '% of price — passes the ≤45% cap but above the ≤33% ideal zone.');
     }
     // High IV isn't a separate MSL gate (it already lands on debit/risk) — but explain it when those fail.
     if (mslIVHigh && (c5 !== true || c8 !== true)) {
