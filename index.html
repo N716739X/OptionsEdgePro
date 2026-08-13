@@ -2705,6 +2705,29 @@ async function fetchTD(endpoint, params) {
   return data;
 }
 
+// Next scheduled earnings date (exact) from TwelveData's Earnings Calendar — included on the Grow plan.
+// Queries today → +400d and returns the earliest upcoming date ("YYYY-MM-DD"), or null if unavailable.
+function _ymd(d) { return d.getFullYear() + '-' + ('0'+(d.getMonth()+1)).slice(-2) + '-' + ('0'+d.getDate()).slice(-2); }
+async function fetchNextEarnings(ticker) {
+  try {
+    var today = new Date();
+    var end = new Date(today.getTime() + 400 * 86400000);
+    var data = await fetchTD('earnings_calendar', { symbol: ticker, start_date: _ymd(today), end_date: _ymd(end) });
+    var arr = (data && data.earnings) || (Array.isArray(data) ? data : []);
+    var todayStr = _ymd(today);
+    var dates = arr.map(function(e){ return e && e.date; })
+                   .filter(function(x){ return typeof x === 'string' && x >= todayStr; })
+                   .sort();
+    return dates.length ? dates[0] : null;
+  } catch (e) { return null; }
+}
+// Earnings-before-expiry from a fetched date: true = before expiry (risk), false = after (clear),
+// null = unknown (no date → "verify", never a false "clear").
+function earningsRiskVs(nextEarnings, expiryStr) {
+  if (!nextEarnings || !expiryStr) return null;
+  return nextEarnings < expiryStr; // both YYYY-MM-DD — lexical compare is date-correct
+}
+
 // ═══════════════════════════════════════════════════════
 // MARKETDATA CACHE (15-minute TTL in localStorage)
 // ═══════════════════════════════════════════════════════
@@ -4388,7 +4411,8 @@ async function runPut(forceTicker) {
     if (!bestExpiry) throw new Error(acq ? 'No expiry in the 60–90 DTE window.' : 'No expiry in 30-45 DTE window.');
     var dte = dteFromStr(bestExpiry);
 
-    var earningsRisk = earningsBeforeExpiry(ticker, bestExpiry);
+    var nextEarnings = await fetchNextEarnings(ticker);          // exact date from TwelveData Earnings Calendar
+    var earningsRisk = earningsRiskVs(nextEarnings, bestExpiry); // true/false/null
 
     setStatus('put-status', spinner() + 'Put chain…', 'loading');
     var chain = await fetchChain(ticker, bestExpiry, 'put');
@@ -4532,7 +4556,7 @@ async function runPut(forceTicker) {
     html += critRow(1, 'Price Above 200 SMA (Confirmed Uptrend)', c3,
       pd.sma200 ? fmtDollar(pd.price) + ' vs ' + fmtDollar(pd.sma200) : 'N/A');
     html += critRow(2, acq ? 'Earnings (informational — accumulation)' : 'No Earnings Before Expiry', c4,
-      earningsRisk === true ? 'Earnings: ' + EARNINGS[ticker] + (acq ? ' (OK — you want the shares)' : '')
+      earningsRisk === true ? 'Earnings: ' + nextEarnings + (acq ? ' (OK — you want the shares)' : '')
         : earningsRisk === null ? '⚠ Verify — no date' : 'Clear');
     html += critRow(3,'Premium > 2% of Price', c5, premPct !== null ? fmt(premPct,2)+'%' : 'N/A');
     html += critRow(4, acq ? 'Strike ATM · Δ 0.40–0.60 (buy near current price)' : 'Strike Delta 0.15–0.25 (OTM income)', c6, bestDelta !== null ? fmt(bestDelta,2) : 'N/A');
@@ -4545,7 +4569,7 @@ async function runPut(forceTicker) {
     if (wideSpread) suggWarnP.push('⚠ <strong>Wide bid-ask:</strong> the ' + fmtDollar(bestStrike) + ' put is ' + fmt(spreadPct,0) + '% wide (bid ' + fmtDollar(bestBid) + ' / ask ' + fmtDollar(bestAsk) + '). The $' + fmt(bestPremium,2) + ' mid likely won\'t fill — the returns above use the mid, so treat them as optimistic and work your limit toward the bid.');
     if (thinOI) suggWarnP.push('⚠ <strong>Thin open interest:</strong> only ' + bestOI + ' contracts at the ' + fmtDollar(bestStrike) + ' strike — may be hard to fill at a fair price.');
     if (earningsRisk && c2 && c5) {
-      var eDate = EARNINGS[ticker];
+      var eDate = nextEarnings;
       suggWarnP.push('💡 <strong>Earnings workaround:</strong> ' + ticker + ' has earnings on ' + eDate + ' inside your expiry window. Consider a shorter DTE expiring <strong>before ' + eDate + '</strong> to avoid earnings risk while still capturing the oversold setup.');
     }
     if (!c2 && !isNaN(pd.meanRev) && pd.meanRev <= -1 && pd.meanRev > -2) {
@@ -4630,7 +4654,8 @@ async function runCC(forceTicker) {
     if (!bestExpiry) throw new Error('No expiry in 30-45 DTE window.');
     var dte = dteFromStr(bestExpiry);
 
-    var earningsRisk = earningsBeforeExpiry(ticker, bestExpiry);
+    var nextEarnings = await fetchNextEarnings(ticker);          // exact date from TwelveData Earnings Calendar
+    var earningsRisk = earningsRiskVs(nextEarnings, bestExpiry); // true/false/null
 
     setStatus('cc-status', spinner() + 'Call chain…', 'loading');
     var chain = await fetchChain(ticker, bestExpiry, 'call');
@@ -4721,7 +4746,7 @@ async function runCC(forceTicker) {
     html += '<div class="scorecard"><h3>Covered Call — Score</h3><div class="criteria-list">';
     html += mrConfirmRow(ticker, 'top'); // MR not scored — manual confirm on the user's ETH chart
     html += critRow(1,'Price Above 200 SMA (Confirmed Uptrend)', c3, pd.sma200 ? fmtDollar(pd.price) + ' vs ' + fmtDollar(pd.sma200) : 'N/A');
-    html += critRow(2,'No Earnings Before Expiry', c4, earningsRisk === true ? 'Earnings: '+EARNINGS[ticker] : earningsRisk === null ? '⚠ Verify — no date' : 'Clear');
+    html += critRow(2,'No Earnings Before Expiry', c4, earningsRisk === true ? 'Earnings: '+nextEarnings : earningsRisk === null ? '⚠ Verify — no date' : 'Clear');
     html += critRow(3,'Premium ≥ 2% of Price', c5, premPct !== null ? fmt(premPct,2)+'%' : 'N/A');
     html += critRow(4,'Strike Near Resistance (5–12% OTM)', c6, (upsidePct !== null ? fmt(upsidePct,1)+'% OTM' + (bestDelta !== null ? ' · Δ'+fmt(bestDelta,2) : '') : 'N/A'));
     html += critRow(5,'Duration 30–45 DTE', c7, dte+' days');
@@ -4733,7 +4758,7 @@ async function runCC(forceTicker) {
     if (wideSpread) suggWarnC.push('⚠ <strong>Wide bid-ask:</strong> the ' + fmtDollar(bestStrike) + ' call is ' + fmt(spreadPct,0) + '% wide (bid ' + fmtDollar(bestBid) + ' / ask ' + fmtDollar(bestAsk) + '). The $' + fmt(bestPremium,2) + ' mid likely won\'t fill — the returns above use the mid, so treat them as optimistic and work your limit toward the bid.');
     if (thinOI) suggWarnC.push('⚠ <strong>Thin open interest:</strong> only ' + bestOI + ' contracts at the ' + fmtDollar(bestStrike) + ' strike — may be hard to fill at a fair price.');
     if (earningsRisk && c2 && c5) {
-      var eDate = EARNINGS[ticker];
+      var eDate = nextEarnings;
       suggWarnC.push('💡 <strong>Earnings workaround:</strong> ' + ticker + ' has earnings on ' + eDate + ' inside your expiry window. Consider a shorter DTE expiring <strong>before ' + eDate + '</strong> to avoid the IV crush and gap risk.');
     }
     if (!c2 && !isNaN(pd.meanRev) && pd.meanRev >= 1 && pd.meanRev < 2) {
