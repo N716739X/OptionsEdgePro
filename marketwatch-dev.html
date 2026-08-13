@@ -2682,7 +2682,10 @@ async function fetchTD(endpoint, params) {
   // Disambiguate multi-exchange symbols: some tickers list on several venues (e.g. SPCX on
   // NASDAQ + Swiss SIX + Canadian CDRs), and TwelveData 400s on an ambiguous symbol unless a
   // country/exchange is given. Default equity requests to the US listing.
-  if (params && params.symbol && !params.country && !params.exchange && !params.mic_code) {
+  // (Fundamentals endpoints like earnings / earnings_calendar don't take a country filter — adding
+  //  one can error, so only disambiguate the price/indicator endpoints.)
+  if (params && params.symbol && !params.country && !params.exchange && !params.mic_code
+      && endpoint.indexOf('earnings') === -1 && endpoint.indexOf('dividends') === -1) {
     params = Object.assign({}, params, { country: 'United States' });
   }
   // API key injected server-side by Worker proxy
@@ -2705,21 +2708,51 @@ async function fetchTD(endpoint, params) {
   return data;
 }
 
-// Next scheduled earnings date (exact) from TwelveData's Earnings Calendar — included on the Grow plan.
-// Queries today → +400d and returns the earliest upcoming date ("YYYY-MM-DD"), or null if unavailable.
 function _ymd(d) { return d.getFullYear() + '-' + ('0'+(d.getMonth()+1)).slice(-2) + '-' + ('0'+d.getDate()).slice(-2); }
+// Pull a flat array of {date,...} entries out of whatever shape TwelveData returns
+// (`{earnings:[...]}`, a bare array, or `{earnings:{<date>:[...]}}`).
+function _earningsEntries(data) {
+  if (!data) return [];
+  if (Array.isArray(data)) return data;
+  var e = data.earnings;
+  if (Array.isArray(e)) return e;
+  if (e && typeof e === 'object') {
+    var out = [];
+    Object.keys(e).forEach(function(k){ var v = e[k]; if (Array.isArray(v)) out = out.concat(v); else if (v && v.date) out.push(v); });
+    return out;
+  }
+  return [];
+}
+// Estimate the NEXT report from past earnings + the (very regular) quarterly cadence.
+function _estimateNextEarnings(pastData) {
+  var dates = _earningsEntries(pastData).map(function(e){ return e && e.date; })
+                .filter(function(x){ return typeof x === 'string'; }).sort();
+  if (dates.length < 2) return null;
+  var gaps = [];
+  for (var i = 1; i < dates.length; i++) gaps.push((new Date(dates[i]) - new Date(dates[i-1])) / 86400000);
+  gaps.sort(function(a,b){ return a-b; });
+  var med = gaps[Math.floor(gaps.length/2)] || 91;
+  var next = new Date(dates[dates.length-1]), today = new Date(), g = 0;
+  while (next <= today && g++ < 12) next = new Date(next.getTime() + med * 86400000);
+  return _ymd(next);
+}
+// Next earnings for a ticker. Prefers the EXACT Earnings Calendar (Grow plan); if that yields
+// nothing, estimates from the /earnings history. Returns {date, estimated} or null.
 async function fetchNextEarnings(ticker) {
+  var today = new Date(), todayStr = _ymd(today);
   try {
-    var today = new Date();
     var end = new Date(today.getTime() + 400 * 86400000);
-    var data = await fetchTD('earnings_calendar', { symbol: ticker, start_date: _ymd(today), end_date: _ymd(end) });
-    var arr = (data && data.earnings) || (Array.isArray(data) ? data : []);
-    var todayStr = _ymd(today);
-    var dates = arr.map(function(e){ return e && e.date; })
-                   .filter(function(x){ return typeof x === 'string' && x >= todayStr; })
-                   .sort();
-    return dates.length ? dates[0] : null;
-  } catch (e) { return null; }
+    var cal = await fetchTD('earnings_calendar', { symbol: ticker, start_date: todayStr, end_date: _ymd(end) });
+    var futs = _earningsEntries(cal).map(function(e){ return e && e.date; })
+                 .filter(function(x){ return typeof x === 'string' && x >= todayStr; }).sort();
+    if (futs.length) return { date: futs[0], estimated: false };
+  } catch (e) {}
+  try {
+    var past = await fetchTD('earnings', { symbol: ticker, outputsize: 8 });
+    var est = _estimateNextEarnings(past);
+    if (est) return { date: est, estimated: true };
+  } catch (e) {}
+  return null;
 }
 // Earnings-before-expiry from a fetched date: true = before expiry (risk), false = after (clear),
 // null = unknown (no date → "verify", never a false "clear").
@@ -4411,7 +4444,9 @@ async function runPut(forceTicker) {
     if (!bestExpiry) throw new Error(acq ? 'No expiry in the 60–90 DTE window.' : 'No expiry in 30-45 DTE window.');
     var dte = dteFromStr(bestExpiry);
 
-    var nextEarnings = await fetchNextEarnings(ticker);          // exact date from TwelveData Earnings Calendar
+    var _ne = await fetchNextEarnings(ticker);                   // {date, estimated} | null
+    var nextEarnings = _ne ? _ne.date : null;
+    var earningsEst = _ne ? _ne.estimated : false;
     var earningsRisk = earningsRiskVs(nextEarnings, bestExpiry); // true/false/null
 
     setStatus('put-status', spinner() + 'Put chain…', 'loading');
@@ -4556,7 +4591,7 @@ async function runPut(forceTicker) {
     html += critRow(1, 'Price Above 200 SMA (Confirmed Uptrend)', c3,
       pd.sma200 ? fmtDollar(pd.price) + ' vs ' + fmtDollar(pd.sma200) : 'N/A');
     html += critRow(2, acq ? 'Earnings (informational — accumulation)' : 'No Earnings Before Expiry', c4,
-      earningsRisk === true ? 'Earnings: ' + nextEarnings + (acq ? ' (OK — you want the shares)' : '')
+      earningsRisk === true ? 'Earnings: ' + nextEarnings + (earningsEst ? ' ≈ est.' : '') + (acq ? ' (OK — you want the shares)' : '')
         : earningsRisk === null ? '⚠ Verify — no date' : 'Clear');
     html += critRow(3,'Premium > 2% of Price', c5, premPct !== null ? fmt(premPct,2)+'%' : 'N/A');
     html += critRow(4, acq ? 'Strike ATM · Δ 0.40–0.60 (buy near current price)' : 'Strike Delta 0.15–0.25 (OTM income)', c6, bestDelta !== null ? fmt(bestDelta,2) : 'N/A');
@@ -4654,7 +4689,9 @@ async function runCC(forceTicker) {
     if (!bestExpiry) throw new Error('No expiry in 30-45 DTE window.');
     var dte = dteFromStr(bestExpiry);
 
-    var nextEarnings = await fetchNextEarnings(ticker);          // exact date from TwelveData Earnings Calendar
+    var _ne = await fetchNextEarnings(ticker);                   // {date, estimated} | null
+    var nextEarnings = _ne ? _ne.date : null;
+    var earningsEst = _ne ? _ne.estimated : false;
     var earningsRisk = earningsRiskVs(nextEarnings, bestExpiry); // true/false/null
 
     setStatus('cc-status', spinner() + 'Call chain…', 'loading');
@@ -4746,7 +4783,7 @@ async function runCC(forceTicker) {
     html += '<div class="scorecard"><h3>Covered Call — Score</h3><div class="criteria-list">';
     html += mrConfirmRow(ticker, 'top'); // MR not scored — manual confirm on the user's ETH chart
     html += critRow(1,'Price Above 200 SMA (Confirmed Uptrend)', c3, pd.sma200 ? fmtDollar(pd.price) + ' vs ' + fmtDollar(pd.sma200) : 'N/A');
-    html += critRow(2,'No Earnings Before Expiry', c4, earningsRisk === true ? 'Earnings: '+nextEarnings : earningsRisk === null ? '⚠ Verify — no date' : 'Clear');
+    html += critRow(2,'No Earnings Before Expiry', c4, earningsRisk === true ? 'Earnings: '+nextEarnings+(earningsEst ? ' ≈ est.' : '') : earningsRisk === null ? '⚠ Verify — no date' : 'Clear');
     html += critRow(3,'Premium ≥ 2% of Price', c5, premPct !== null ? fmt(premPct,2)+'%' : 'N/A');
     html += critRow(4,'Strike Near Resistance (5–12% OTM)', c6, (upsidePct !== null ? fmt(upsidePct,1)+'% OTM' + (bestDelta !== null ? ' · Δ'+fmt(bestDelta,2) : '') : 'N/A'));
     html += critRow(5,'Duration 30–45 DTE', c7, dte+' days');
