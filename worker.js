@@ -954,28 +954,48 @@ async function scoreTicker(ticker, env) {
 
   const dte = bestExpiry ? dteFromStr(bestExpiry) : null;
 
-  // Next scheduled earnings (EXACT) from TwelveData's Earnings Calendar (included on Grow). Cached
-  // daily via the date-stamped URL; any failure → null so the criterion shows "verify", never a
-  // false "clear". Replaces the old hardcoded EARNINGS table.
+  // Next earnings: prefer the EXACT Earnings Calendar (Grow plan); fall back to estimating from the
+  // /earnings history + quarterly cadence. No country filter (fundamentals endpoints reject it).
+  // Cached 12h (not the 5-min stock TTL) — earnings dates change rarely; avoids burning credits.
+  // Any failure → null so the criterion shows "verify", never a false "clear".
   let nextEarnings = null;
   try {
     const _ymd = d => d.getFullYear() + '-' + ('0'+(d.getMonth()+1)).slice(-2) + '-' + ('0'+d.getDate()).slice(-2);
-    const _t = new Date(), _e = new Date(_t.getTime() + 400 * 86400000);
-    const ecUrl = 'https://api.twelvedata.com/earnings_calendar?symbol=' + ticker +
-      '&start_date=' + _ymd(_t) + '&end_date=' + _ymd(_e) + TD_COUNTRY + '&apikey=' + env.TD_KEY;
-    // Cache 12h (not the 5-min stock TTL) — earnings dates change rarely; avoids burning credits.
+    const _t = new Date(), _e = new Date(_t.getTime() + 400 * 86400000), todayStr = _ymd(_t);
     const EARN_TTL = 12 * 60 * 60 * 1000;
-    let ec = null;
-    const _cachedEc = getCached(ecUrl);
-    if (_cachedEc) { ec = JSON.parse(_cachedEc.data); }
-    else {
-      ec = await fetchJSON(ecUrl).catch(() => null);
-      if (ec) putCache(ecUrl, JSON.stringify(ec), 'application/json', 200, EARN_TTL);
+    const fetchCached = async (url) => {
+      const c = getCached(url);
+      if (c) return JSON.parse(c.data);
+      const d = await fetchJSON(url).catch(() => null);
+      if (d) putCache(url, JSON.stringify(d), 'application/json', 200, EARN_TTL);
+      return d;
+    };
+    const entries = (data) => {
+      if (!data) return [];
+      if (Array.isArray(data)) return data;
+      const e = data.earnings;
+      if (Array.isArray(e)) return e;
+      if (e && typeof e === 'object') { let o = []; for (const k of Object.keys(e)) { const v = e[k]; if (Array.isArray(v)) o = o.concat(v); else if (v && v.date) o.push(v); } return o; }
+      return [];
+    };
+    // 1) exact calendar
+    const calUrl = 'https://api.twelvedata.com/earnings_calendar?symbol=' + ticker + '&start_date=' + todayStr + '&end_date=' + _ymd(_e) + '&apikey=' + env.TD_KEY;
+    const futs = entries(await fetchCached(calUrl)).map(x => x && x.date).filter(x => typeof x === 'string' && x >= todayStr).sort();
+    if (futs.length) nextEarnings = futs[0];
+    // 2) estimate from history
+    if (!nextEarnings) {
+      const eUrl = 'https://api.twelvedata.com/earnings?symbol=' + ticker + '&outputsize=8&apikey=' + env.TD_KEY;
+      const ds = entries(await fetchCached(eUrl)).map(x => x && x.date).filter(x => typeof x === 'string').sort();
+      if (ds.length >= 2) {
+        const gaps = [];
+        for (let i = 1; i < ds.length; i++) gaps.push((new Date(ds[i]) - new Date(ds[i-1])) / 86400000);
+        gaps.sort((a,b) => a-b);
+        const med = gaps[Math.floor(gaps.length/2)] || 91;
+        let nx = new Date(ds[ds.length-1]), g = 0;
+        while (nx <= _t && g++ < 12) nx = new Date(nx.getTime() + med * 86400000);
+        nextEarnings = _ymd(nx);
+      }
     }
-    const arr = (ec && ec.earnings) || (Array.isArray(ec) ? ec : []);
-    const todayStr = _ymd(_t);
-    const dates = arr.map(e => e && e.date).filter(x => typeof x === 'string' && x >= todayStr).sort();
-    nextEarnings = dates.length ? dates[0] : null;
   } catch (e) { nextEarnings = null; }
 
   const earningsRisk = (bestExpiry && nextEarnings) ? (nextEarnings < bestExpiry) : null;
