@@ -4987,6 +4987,10 @@ async function runSynth(forceTicker) {
       html += '</tbody></table></div></div>';
     }
 
+    // Browsable per-leg chains (◆ = the ATM synthetic strike)
+    html += synthLegChainHtml('Call Chain', '— ◆ = ATM synthetic strike, ' + expiryDisplay(bestExpiry) + ' (' + dte + ' DTE)', callChain, pd.price, atmStrike);
+    html += synthLegChainHtml('Put Chain', '— ◆ = ATM synthetic strike, ' + expiryDisplay(bestExpiry) + ' (' + dte + ' DTE)', putChain, pd.price, atmStrike);
+
     html += '<div class="scorecard"><h3>Synthetic Long — Score</h3><div class="criteria-list">';
     html += mrConfirmRow(ticker, 'bottom'); // MR not scored — manual confirm on the user's ETH chart
     html += critRow(1,'IV Not Inflated — IV Rank ≤ 50 (≤30 = Ideal)', c2, synthIVRank !== null ? 'IVR ' + fmt(synthIVRank,0) + (c2Ideal ? ' ✨ IDEAL' : '') : 'N/A');
@@ -5210,6 +5214,37 @@ function mslComputeGrade(pd, callChain, putChain, cIdx, sIdx, bIdx, dte) {
   return m;
 }
 
+// Render one option-chain leg (call or put) as a browsable LEAPS table, marking the ATM (★)
+// and, when given, the user's chosen strike (◆ + highlighted row). Shared by SL Find Best & Grade Mine.
+function synthLegChainHtml(title, sub, chain, price, highlightStrike) {
+  if (!chain || !chain.strike || !chain.strike.length) return '';
+  var atmIdx = -1, atmBest = Infinity, hiIdx = -1, hiBest = Infinity;
+  for (var i = 0; i < chain.strike.length; i++) {
+    var s = chain.strike[i]; if (s == null) continue;
+    var da = Math.abs(s - price); if (da < atmBest) { atmBest = da; atmIdx = i; }
+    if (highlightStrike != null) { var dh = Math.abs(s - highlightStrike); if (dh < hiBest) { hiBest = dh; hiIdx = i; } }
+  }
+  var center = hiIdx >= 0 ? hiIdx : atmIdx;
+  var start = Math.max(0, center - 5), end = Math.min(chain.strike.length, center + 6);
+  var body = '';
+  for (var j = start; j < end; j++) {
+    var isHi = (j === hiIdx), isAtm = (j === atmIdx);
+    var dist = price ? (chain.strike[j] - price) / price * 100 : null;
+    body += '<tr' + (isHi ? ' class="recommended"' : '') + '>' +
+      '<td class="strike-cell">' + (isHi ? '<span class="star">◆</span>' : (isAtm ? '<span class="star">★</span>' : '')) + fmtDollar(chain.strike[j]) + '</td>' +
+      '<td>' + fmtDollar(chain.bid ? chain.bid[j] : null) + '</td>' +
+      '<td>' + fmtDollar(chain.ask ? chain.ask[j] : null) + '</td>' +
+      '<td><strong>' + fmtDollar(chain.mid ? chain.mid[j] : null) + '</strong></td>' +
+      '<td>' + (chain.delta && chain.delta[j] != null ? fmt(Math.abs(chain.delta[j]), 2) : '—') + '</td>' +
+      '<td>' + oiSpan(chain.openInterest ? chain.openInterest[j] : null) + '</td>' +
+      '<td>' + (dist != null ? (dist >= 0 ? '+' : '') + fmt(dist, 1) + '%' : '—') + '</td>' +
+    '</tr>';
+  }
+  return '<div class="chain-section"><h3>' + title + (sub ? ' <span style="color:var(--text-muted);font-weight:400;font-size:11px">' + sub + '</span>' : '') + '</h3>' +
+    '<div class="leaps-table-wrap"><table><thead><tr>' +
+    '<th>Strike</th><th>Bid</th><th>Ask</th><th>Mid</th><th>Δ</th><th>OI</th><th>Dist</th>' +
+    '</tr></thead><tbody>' + body + '</tbody></table></div></div>';
+}
 // ===== Synthetic Long — Grade Mine (mirror of the MSL Grade-Mine) =====
 // IV rank from the put chain's IV distribution (same method runSynth uses).
 function synthIVRankFromChain(putChain) {
@@ -5381,6 +5416,10 @@ async function gradeSynth() {
         '<div style="font-size:10.5px;color:var(--text-muted);margin-top:8px;line-height:1.5">Cyan = your leg differs from the app\'s pick. The app\'s Synthetic Long is the <strong>same-strike ATM</strong> call+put (Course 301). Matching it isn\'t mandatory — the comparison just shows how far your trade drifts from the clean synthetic.</div>' +
       '</div>';
     }
+
+    // Browsable per-leg chains (◆ = your strike · ★ = ATM)
+    html += synthLegChainHtml('Call Chain', '— ◆ your buy call · ★ ATM, ' + expiryDisplay(expiry) + ' (' + dte + ' DTE)', callChain, pd.price, um.callStrike);
+    html += synthLegChainHtml('Put Chain', '— ◆ your sell put · ★ ATM, ' + expiryDisplay(expiry) + ' (' + dte + ' DTE)', putChain, pd.price, um.putStrike);
 
     // Margin-call caution (SL is leveraged, not defined-risk)
     html += '<div style="border:1px solid var(--red);background:rgba(0,0,0,0.16);border-radius:9px;padding:11px 14px;margin-top:12px;font-size:11px;line-height:1.5;color:var(--text)">⚠️ <strong>Margin &amp; margin-call risk.</strong> The short put carries loss all the way to $0 (max loss ' + (um.maxLoss != null ? '$' + fmt(um.maxLoss, 0) : '—') + '). If the stock falls you may have to post maintenance margin or face a margin call. Laura: <em>"You MUST understand how margin works before ever placing a Synthetic Long."</em></div>';
