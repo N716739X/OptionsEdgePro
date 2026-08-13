@@ -953,7 +953,32 @@ async function scoreTicker(ticker, env) {
   if (!bestExpiry) bestExpiry = findBestExpiry(expirations, 25, 45);
 
   const dte = bestExpiry ? dteFromStr(bestExpiry) : null;
-  const earningsRisk = bestExpiry ? earningsBeforeExpiry(ticker, bestExpiry) : null;
+
+  // Next scheduled earnings (EXACT) from TwelveData's Earnings Calendar (included on Grow). Cached
+  // daily via the date-stamped URL; any failure → null so the criterion shows "verify", never a
+  // false "clear". Replaces the old hardcoded EARNINGS table.
+  let nextEarnings = null;
+  try {
+    const _ymd = d => d.getFullYear() + '-' + ('0'+(d.getMonth()+1)).slice(-2) + '-' + ('0'+d.getDate()).slice(-2);
+    const _t = new Date(), _e = new Date(_t.getTime() + 400 * 86400000);
+    const ecUrl = 'https://api.twelvedata.com/earnings_calendar?symbol=' + ticker +
+      '&start_date=' + _ymd(_t) + '&end_date=' + _ymd(_e) + TD_COUNTRY + '&apikey=' + env.TD_KEY;
+    // Cache 12h (not the 5-min stock TTL) — earnings dates change rarely; avoids burning credits.
+    const EARN_TTL = 12 * 60 * 60 * 1000;
+    let ec = null;
+    const _cachedEc = getCached(ecUrl);
+    if (_cachedEc) { ec = JSON.parse(_cachedEc.data); }
+    else {
+      ec = await fetchJSON(ecUrl).catch(() => null);
+      if (ec) putCache(ecUrl, JSON.stringify(ec), 'application/json', 200, EARN_TTL);
+    }
+    const arr = (ec && ec.earnings) || (Array.isArray(ec) ? ec : []);
+    const todayStr = _ymd(_t);
+    const dates = arr.map(e => e && e.date).filter(x => typeof x === 'string' && x >= todayStr).sort();
+    nextEarnings = dates.length ? dates[0] : null;
+  } catch (e) { nextEarnings = null; }
+
+  const earningsRisk = (bestExpiry && nextEarnings) ? (nextEarnings < bestExpiry) : null;
   let bestPremium = null, bestStrike = null, bestDelta = null, ivRank = null;
 
   if (bestExpiry) {
@@ -1026,7 +1051,7 @@ async function scoreTicker(ticker, env) {
   // Laura OG income-call rules: 4H chart, +2 MR, 30–45 DTE, sell an OTM call (~8% OTM target).
   let ccExpiry = findBestExpiry(expirations, 30, 45) || findBestExpiry(expirations, 25, 45);
   let ccDte = ccExpiry ? dteFromStr(ccExpiry) : null;
-  let ccEarnRisk = ccExpiry ? earningsBeforeExpiry(ticker, ccExpiry) : null;
+  let ccEarnRisk = (ccExpiry && nextEarnings) ? (nextEarnings < ccExpiry) : null;
   let ccStrike = null, ccDelta = null, ccPremium = null;
   if (ccExpiry) {
     try {
@@ -1105,7 +1130,7 @@ async function scoreTicker(ticker, env) {
   return {
     ticker,
     price, change, changePct, week52H, week52L, meanRev, weeklyMeanRev, sma200,
-    ivRank, expiry: bestExpiry, dte, bestStrike, bestPremium, premPct, earningsRisk,
+    ivRank, expiry: bestExpiry, dte, bestStrike, bestPremium, premPct, earningsRisk, nextEarnings,
     atrSeries, chainScored, mslExpiry: leapsExpiry,
     // Covered-call-specific display data (its own expiry/strike/premium from the call chain)
     ccExpiry, ccDte, ccStrike, ccPremium, ccPremPct,
