@@ -645,106 +645,35 @@ function scoreMslChains(price, mr, expiry, dte, callChain, putChain, week52H) {
   if (!callChain || !callChain.strike || !putChain || !putChain.strike || !callChain.strike.length || !putChain.strike.length) return out;
   callChain = mslFilterRoundStrikes(callChain, price);
   putChain = mslFilterRoundStrikes(putChain, price);
-  // Legs 1 & 2: the bull put spread \u2014 anchored OTM for BUFFER (Laura MM56). Push the SHORT put as
-  // far OTM as possible while the spread still pays ~50% credit. Width ~20% of price up to ~30%
-  // for credit. \u226550% reachable \u2192 furthest-OTM such spread; else highest credit \u226542%.
-  const PUT_TARGET_CR = 50, PUT_FLOOR_CR = 42;
-  const minW = price * 0.18, maxW = price * 0.30;
+  // Bull put spread — ATM-anchored (Course 301): SELL the ATM put, BUY a lower put so width ~20%
+  // of price (10-30% band), credit >=42% of width (50% ideal). Mirrors frontend mslPickPutSpread.
   let soldPutIdx = -1, boughtPutIdx = -1;
-  let bpOtm = -Infinity, bpCr = -Infinity, bpOI = -1, bpCrDiff = Infinity;
-  // Pass A — credit ≥50%: among spreads clearing Laura's ~20% baseline buffer, highest OI wins
-  // (tiebreak deeper buffer, then credit→50%); else deepest buffer. Mirrors runMsl Pass A.
-  const BUF_BASE = 20;
-  let candsA = [];
-  for (let si = 0; si < putChain.strike.length; si++) {
-    const Sk = putChain.strike[si];
-    if (Sk == null || Sk >= price) continue;
-    const Sm = putChain.mid ? putChain.mid[si] : null;
-    if (Sm == null || Sm <= 0) continue;
-    const otm = (price - Sk) / price * 100;
-    const Soi = (putChain.openInterest && putChain.openInterest[si] != null) ? putChain.openInterest[si] : 0;
-    for (let li = 0; li < putChain.strike.length; li++) {
-      const Lk = putChain.strike[li];
-      if (Lk == null || Lk >= Sk) continue;
-      const Lm = putChain.mid ? putChain.mid[li] : null;
-      if (Lm == null || Lm <= 0) continue;
-      const w = Sk - Lk;
-      if (w < minW || w > maxW) continue;
-      const cr = (Sm - Lm) / w * 100;
-      if (cr < PUT_TARGET_CR) continue;
-      candsA.push({ si, li, cr, otm, oi: Soi });
+  {
+    const pstrike = putChain.strike, pmid = putChain.mid || [], poi = putChain.openInterest || [];
+    let sBest = Infinity;
+    for (let i = 0; i < pstrike.length; i++) {
+      if (pstrike[i] == null || pmid[i] == null || pmid[i] <= 0) continue;
+      const d = Math.abs(pstrike[i] - price);
+      if (d < sBest) { sBest = d; soldPutIdx = i; }
     }
-  }
-  if (candsA.length) {
-    const atBase = candsA.filter(c => c.otm >= BUF_BASE - 1e-9);
-    const poolA = atBase.length ? atBase : candsA;
-    poolA.sort((a, b) => {
-      if (atBase.length) {
-        if (b.oi !== a.oi) return b.oi - a.oi;
-        if (Math.abs(b.otm - a.otm) > 1e-9) return b.otm - a.otm;
-        return Math.abs(a.cr - PUT_TARGET_CR) - Math.abs(b.cr - PUT_TARGET_CR);
+    if (soldPutIdx >= 0) {
+      const Sk = pstrike[soldPutIdx], Sm = pmid[soldPutIdx];
+      const minW = price * 0.10, maxW = price * 0.30, targetW = price * 0.20, FLOOR = 42;
+      let best = null;
+      for (let li = 0; li < pstrike.length; li++) {
+        const Lk = pstrike[li], Lm = pmid[li];
+        if (Lk == null || Lm == null || Lm <= 0 || Lk >= Sk) continue;
+        const w = Sk - Lk; if (w < minW || w > maxW) continue;
+        const c = { li, cr: (Sm - Lm) / w * 100, wdiff: Math.abs(w - targetW), oi: (poi[li] != null ? poi[li] : 0) };
+        if (!best) { best = c; continue; }
+        const aOk = c.cr >= FLOOR, bOk = best.cr >= FLOOR;
+        if (aOk !== bOk) { if (aOk) best = c; continue; }
+        if (Math.abs(c.wdiff - best.wdiff) > 1e-9) { if (c.wdiff < best.wdiff) best = c; continue; }
+        if (c.cr !== best.cr) { if (c.cr > best.cr) best = c; continue; }
+        if (c.oi > best.oi) best = c;
       }
-      if (Math.abs(b.otm - a.otm) > 1e-9) return b.otm - a.otm;
-      if (Math.abs(a.cr - PUT_TARGET_CR) !== Math.abs(b.cr - PUT_TARGET_CR)) return Math.abs(a.cr - PUT_TARGET_CR) - Math.abs(b.cr - PUT_TARGET_CR);
-      return b.oi - a.oi;
-    });
-    soldPutIdx = poolA[0].si; boughtPutIdx = poolA[0].li;
-    bpOtm = poolA[0].otm; bpCr = poolA[0].cr; bpOI = poolA[0].oi; bpCrDiff = Math.abs(poolA[0].cr - PUT_TARGET_CR);
-  }
-  if (soldPutIdx < 0) {
-    // Highest credit ≥42%, but credits within PUT_CR_TOL of the best are a tie → break toward
-    // liquidity (OI) then buffer (further OTM). Mirrors runMsl Pass B — keep in sync.
-    const PUT_CR_TOL = 2.5;
-    let candsB = [];
-    for (let sb = 0; sb < putChain.strike.length; sb++) {
-      const Skb = putChain.strike[sb];
-      if (Skb == null || Skb >= price) continue;
-      const Smb = putChain.mid ? putChain.mid[sb] : null;
-      if (Smb == null || Smb <= 0) continue;
-      const otmb = (price - Skb) / price * 100;
-      const Soib = (putChain.openInterest && putChain.openInterest[sb] != null) ? putChain.openInterest[sb] : 0;
-      for (let lb = 0; lb < putChain.strike.length; lb++) {
-        const Lkb = putChain.strike[lb];
-        if (Lkb == null || Lkb >= Skb) continue;
-        const Lmb = putChain.mid ? putChain.mid[lb] : null;
-        if (Lmb == null || Lmb <= 0) continue;
-        const wb = Skb - Lkb;
-        if (wb < minW || wb > maxW) continue;
-        const crb = (Smb - Lmb) / wb * 100;
-        if (crb < PUT_FLOOR_CR) continue;
-        candsB.push({ si: sb, li: lb, cr: crb, otm: otmb, oi: Soib });
-      }
-    }
-    if (candsB.length) {
-      const maxCrB = candsB.reduce((m, c) => (c.cr > m ? c.cr : m), -Infinity);
-      candsB = candsB.filter(c => c.cr >= maxCrB - PUT_CR_TOL);
-      candsB.sort((a, b) => {
-        if (b.oi !== a.oi) return b.oi - a.oi;
-        if (Math.abs(b.otm - a.otm) > 1e-9) return b.otm - a.otm;
-        return b.cr - a.cr;
-      });
-      soldPutIdx = candsB[0].si; boughtPutIdx = candsB[0].li;
-      bpCr = candsB[0].cr; bpOtm = candsB[0].otm; bpOI = candsB[0].oi;
-    }
-  }
-  if (soldPutIdx < 0) {
-    let fbDiff = Infinity;
-    for (let sc = 0; sc < putChain.strike.length; sc++) {
-      const Skc = putChain.strike[sc];
-      if (Skc == null || Skc >= price) continue;
-      const Smc = putChain.mid ? putChain.mid[sc] : null;
-      if (Smc == null || Smc <= 0) continue;
-      for (let lc = 0; lc < putChain.strike.length; lc++) {
-        const Lkc = putChain.strike[lc];
-        if (Lkc == null || Lkc >= Skc) continue;
-        const Lmc = putChain.mid ? putChain.mid[lc] : null;
-        if (Lmc == null || Lmc <= 0) continue;
-        const wc = Skc - Lkc;
-        if (wc < minW || wc > maxW) continue;
-        const crc = (Smc - Lmc) / wc * 100;
-        const dcc = Math.abs(crc - PUT_TARGET_CR);
-        if (dcc < fbDiff) { fbDiff = dcc; soldPutIdx = sc; boughtPutIdx = lc; }
-      }
+      boughtPutIdx = best ? best.li : -1;
+      if (boughtPutIdx < 0) soldPutIdx = -1;
     }
   }
   if (soldPutIdx < 0 || boughtPutIdx < 0) return out;
@@ -809,7 +738,7 @@ function scoreMslChains(price, mr, expiry, dte, callChain, putChain, week52H) {
   const riskVsStockPct = (mslRisk !== null && price) ? (mslRisk / price * 100) : null;
   out.c2 = putCreditPct !== null ? putCreditPct >= 42 : null;
   out.c3 = (callRatio !== null && !isNaN(callRatio)) ? (callRatio >= 0.40 && callRatio <= 0.60) : null;
-  out.c5 = netDebitPct !== null ? netDebitPct <= 33 : null; // Laura's ≤1/3-of-price cap
+  out.c5 = netDebitPct !== null ? netDebitPct <= 45 : null; // net debit sanity cap (course MSLs run 24-42%); ≤33% = ideal
   out.c6 = callOI !== null ? callOI >= 500 : null;
   out.c7 = soldPutOI !== null ? soldPutOI >= 500 : null;
   out.c8 = riskVsStockPct !== null ? riskVsStockPct <= 50 : null; // MM60: ≤ 50% of owning stock
