@@ -6093,7 +6093,7 @@ async function runMsl(forceTicker) {
       suggGood.push('✅ <strong>Excellent put credit:</strong> ' + fmt(putCreditPct,1) + '% of spread width — the bull put spread more than pays for itself.');
     }
     if (c5 && netDebitPct !== null && netDebitPct <= 20) {
-      suggGood.push('✅ <strong>Low net debit:</strong> Only ' + fmt(netDebitPct,1) + '% of price — well under Laura\'s 1/3 threshold. Capital-efficient entry.');
+      suggGood.push('✅ <strong>Low net debit:</strong> Only ' + fmt(netDebitPct,1) + '% of price — well inside the ≤33% ideal zone. Capital-efficient entry.');
     }
     // Liquidity — HARD REJECT below floor (no real market), WARN below 500 (slippage risk)
     if (callOI !== null && callOI < MSL_OI_FLOOR_CALL) {
@@ -6461,12 +6461,12 @@ function mslRollSignal(mr, price, sma200, shortStrike) {
   var smaDistPct = (sma200 && price) ? ((price - sma200) / sma200 * 100) : null;
   var atOrBelowSMA = smaDistPct !== null && smaDistPct <= 3; // at (within 3%) or below the 200-day SMA
   var mrDeep = hasMR && mr <= -2;
-  var bufferRisk = (shortStrike && price) ? (price <= shortStrike) : false;
+  var shortPutITM = (shortStrike && price) ? (price <= shortStrike) : false;
   if (atOrBelowSMA || mrDeep) {
     return { cls: 'open', icon: '🟢', color: 'var(--green)',
       label: 'Roll window OPEN — ' + (atOrBelowSMA ? (smaDistPct <= 0 ? 'below the 200-day SMA' : 'at the 200-day SMA') : 'MR ≤ −2'), short: 'OPEN' };
   }
-  if (bufferRisk) return { cls: 'risk', icon: '⚠️', color: 'var(--yellow)', label: 'Buffer breached — price at/below your short put', short: 'BUFFER' };
+  if (shortPutITM) return { cls: 'risk', icon: '⚠️', color: 'var(--yellow)', label: 'Underwater — price at/below your short put (short put ITM)', short: 'UNDER' };
   if (smaDistPct === null && !hasMR) return { cls: 'na', icon: '·', color: 'var(--text-muted)', label: 'No signal data — use the Bottom toggle from your chart', short: '—' };
   return { cls: 'wait', icon: '⏳', color: 'var(--text-muted)', label: 'Watching — above the 200-day SMA (mark Bottom from your chart if it’s at −2)', short: 'WAIT' };
 }
