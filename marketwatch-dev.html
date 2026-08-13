@@ -2113,7 +2113,7 @@ var cardData        = {}; // ticker -> data object
 var _lastGoodMsl    = {};
 // Fields that make up a scored MSL card — snapshotted/restored as a unit.
 var MSL_SNAP_KEYS = ['mslScore','mslWeighted','mslT1Pass','msl3xFail','mslTarget3x','mslMove3xPct',
-  'mslExpiry','mslMR','mslCallRatio','mslNetDebitPct','mslRiskRatio',
+  'mslExpiry','mslMR','mslCallRatio','mslNetDebitPct','mslRiskRatio','mslRiskVsStock',
   'msl_c1','msl_c2','msl_c3','msl_c4','msl_c5','msl_c6','msl_c7','msl_c8','msl_c9'];
 function snapshotMsl(d) {
   if (!d || d.mslScore == null) return;
@@ -3033,17 +3033,25 @@ function scoreToGrade(score, max, phase) {
 function gradeRank(g) { return { A: 5, B: 4, C: 3, D: 2, F: 1 }[g] || 0; }
 function capGrade(g, maxG) { return (g && gradeRank(g) > gradeRank(maxG)) ? maxG : g; }
 
+// A risk-gate miss this close to the 50% line is "almost there" (C), not a hard fail (D).
+var MSL_RISK_NEARMISS = 55; // % of owning the stock
 // The ONE MSL letter grade — weighted structure score, then capped to match the badge:
-//   fails a Tier-1 gate (credit c2 or risk c8) → "WAIT FOR SETUP" → no better than D
+//   fails the credit gate, or badly fails the risk gate → "WAIT FOR SETUP" → no better than D
+//   risk gate barely missed (≤55% of stock, credit still passing) → "CLOSE" → no better than C
 //   passes the gates but fails the 3× reward test → "REWARD THIN" → no better than B
 // Returns '' when the LEAPS chain hasn't been scored yet. Keeps the letter, the badge and the sort
 // telling the same story (a B never sits above a C; a gate-failing setup never shows a healthy grade).
+function mslRiskNearMiss(d) {
+  return d.msl_c2 === true && d.msl_c8 !== true && d.mslRiskVsStock != null && d.mslRiskVsStock <= MSL_RISK_NEARMISS;
+}
 function mslLetterGrade(d, phase) {
   if (d.mslWeighted == null) return '';
   var hasC9 = (d.msl_c9 === true || d.msl_c9 === false);
   var structW = d.mslWeighted - (d.msl_c1 === true ? 2 : 0);
   var g = scoreToGrade(structW, hasC9 ? 8 : 7, phase != null ? phase : 3);
-  if (d.msl_c2 !== true || d.msl_c8 !== true) return capGrade(g, 'D'); // gate fail → WAIT FOR SETUP
+  if (d.msl_c2 !== true || d.msl_c8 !== true) {                         // a Tier-1 gate failed
+    return capGrade(g, mslRiskNearMiss(d) ? 'C' : 'D');                 // barely-over risk → C, else D
+  }
   if (d.msl3xFail === true) return capGrade(g, 'B');                    // reward-capped → REWARD THIN
   return g;
 }
@@ -3220,6 +3228,9 @@ function buildColCard(ticker, d, strategy, rank, isBestTrade) {
       if (structW >= _mslIdealW && d.msl3xFail === true) { badgeCls = 'badge-watch'; badgeTxt = 'REWARD THIN · ' + mrTag + ' · ' + scoreLbl; }
       else if (structW >= _mslIdealW)   { badgeCls = 'badge-ideal';    badgeTxt = 'IDEAL · ' + mrTag + ' · ' + scoreLbl; }
       else                     { badgeCls = 'badge-watch';    badgeTxt = 'WATCH · ' + mrTag + ' · ' + scoreLbl; }
+    } else if (mslRiskNearMiss(d)) {
+      // Risk just over 50% (credit still passing) — "almost there", matches the C letter grade.
+      badgeCls = 'badge-watch'; badgeTxt = 'CLOSE · ' + mrTag + ' · ' + scoreLbl;
     } else {
       badgeCls = 'badge-wait'; badgeTxt = 'WAIT FOR SETUP · ' + scoreLbl;
     }
@@ -4165,6 +4176,7 @@ function applyServerScores(s) {
     mslCallRatio:  s.msl ? s.msl.callRatio : null,
     mslNetDebitPct: s.msl ? s.msl.netDebitPct : null,
     mslRiskRatio:  s.msl ? s.msl.riskRatio : null,
+    mslRiskVsStock: s.msl ? s.msl.riskVsStockPct : null, // % of owning the stock — for the near-miss grade band
     msl_c1: s.msl ? s.msl.c1 : null, msl_c2: s.msl ? s.msl.c2 : null, msl_c3: s.msl ? s.msl.c3 : null,
     msl_c4: s.msl ? s.msl.c4 : null, msl_c5: s.msl ? s.msl.c5 : null, msl_c6: s.msl ? s.msl.c6 : null, msl_c7: s.msl ? s.msl.c7 : null, msl_c8: s.msl ? s.msl.c8 : null, msl_c9: s.msl ? s.msl.c9 : null,
     // Legacy fields for card rendering
@@ -6005,7 +6017,12 @@ async function runMsl(forceTicker) {
     // Structure ready = credit + risk pass + legs tradeable. MR is NOT part of this (user's timing call).
     var structReady = (c2 === true && c8 === true) && !oiHardReject;
     var sumCls, sumLabel;
-    if (!structReady) {
+    var _riskNear = (c2 === true && c8 !== true && !oiHardReject && riskVsStockPct != null && riskVsStockPct <= MSL_RISK_NEARMISS);
+    if (!structReady && _riskNear) {
+      // Risk just over Laura's 50% line, everything else set — "almost there", not a hard fail.
+      sumCls = 'moderate';
+      sumLabel = '⚠️ Nearly ready — risk is ' + fmt(riskVsStockPct,0) + '% of owning the stock, just over Laura\'s 50% line. Everything else is set; a slightly lower entry / lower IV (near the 200 SMA) brings it under. (MR is your timing call — not scored.)';
+    } else if (!structReady) {
       sumCls = 'wait';
       var failed = [];
       if (c2 !== true) failed.push('Put Credit ≥42%');
