@@ -863,7 +863,7 @@ function scoreSynthChains(price, mr, expiry, dte, callChain, putChain) {
   }
   out.netCostPct = netCostPct;
   out.c2 = out.ivRank !== null ? out.ivRank <= 50 : null; // IV not inflated (Laura: don't buy LEAPS at high IV); ≤30 = ideal
-  out.c4 = netCostPct !== null ? netCostPct <= 5 : null;
+  out.c4 = netCostPct !== null ? netCostPct <= 8 : null; // course SLs run ~5.5–7.5% of price
   out.c5 = slCall.oi !== null ? slCall.oi >= 500 : null;
   out.c6 = slPut.oi !== null ? slPut.oi >= 500 : null;
   out.c7 = (callSpreadPct !== null && putSpreadPct !== null) ? (callSpreadPct <= 10 && putSpreadPct <= 10) : null;
