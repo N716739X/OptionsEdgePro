@@ -3201,7 +3201,9 @@ function buildColCard(ticker, d, strategy, rank, isBestTrade) {
   // weighted score (not a flat pass-count) so the letter can never contradict the sort/badge.
   var grade = '';
   if (d.phase >= 2) {
-    if (d.phase < 3 && !isScored && strategy !== 'cc' && score <= 0) {
+    if (strategy === 'synth' && d.synthChainIncomplete && !d.synthChainStale) {
+      grade = ''; // LEAPS chain unpriceable — don't stamp a letter grade
+    } else if (d.phase < 3 && !isScored && strategy !== 'cc' && score <= 0) {
       grade = '';
     } else if (strategy === 'msl') {
       grade = mslLetterGrade(d, d.phase); // weighted, then capped to match the badge (gates / 3× reward)
@@ -3246,6 +3248,9 @@ function buildColCard(ticker, d, strategy, rank, isBestTrade) {
       badgeCls = 'badge-wait'; badgeTxt = 'WAIT FOR SETUP · ' + scoreLbl;
     }
     if (d.mslChainStale) badgeTxt += ' · STALE'; // score carried from a prior cycle; chain didn't refresh
+  } else if (strategy === 'synth' && d.synthChainIncomplete && !d.synthChainStale) {
+    // LEAPS chain present but unpriceable (empty mids/IV) and no prior good score — honest state, not a fake grade
+    badgeCls = 'badge-notready'; badgeTxt = 'No chain data';
   } else if (isScored) {
     // CSP — MR not scored (your timing call). Grade the structure; remind to confirm MR on the chart.
     if (pctScore >= 0.70)      { badgeCls = 'badge-ideal';    badgeTxt = 'IDEAL · ' + mrTag + ' · ' + scoreLbl; }
@@ -3821,7 +3826,15 @@ async function runSynthPhase3(ticker) {
       .filter(function(x){return x===true;}).length;
     d.synthChainStale = false;
     d.phase = 3;
-    snapshotSynth(d); // remember a good client Synth score for carry-forward
+    if (_synthChainScored(d)) {
+      d.synthChainIncomplete = false;
+      snapshotSynth(d); // remember a good client Synth score for carry-forward
+    } else if (!restoreStaleSynth(d)) {
+      // LEAPS chain present but unpriceable (empty mids/IV — common at/after the close) and no prior
+      // good score to carry forward. Don't publish a fabricated low grade (e.g. F · 1/3); flag it so
+      // the card shows an honest "No chain data" state instead.
+      d.synthChainIncomplete = true;
+    }
     renderColumns();
     renderMiniRankings('synth');
   } catch(e) { /* silently skip */ }
