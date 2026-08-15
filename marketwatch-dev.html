@@ -3811,7 +3811,10 @@ async function runSynthPhase3(ticker) {
         synthIVRank = ivRange > 0 ? Math.min(100, Math.max(0, (atmIV - ivs[0]) / ivRange * 100)) : 50;
       }
     }
-    d.ivRank = synthIVRank !== null ? synthIVRank : d.ivRank; // update card's ivRank to match synth expiry
+    // Keep the worker's TRUE IV Rank (52-wk) if it already set one; otherwise fall back to this proxy.
+    if (d.ivRankSource !== 'true' || d.ivRank == null) {
+      d.ivRank = synthIVRank !== null ? synthIVRank : d.ivRank; // update card's ivRank to match synth expiry (proxy)
+    }
 
     // James-aligned 7 criteria
     d.synth_c1 = !isNaN(pd.meanRev) ? pd.meanRev <= -2 : null; // Laura OG (MM46): synthetic-long entry at MR −2 (Deeply Oversold)
@@ -4066,6 +4069,7 @@ function applyServerScores(s) {
     weeklyMeanRev: s.weeklyMeanRev != null ? s.weeklyMeanRev : s.meanRev,
     sma200:      s.sma200,
     ivRank:      s.ivRank,
+    ivRankSource: (s.synth && s.synth.ivRankSource) || s.ivRankSource || 'proxy',
     expiry:      s.expiry,
     dte:         s.dte,
     bestStrike:  s.bestStrike,
@@ -4891,6 +4895,9 @@ async function runSynth(forceTicker) {
         synthIVRank = _ivRange > 0 ? Math.min(100, Math.max(0, (_atmIV - _ivs[0]) / _ivRange * 100)) : 50;
       }
     }
+    // Prefer the worker's TRUE IV Rank (52-wk) when seeded; otherwise this local cross-strike proxy.
+    var _synthIv = resolveIvRank(ticker, synthIVRank);
+    synthIVRank = _synthIv.rank; var synthIVSource = _synthIv.source;
 
     // 5 criteria (MR not scored). c2 = IV not inflated (LEAPS entry timing).
     var c1 = !isNaN(pd.meanRev) ? pd.meanRev <= -2 : null; // Laura OG (MM46): synthetic-long entry at MR −2 (Deeply Oversold)
@@ -5006,7 +5013,7 @@ async function runSynth(forceTicker) {
 
     html += '<div class="scorecard"><h3>Synthetic Long — Score</h3><div class="criteria-list">';
     html += mrConfirmRow(ticker, 'bottom'); // MR not scored — manual confirm on the user's ETH chart
-    html += critRow(1,'IV Not Inflated — IV Rank ≤ 50 (≤30 = Ideal)', c2, synthIVRank !== null ? 'IVR ' + fmt(synthIVRank,0) + (c2Ideal ? ' ✨ IDEAL' : '') : 'N/A');
+    html += critRow(1,'IV Not Inflated — IV Rank ≤ 50 (≤30 = Ideal)', c2, synthIVRank !== null ? ivRankLabel(synthIVRank, synthIVSource) + (c2Ideal ? ' ✨ IDEAL' : '') : 'N/A');
     html += critRow(2,'Duration ≥ 540 DTE (LEAPS-Length)', c3, dte + ' days');
     html += critRow(3,'Net Debit ≤ 8% (Put Funds the Call)', c4, netCostPct !== null ? fmt(Math.abs(netCostPct),2) + '%' : 'N/A');
     html += critRow(4,'Both Spreads ≤ 10% (Tight)', c7, (callSpreadPct !== null ? fmt(callSpreadPct,1)+'%' : '—')+' / '+(putSpreadPct !== null ? fmt(putSpreadPct,1)+'%' : '—'));
@@ -5227,6 +5234,18 @@ function mslComputeGrade(pd, callChain, putChain, cIdx, sIdx, bIdx, dte) {
   return m;
 }
 
+// IV-Rank resolver: the worker computes a TRUE IV Rank (implied vol vs its own trailing 52 weeks)
+// and stores it on the card as ivRankSource='true'. The analyzer pages compute only a cross-strike
+// PROXY locally, so prefer the card's true value when it's available; otherwise keep the proxy.
+function resolveIvRank(ticker, localProxyRank) {
+  var cd = (typeof cardData !== 'undefined' && ticker) ? cardData[ticker] : null;
+  if (cd && cd.ivRankSource === 'true' && cd.ivRank != null) return { rank: cd.ivRank, source: 'true' };
+  return { rank: localProxyRank, source: 'proxy' };
+}
+function ivRankLabel(rank, source) {
+  if (rank == null) return 'N/A';
+  return 'IVR ' + fmt(rank, 0) + (source === 'true' ? ' · 52-wk' : ' · est');
+}
 // Render one option-chain leg (call or put) as a browsable LEAPS table, marking the ATM (★)
 // and, when given, the user's chosen strike (◆ + highlighted row). Shared by SL Find Best & Grade Mine.
 function synthLegChainHtml(title, sub, chain, price, highlightStrike) {
@@ -5383,6 +5402,14 @@ async function gradeSynth() {
     if (!um) throw new Error('Could not price your legs from the chain.');
     var ai = synthAtmIdx(callChain, putChain, pd.price);
     var app = (ai.callIdx >= 0) ? synthComputeGrade(pd, callChain, putChain, ai.callIdx, ai.putIdx, dte) : null;
+    // Prefer the worker's TRUE IV Rank (52-wk) when seeded; IV is per-underlying, so apply to both legs.
+    var _giv = resolveIvRank(ticker, um.ivRank), synthIVSource = _giv.source;
+    if (_giv.source === 'true' && _giv.rank != null) {
+      um.ivRank = _giv.rank; um.c2 = _giv.rank <= 50; um.c2Ideal = _giv.rank <= 30;
+      um.score = [um.c2, um.c3, um.c4, um.c7].filter(function(x){return x===true;}).length;
+      if (app) { app.ivRank = _giv.rank; app.c2 = _giv.rank <= 50; app.c2Ideal = _giv.rank <= 30;
+        app.score = [app.c2, app.c3, app.c4, app.c7].filter(function(x){return x===true;}).length; }
+    }
     setStatus('synth-status', 'Done', 'ok');
 
     var snapped = (Math.abs(callChain.strike[uc] - cS) > 0.001) || (Math.abs(putChain.strike[up] - pS) > 0.001);
@@ -5402,7 +5429,7 @@ async function gradeSynth() {
     // Scorecard on the USER's legs (MR not scored — manual timing call)
     html += '<div class="scorecard"><h3>Your SL — Grade</h3><div class="criteria-list">';
     html += mrConfirmRow(ticker, 'bottom');
-    html += critRow(1, 'IV Not Inflated — IV Rank ≤ 50 (≤30 = Ideal)', um.c2, um.ivRank !== null ? 'IVR ' + fmt(um.ivRank, 0) + (um.c2Ideal ? ' ✨ IDEAL' : '') : 'N/A');
+    html += critRow(1, 'IV Not Inflated — IV Rank ≤ 50 (≤30 = Ideal)', um.c2, um.ivRank !== null ? ivRankLabel(um.ivRank, synthIVSource) + (um.c2Ideal ? ' ✨ IDEAL' : '') : 'N/A');
     html += critRow(2, 'Duration ≥ 540 DTE (LEAPS-Length)', um.c3, dte + ' days');
     html += critRow(3, 'Net Debit ≤ 8% (Put Funds the Call)', um.c4, um.netCostPct !== null ? fmt(Math.abs(um.netCostPct), 2) + '%' : 'N/A');
     html += critRow(4, 'Both Spreads ≤ 10% (Tight)', um.c7, (um.callSpreadPct !== null ? fmt(um.callSpreadPct, 1) + '%' : '—') + ' / ' + (um.putSpreadPct !== null ? fmt(um.putSpreadPct, 1) + '%' : '—'));
@@ -5421,7 +5448,7 @@ async function gradeSynth() {
           gmRow('Sell Put', fmtDollar(um.putStrike), fmtDollar(app.putStrike), um.putStrike === app.putStrike ? 'ok' : 'diff') +
           gmRow('Same strike?', um.sameStrike ? 'Yes' : 'No', app.sameStrike ? 'Yes' : 'No', um.sameStrike ? 'ok' : 'diff') +
           gmRow('Net debit', um.netCostPct != null ? fmt(um.netCostPct, 2) + '% of price' : '—', app.netCostPct != null ? fmt(app.netCostPct, 2) + '% of price' : '—', '') +
-          gmRow('IV Rank', um.ivRank != null ? fmt(um.ivRank, 0) : '—', app.ivRank != null ? fmt(app.ivRank, 0) : '—', '') +
+          gmRow('IV Rank' + (synthIVSource === 'true' ? ' (52-wk)' : ' (est)'), um.ivRank != null ? fmt(um.ivRank, 0) : '—', app.ivRank != null ? fmt(app.ivRank, 0) : '—', '') +
           gmRow('Breakeven', um.breakeven != null ? fmtDollar(um.breakeven) + (um.beAboveCur != null ? ' (' + (um.beAboveCur >= 0 ? '+' : '') + fmt(um.beAboveCur, 1) + '%)' : '') : '—', app.breakeven != null ? fmtDollar(app.breakeven) + (app.beAboveCur != null ? ' (' + (app.beAboveCur >= 0 ? '+' : '') + fmt(app.beAboveCur, 1) + '%)' : '') : '—', '') +
           gmRow('Max loss (stock → $0)', um.maxLoss != null ? '$' + fmt(um.maxLoss, 0) : '—', app.maxLoss != null ? '$' + fmt(app.maxLoss, 0) : '—', '') +
           gmRow('Margin req (est)', um.marginReq != null ? '$' + fmt(um.marginReq, 0) : '—', app.marginReq != null ? '$' + fmt(app.marginReq, 0) : '—', '') +
@@ -5718,6 +5745,8 @@ async function runMsl(forceTicker) {
         mslIVRank = _mivRange > 0 ? Math.min(100, Math.max(0, (_mivAtm - _mivs[0]) / _mivRange * 100)) : 50;
       }
     }
+    // Prefer the worker's TRUE IV Rank (52-wk) when seeded; otherwise this cross-strike proxy.
+    var _mslIv = resolveIvRank(ticker, mslIVRank); mslIVRank = _mslIv.rank; var mslIVSource = _mslIv.source;
     var mslIVHigh = mslIVRank !== null && mslIVRank > 50;
 
     var html = priceBarHtml(ticker, pd, '4H');
@@ -5726,7 +5755,7 @@ async function runMsl(forceTicker) {
       '<span style="color:var(--text-muted);text-transform:uppercase;letter-spacing:0.8px;font-weight:700">Expiry</span><span style="color:var(--accent);font-weight:800">' + expiryDisplay(bestExpiry) + '</span>' +
       '<span style="color:var(--text-muted);text-transform:uppercase;letter-spacing:0.8px;font-weight:700;margin-left:8px">DTE</span><span style="color:var(--accent);font-weight:800">' + dte + ' days</span>' +
       '<span style="color:var(--text-muted);text-transform:uppercase;letter-spacing:0.8px;font-weight:700;margin-left:8px">Net Debit % of Price</span><span style="color:' + (netDebitPct !== null && netDebitPct <= 33 ? 'var(--green)' : 'var(--accent)') + ';font-weight:800">' + (netDebitPct !== null ? fmt(netDebitPct,1) + '%' : '—') + '</span>' +
-      '<span style="color:var(--text-muted);text-transform:uppercase;letter-spacing:0.8px;font-weight:700;margin-left:8px" title="IV Rank at this LEAPS expiry — informational, not scored. High IV inflates the call; watch the debit & risk criteria.">IV Rank</span><span style="color:' + (mslIVHigh ? 'var(--red)' : mslIVRank !== null ? 'var(--green)' : 'var(--text-muted)') + ';font-weight:800">' + (mslIVRank !== null ? fmt(mslIVRank,0) + (mslIVHigh ? ' · high' : '') : '—') + '</span>' +
+      '<span style="color:var(--text-muted);text-transform:uppercase;letter-spacing:0.8px;font-weight:700;margin-left:8px" title="IV Rank at this LEAPS expiry — informational, not scored. High IV inflates the call; watch the debit & risk criteria.">IV Rank</span><span style="color:' + (mslIVHigh ? 'var(--red)' : mslIVRank !== null ? 'var(--green)' : 'var(--text-muted)') + ';font-weight:800">' + (mslIVRank !== null ? fmt(mslIVRank,0) + (mslIVSource === 'true' ? ' · 52wk' : ' · est') + (mslIVHigh ? ' · high' : '') : '—') + '</span>' +
       '<span style="color:var(--text-muted);text-transform:uppercase;letter-spacing:0.8px;font-weight:700;margin-left:8px" title="App regular-hours MR estimate — not scored; confirm on your ETH chart">MR · 4H (RTH est.)</span><span style="color:var(--' + (mrZone(pd.meanRev).cls === 'down' ? 'green' : mrZone(pd.meanRev).cls === 'up' ? 'red' : 'text-muted') + ');font-weight:800">' + (!isNaN(pd.meanRev) ? fmt(pd.meanRev,2) + ' · ' + mrZone(pd.meanRev).short : '—') + '</span>' +
     '</div>';
 
