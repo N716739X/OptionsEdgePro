@@ -72,6 +72,10 @@ async function initDB(db) {
   await db.prepare(
     "CREATE TABLE IF NOT EXISTS chain_cache (ticker TEXT PRIMARY KEY, iv_rank REAL, best_strike REAL, best_premium REAL, best_delta REAL, prem_pct REAL, earnings_risk INTEGER, updated_at INTEGER)"
   ).run();
+  // Trailing ~52-week ATM implied-vol samples, for a TRUE IV Rank (implied vol vs its own history).
+  await db.prepare(
+    "CREATE TABLE IF NOT EXISTS iv_history (ticker TEXT NOT NULL, sample_date TEXT NOT NULL, atm_iv REAL, PRIMARY KEY (ticker, sample_date))"
+  ).run();
 }
 
 function json(data, status = 200) {
@@ -759,6 +763,72 @@ function scoreMslChains(price, mr, expiry, dte, callChain, putChain, week52H) {
   return out;
 }
 
+// ── True IV Rank ────────────────────────────────────────────────────────────────
+// Laura's "don't buy LEAPS when IV is inflated" needs IMPLIED vol ranked over ~1 year.
+// We sample ~30-day ATM IV weekly from MarketData's historical chains (cached in D1) and
+// rank today's ATM IV within that window — E*Trade's IV Rank definition. Everything here is
+// best-effort: any failure falls back to the caller's cross-strike proxy so scoring never breaks.
+const IV_HIST_DAYS = 365, IV_SAMPLE_STEP = 7, IV_MIN_SAMPLES = 20, IV_BACKFILL_MAX = 4;
+function _ivYmd(d) { return d.getUTCFullYear() + '-' + ('0'+(d.getUTCMonth()+1)).slice(-2) + '-' + ('0'+d.getUTCDate()).slice(-2); }
+// ATM IV (%) = the IV of the strike nearest the underlying price.
+function atmIvFromChain(chain, price) {
+  if (!chain || !chain.strike || !chain.iv) return null;
+  let px = price;
+  if (px == null) px = Array.isArray(chain.underlyingPrice) ? chain.underlyingPrice[0] : chain.underlyingPrice;
+  if (px == null || isNaN(px)) return null;
+  let best = Infinity, iv = null;
+  for (let i = 0; i < chain.strike.length; i++) {
+    const s = chain.strike[i]; if (s == null) continue;
+    const v = chain.iv[i]; if (v == null || isNaN(v) || v <= 0) continue;
+    const d = Math.abs(s - px);
+    if (d < best) { best = d; iv = v <= 1 ? v * 100 : v; }
+  }
+  return iv;
+}
+// Weekly sample dates (UTC) over the trailing IV_HIST_DAYS, excluding today.
+function ivSampleDates() {
+  const out = [], now = Date.now();
+  for (let day = IV_HIST_DAYS; day >= IV_SAMPLE_STEP; day -= IV_SAMPLE_STEP) out.push(_ivYmd(new Date(now - day * 86400000)));
+  return out;
+}
+async function recordAtmIv(env, ticker, dateStr, iv) {
+  if (!env || !env.DB || iv == null || isNaN(iv)) return;
+  try { await env.DB.prepare("INSERT OR IGNORE INTO iv_history (ticker, sample_date, atm_iv) VALUES (?, ?, ?)").bind(ticker, dateStr, iv).run(); } catch (e) {}
+}
+// Bounded, best-effort backfill of missing weekly ATM-IV samples from historical ~30-DTE chains.
+async function backfillIvHistory(env, ticker) {
+  if (!env || !env.DB) return;
+  let have = new Set();
+  try {
+    const rows = await env.DB.prepare("SELECT sample_date FROM iv_history WHERE ticker = ?").bind(ticker).all();
+    ((rows && rows.results) || []).forEach(r => have.add(r.sample_date));
+  } catch (e) { return; }
+  const missing = ivSampleDates().filter(d => !have.has(d)).slice(0, IV_BACKFILL_MAX);
+  if (!missing.length) return;
+  await Promise.all(missing.map(async (dateStr) => {
+    try {
+      const ch = await cachedFetch('https://api.marketdata.app/v1/options/chain/' + ticker + '/?date=' + dateStr + '&dte=30&side=put&token=' + env.MD_TOKEN).catch(() => null);
+      const iv = atmIvFromChain(ch, null);
+      if (iv != null) await recordAtmIv(env, ticker, dateStr, iv);
+    } catch (e) {}
+  }));
+}
+// True IV Rank from stored history + today's ATM IV. Returns null when under-seeded (caller keeps proxy).
+async function trueIvRank(env, ticker, todayIv) {
+  if (!env || !env.DB || todayIv == null || isNaN(todayIv)) return null;
+  try {
+    await recordAtmIv(env, ticker, _ivYmd(new Date()), todayIv);
+    const since = _ivYmd(new Date(Date.now() - IV_HIST_DAYS * 86400000));
+    const rows = await env.DB.prepare("SELECT atm_iv FROM iv_history WHERE ticker = ? AND sample_date >= ?").bind(ticker, since).all();
+    const vals = (((rows && rows.results) || []).map(r => r.atm_iv)).filter(v => v != null && !isNaN(v) && v > 0);
+    if (vals.length < IV_MIN_SAMPLES) return null;
+    let lo = Infinity, hi = -Infinity;
+    for (const v of vals) { if (v < lo) lo = v; if (v > hi) hi = v; }
+    const rank = hi > lo ? Math.min(100, Math.max(0, (todayIv - lo) / (hi - lo) * 100)) : 50;
+    return { rank, samples: vals.length };
+  } catch (e) { return null; }
+}
+
 function scoreSynthChains(price, mr, expiry, dte, callChain, putChain) {
   const out = { chainScored: false, expiry: expiry, dte: dte, mr: mr,
     c1: !isNaN(mr) ? mr <= -2 : null, c2: null, c3: dte >= 540, c4: null, c5: null, c6: null, c7: null, ivRank: null, netCostPct: null, score: null };
@@ -928,13 +998,16 @@ async function scoreTicker(ticker, env) {
   } catch (e) { nextEarnings = null; }
 
   const earningsRisk = (bestExpiry && nextEarnings) ? (nextEarnings < bestExpiry) : null;
-  let bestPremium = null, bestStrike = null, bestDelta = null, ivRank = null;
+  let bestPremium = null, bestStrike = null, bestDelta = null, ivRank = null, todayAtmIv = null;
 
   if (bestExpiry) {
     try {
       const putChain = await cachedFetch(
         'https://api.marketdata.app/v1/options/chain/' + ticker + '/?expiration=' + bestExpiry + '&side=put&token=' + env.MD_TOKEN
       );
+
+      // Today's ~30-day ATM IV — the current point for the true IV Rank (E*Trade uses ~30d IV).
+      todayAtmIv = atmIvFromChain(putChain, price);
 
       // IV rank from chain
       if (putChain?.iv?.length > 0) {
@@ -1064,7 +1137,21 @@ async function scoreTicker(ticker, env) {
   }
   const synthCh = scoreSynthChains(price, weeklyMeanRev, leapsExpiry, leapsDte, leapsCall, leapsPut);
   const mslCh   = scoreMslChains(price, meanRev, leapsExpiry, leapsDte, leapsCall, leapsPut, week52H);
-  if (synthCh.ivRank !== null) ivRank = synthCh.ivRank; // match the analyzer's LEAPS-expiry IV rank
+  if (synthCh.ivRank !== null) ivRank = synthCh.ivRank; // match the analyzer's LEAPS-expiry IV rank (proxy)
+  // TRUE IV Rank (implied vol vs its own trailing 52 weeks) — Laura's "don't buy inflated IV". Overrides
+  // the cross-strike proxy once enough history is seeded; otherwise leaves the proxy in place. Best-effort.
+  let ivRankSource = 'proxy';
+  try {
+    const tiv = await trueIvRank(env, ticker, todayAtmIv);
+    if (tiv) {
+      ivRank = tiv.rank;
+      synthCh.ivRank = tiv.rank;
+      synthCh.c2 = tiv.rank <= 50;
+      synthCh.score = [synthCh.c1, synthCh.c2, synthCh.c3, synthCh.c4, synthCh.c7].filter(x => x === true).length;
+      ivRankSource = 'true';
+    }
+    await backfillIvHistory(env, ticker); // bounded, best-effort — seeds future requests
+  } catch (e) { /* keep the proxy */ }
   const chainScored = synthCh.chainScored && mslCh.chainScored;
 
   const synthScore = synthCh.score !== null ? synthCh.score : [synthCh.c1, synthCh.c2, synthCh.c3, synthCh.c4, synthCh.c7].filter(x => x === true).length;
@@ -1079,13 +1166,13 @@ async function scoreTicker(ticker, env) {
   return {
     ticker,
     price, change, changePct, week52H, week52L, meanRev, weeklyMeanRev, sma200,
-    ivRank, expiry: bestExpiry, dte, bestStrike, bestPremium, premPct, earningsRisk, nextEarnings,
+    ivRank, ivRankSource, expiry: bestExpiry, dte, bestStrike, bestPremium, premPct, earningsRisk, nextEarnings,
     atrSeries, chainScored, mslExpiry: leapsExpiry,
     // Covered-call-specific display data (its own expiry/strike/premium from the call chain)
     ccExpiry, ccDte, ccStrike, ccPremium, ccPremPct,
     put:   { score: putScore, total: 6, grade: scoreToGrade(putScore, 6), badge: putBadge, c1: put_c1, c2: put_c2, c3: put_c3, c4: put_c4, c5: put_c5, c6: put_c6, c7: put_c7 },
     cc:    { score: ccScore, total: 6, grade: scoreToGrade(ccScore, 6), badge: ccBadge, c1: cc_c1, c2: cc_c2, c3: cc_c3, c4: cc_c4, c5: cc_c5, c6: cc_c6, c7: cc_c7 },
-    synth: { score: synthScore, total: 5, grade: scoreToGrade(synthScore, 5), badge: synthBadge, mr: synthCh.mr, netCostPct: synthCh.netCostPct, ivRank: synthCh.ivRank,
+    synth: { score: synthScore, total: 5, grade: scoreToGrade(synthScore, 5), badge: synthBadge, mr: synthCh.mr, netCostPct: synthCh.netCostPct, ivRank: synthCh.ivRank, ivRankSource: ivRankSource,
              c1: synthCh.c1, c2: synthCh.c2, c3: synthCh.c3, c4: synthCh.c4, c5: synthCh.c5, c6: synthCh.c6, c7: synthCh.c7 },
     msl:   { score: mslScore, total: 7, grade: scoreToGrade(mslScore, 7), badge: mslBadge, weighted: mslCh.weighted, t1Pass: mslCh.t1Pass,
              mr: mslCh.mr, callRatio: mslCh.callRatio, netDebitPct: mslCh.netDebitPct, riskRatio: mslCh.riskRatio, riskVsStockPct: mslCh.riskVsStockPct, expiry: mslCh.expiry,
