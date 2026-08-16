@@ -768,8 +768,13 @@ function scoreMslChains(price, mr, expiry, dte, callChain, putChain, week52H) {
 // We sample ~30-day ATM IV weekly from MarketData's historical chains (cached in D1) and
 // rank today's ATM IV within that window — E*Trade's IV Rank definition. Everything here is
 // best-effort: any failure falls back to the caller's cross-strike proxy so scoring never breaks.
-const IV_HIST_DAYS = 365, IV_SAMPLE_STEP = 7, IV_MIN_SAMPLES = 20, IV_BACKFILL_MAX = 4;
+const IV_HIST_DAYS = 365, IV_MIN_SAMPLES = 20, IV_BACKFILL_MAX = 30, IV_BACKFILL_BATCH = 5;
 function _ivYmd(d) { return d.getUTCFullYear() + '-' + ('0'+(d.getUTCMonth()+1)).slice(-2) + '-' + ('0'+d.getUTCDate()).slice(-2); }
+// Most recent completed Friday on/before ms — a stable weekly grid (trading day) that doesn't drift day-to-day.
+function _mostRecentFriday(ms) {
+  const d = new Date(ms), back = (d.getUTCDay() + 2) % 7; // Fri->0, Sat->1, Sun->2, Mon->3, ...
+  return new Date(d.getTime() - back * 86400000);
+}
 // ATM IV (%) = the IV of the strike nearest the underlying price.
 function atmIvFromChain(chain, price) {
   if (!chain || !chain.strike || !chain.iv) return null;
@@ -785,15 +790,19 @@ function atmIvFromChain(chain, price) {
   }
   return iv;
 }
-// Weekly sample dates (UTC) over the trailing IV_HIST_DAYS, excluding today.
+// 52 stable weekly Fridays over the trailing year — anchored to calendar Fridays (a trading day), NOT to
+// "today", so the set doesn't shift day-to-day and backfill settles to empty once a ticker is seeded.
 function ivSampleDates() {
-  const out = [], now = Date.now();
-  for (let day = IV_HIST_DAYS; day >= IV_SAMPLE_STEP; day -= IV_SAMPLE_STEP) out.push(_ivYmd(new Date(now - day * 86400000)));
+  const out = [], f = _mostRecentFriday(Date.now() - 86400000);
+  for (let w = 0; w < 52; w++) out.push(_ivYmd(new Date(f.getTime() - w * 7 * 86400000)));
   return out;
 }
+// Store a sample. iv may be null → stored as a "checked, no data" marker so weekends/holidays/empties
+// aren't re-fetched forever (which would stall backfill on the same oldest missing dates every request).
 async function recordAtmIv(env, ticker, dateStr, iv) {
-  if (!env || !env.DB || iv == null || isNaN(iv)) return;
-  try { await env.DB.prepare("INSERT OR IGNORE INTO iv_history (ticker, sample_date, atm_iv) VALUES (?, ?, ?)").bind(ticker, dateStr, iv).run(); } catch (e) {}
+  if (!env || !env.DB || !dateStr) return;
+  const val = (iv == null || isNaN(iv)) ? null : iv;
+  try { await env.DB.prepare("INSERT OR IGNORE INTO iv_history (ticker, sample_date, atm_iv) VALUES (?, ?, ?)").bind(ticker, dateStr, val).run(); } catch (e) {}
 }
 // Bounded, best-effort backfill of missing weekly ATM-IV samples from historical ~30-DTE chains.
 async function backfillIvHistory(env, ticker) {
@@ -805,28 +814,32 @@ async function backfillIvHistory(env, ticker) {
   } catch (e) { return; }
   const missing = ivSampleDates().filter(d => !have.has(d)).slice(0, IV_BACKFILL_MAX);
   if (!missing.length) return;
-  await Promise.all(missing.map(async (dateStr) => {
-    try {
+  // Throttled batches — one successful refresh seeds the year without a huge parallel burst.
+  for (let i = 0; i < missing.length; i += IV_BACKFILL_BATCH) {
+    const batch = missing.slice(i, i + IV_BACKFILL_BATCH);
+    await Promise.all(batch.map(async (dateStr) => {
       const ch = await cachedFetch('https://api.marketdata.app/v1/options/chain/' + ticker + '/?date=' + dateStr + '&dte=30&side=put&token=' + env.MD_TOKEN).catch(() => null);
-      const iv = atmIvFromChain(ch, null);
-      if (iv != null) await recordAtmIv(env, ticker, dateStr, iv);
-    } catch (e) {}
-  }));
+      if (ch == null) return; // fetch failed (rate limit / network) — leave the date missing so it retries next time
+      await recordAtmIv(env, ticker, dateStr, atmIvFromChain(ch, null)); // real response → store the IV, or a null marker (holiday/no-data)
+    }));
+  }
 }
-// True IV Rank from stored history + today's ATM IV. Returns null when under-seeded (caller keeps proxy).
-async function trueIvRank(env, ticker, todayIv) {
-  if (!env || !env.DB || todayIv == null || isNaN(todayIv)) return null;
+// IV-rank state: {rank, source, samples}. Records today's ATM IV, then ranks it within the trailing 52
+// weeks once >= IV_MIN_SAMPLES real samples exist. Under-seeded → source 'proxy' (caller keeps its proxy).
+async function ivRankState(env, ticker, todayIv) {
+  if (!env || !env.DB || todayIv == null || isNaN(todayIv)) return { rank: null, source: 'proxy', samples: 0 };
   try {
     await recordAtmIv(env, ticker, _ivYmd(new Date()), todayIv);
     const since = _ivYmd(new Date(Date.now() - IV_HIST_DAYS * 86400000));
-    const rows = await env.DB.prepare("SELECT atm_iv FROM iv_history WHERE ticker = ? AND sample_date >= ?").bind(ticker, since).all();
+    const rows = await env.DB.prepare("SELECT atm_iv FROM iv_history WHERE ticker = ? AND sample_date >= ? AND atm_iv IS NOT NULL").bind(ticker, since).all();
     const vals = (((rows && rows.results) || []).map(r => r.atm_iv)).filter(v => v != null && !isNaN(v) && v > 0);
-    if (vals.length < IV_MIN_SAMPLES) return null;
+    const samples = vals.length;
+    if (samples < IV_MIN_SAMPLES) return { rank: null, source: 'proxy', samples };
     let lo = Infinity, hi = -Infinity;
     for (const v of vals) { if (v < lo) lo = v; if (v > hi) hi = v; }
     const rank = hi > lo ? Math.min(100, Math.max(0, (todayIv - lo) / (hi - lo) * 100)) : 50;
-    return { rank, samples: vals.length };
-  } catch (e) { return null; }
+    return { rank, source: 'true', samples };
+  } catch (e) { return { rank: null, source: 'proxy', samples: 0 }; }
 }
 
 function scoreSynthChains(price, mr, expiry, dte, callChain, putChain) {
@@ -1140,10 +1153,11 @@ async function scoreTicker(ticker, env) {
   if (synthCh.ivRank !== null) ivRank = synthCh.ivRank; // match the analyzer's LEAPS-expiry IV rank (proxy)
   // TRUE IV Rank (implied vol vs its own trailing 52 weeks) — Laura's "don't buy inflated IV". Overrides
   // the cross-strike proxy once enough history is seeded; otherwise leaves the proxy in place. Best-effort.
-  let ivRankSource = 'proxy';
+  let ivRankSource = 'proxy', ivSamples = 0;
   try {
-    const tiv = await trueIvRank(env, ticker, todayAtmIv);
-    if (tiv) {
+    const tiv = await ivRankState(env, ticker, todayAtmIv);
+    ivSamples = tiv.samples;
+    if (tiv.source === 'true' && tiv.rank != null) {
       ivRank = tiv.rank;
       synthCh.ivRank = tiv.rank;
       synthCh.c2 = tiv.rank <= 50;
@@ -1166,7 +1180,7 @@ async function scoreTicker(ticker, env) {
   return {
     ticker,
     price, change, changePct, week52H, week52L, meanRev, weeklyMeanRev, sma200,
-    ivRank, ivRankSource, expiry: bestExpiry, dte, bestStrike, bestPremium, premPct, earningsRisk, nextEarnings,
+    ivRank, ivRankSource, ivSamples, expiry: bestExpiry, dte, bestStrike, bestPremium, premPct, earningsRisk, nextEarnings,
     atrSeries, chainScored, mslExpiry: leapsExpiry,
     // Covered-call-specific display data (its own expiry/strike/premium from the call chain)
     ccExpiry, ccDte, ccStrike, ccPremium, ccPremPct,

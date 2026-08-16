@@ -4070,6 +4070,7 @@ function applyServerScores(s) {
     sma200:      s.sma200,
     ivRank:      s.ivRank,
     ivRankSource: (s.synth && s.synth.ivRankSource) || s.ivRankSource || 'proxy',
+    ivSamples:   s.ivSamples != null ? s.ivSamples : null,
     expiry:      s.expiry,
     dte:         s.dte,
     bestStrike:  s.bestStrike,
@@ -4897,7 +4898,7 @@ async function runSynth(forceTicker) {
     }
     // Prefer the worker's TRUE IV Rank (52-wk) when seeded; otherwise this local cross-strike proxy.
     var _synthIv = resolveIvRank(ticker, synthIVRank);
-    synthIVRank = _synthIv.rank; var synthIVSource = _synthIv.source;
+    synthIVRank = _synthIv.rank; var synthIVSource = _synthIv.source, synthIVSamples = _synthIv.samples;
 
     // 5 criteria (MR not scored). c2 = IV not inflated (LEAPS entry timing).
     var c1 = !isNaN(pd.meanRev) ? pd.meanRev <= -2 : null; // Laura OG (MM46): synthetic-long entry at MR −2 (Deeply Oversold)
@@ -5013,7 +5014,7 @@ async function runSynth(forceTicker) {
 
     html += '<div class="scorecard"><h3>Synthetic Long — Score</h3><div class="criteria-list">';
     html += mrConfirmRow(ticker, 'bottom'); // MR not scored — manual confirm on the user's ETH chart
-    html += critRow(1,'IV Not Inflated — IV Rank ≤ 50 (≤30 = Ideal)', c2, synthIVRank !== null ? ivRankLabel(synthIVRank, synthIVSource) + (c2Ideal ? ' ✨ IDEAL' : '') : 'N/A');
+    html += critRow(1,'IV Not Inflated — IV Rank ≤ 50 (≤30 = Ideal)', c2, synthIVRank !== null ? ivRankLabel(synthIVRank, synthIVSource, synthIVSamples) + (c2Ideal ? ' ✨ IDEAL' : '') : 'N/A');
     html += critRow(2,'Duration ≥ 540 DTE (LEAPS-Length)', c3, dte + ' days');
     html += critRow(3,'Net Debit ≤ 8% (Put Funds the Call)', c4, netCostPct !== null ? fmt(Math.abs(netCostPct),2) + '%' : 'N/A');
     html += critRow(4,'Both Spreads ≤ 10% (Tight)', c7, (callSpreadPct !== null ? fmt(callSpreadPct,1)+'%' : '—')+' / '+(putSpreadPct !== null ? fmt(putSpreadPct,1)+'%' : '—'));
@@ -5239,12 +5240,16 @@ function mslComputeGrade(pd, callChain, putChain, cIdx, sIdx, bIdx, dte) {
 // PROXY locally, so prefer the card's true value when it's available; otherwise keep the proxy.
 function resolveIvRank(ticker, localProxyRank) {
   var cd = (typeof cardData !== 'undefined' && ticker) ? cardData[ticker] : null;
-  if (cd && cd.ivRankSource === 'true' && cd.ivRank != null) return { rank: cd.ivRank, source: 'true' };
-  return { rank: localProxyRank, source: 'proxy' };
+  var samples = (cd && cd.ivSamples != null) ? cd.ivSamples : null;
+  if (cd && cd.ivRankSource === 'true' && cd.ivRank != null) return { rank: cd.ivRank, source: 'true', samples: samples };
+  return { rank: localProxyRank, source: 'proxy', samples: samples };
 }
-function ivRankLabel(rank, source) {
+function ivRankLabel(rank, source, samples) {
   if (rank == null) return 'N/A';
-  return 'IVR ' + fmt(rank, 0) + (source === 'true' ? ' · 52-wk' : ' · est');
+  if (source === 'true') return 'IVR ' + fmt(rank, 0) + ' · 52-wk';
+  // proxy — show seeding progress toward the true 52-week rank when we know it
+  var seed = (samples != null && samples > 0) ? ' · seeding ' + Math.min(samples, 20) + '/20' : '';
+  return 'IVR ' + fmt(rank, 0) + ' · est' + seed;
 }
 // Render one option-chain leg (call or put) as a browsable LEAPS table, marking the ATM (★)
 // and, when given, the user's chosen strike (◆ + highlighted row). Shared by SL Find Best & Grade Mine.
@@ -5403,7 +5408,7 @@ async function gradeSynth() {
     var ai = synthAtmIdx(callChain, putChain, pd.price);
     var app = (ai.callIdx >= 0) ? synthComputeGrade(pd, callChain, putChain, ai.callIdx, ai.putIdx, dte) : null;
     // Prefer the worker's TRUE IV Rank (52-wk) when seeded; IV is per-underlying, so apply to both legs.
-    var _giv = resolveIvRank(ticker, um.ivRank), synthIVSource = _giv.source;
+    var _giv = resolveIvRank(ticker, um.ivRank), synthIVSource = _giv.source, synthIVSamples = _giv.samples;
     if (_giv.source === 'true' && _giv.rank != null) {
       um.ivRank = _giv.rank; um.c2 = _giv.rank <= 50; um.c2Ideal = _giv.rank <= 30;
       um.score = [um.c2, um.c3, um.c4, um.c7].filter(function(x){return x===true;}).length;
@@ -5429,7 +5434,7 @@ async function gradeSynth() {
     // Scorecard on the USER's legs (MR not scored — manual timing call)
     html += '<div class="scorecard"><h3>Your SL — Grade</h3><div class="criteria-list">';
     html += mrConfirmRow(ticker, 'bottom');
-    html += critRow(1, 'IV Not Inflated — IV Rank ≤ 50 (≤30 = Ideal)', um.c2, um.ivRank !== null ? ivRankLabel(um.ivRank, synthIVSource) + (um.c2Ideal ? ' ✨ IDEAL' : '') : 'N/A');
+    html += critRow(1, 'IV Not Inflated — IV Rank ≤ 50 (≤30 = Ideal)', um.c2, um.ivRank !== null ? ivRankLabel(um.ivRank, synthIVSource, synthIVSamples) + (um.c2Ideal ? ' ✨ IDEAL' : '') : 'N/A');
     html += critRow(2, 'Duration ≥ 540 DTE (LEAPS-Length)', um.c3, dte + ' days');
     html += critRow(3, 'Net Debit ≤ 8% (Put Funds the Call)', um.c4, um.netCostPct !== null ? fmt(Math.abs(um.netCostPct), 2) + '%' : 'N/A');
     html += critRow(4, 'Both Spreads ≤ 10% (Tight)', um.c7, (um.callSpreadPct !== null ? fmt(um.callSpreadPct, 1) + '%' : '—') + ' / ' + (um.putSpreadPct !== null ? fmt(um.putSpreadPct, 1) + '%' : '—'));
@@ -6345,7 +6350,7 @@ refreshDashboard = function(forceRefresh) {
     var secsLeft = Math.ceil((_refreshCooldown - elapsed) / 1000);
     var mins = Math.floor(secsLeft / 60);
     var secs = secsLeft % 60;
-    if (btn) btn.textContent = '\u21BA ' + mins + ':' + (secs < 10 ? '0' : '') + secs;
+    if (btn) { btn.textContent = '\u21BA WAIT ' + mins + ':' + (secs < 10 ? '0' : '') + secs; btn.title = 'Refresh is on a 5-minute cooldown to conserve API credits \u2014 next refresh available in ' + mins + ':' + (secs < 10 ? '0' : '') + secs; }
     return;
   }
 
