@@ -3977,8 +3977,8 @@ async function runMslPhase3(ticker) {
     d.mslT1Pass = (d.msl_c1 === true && d.msl_c2 === true && d.msl_c8 === true && !d.mslOiHardReject);
     d.mslExpiry = bestExpiry; // LEAPS expiry actually scored — for the card subtitle
     // Laura's 3× reward test — mirrors the server (caps the dashboard badge below IDEAL).
-    // Profit starts above breakeven (call strike + net debit), so 3× target = breakeven + 3× risk.
-    var _t3x = (mslRiskPh3 !== null && callStrike != null && netDebit != null) ? (callStrike + netDebit + 3 * mslRiskPh3) : null;
+    // 3X PROFIT target = strike + 4× premium (premium = net debit, cash paid). = breakeven + 3× net debit.
+    var _t3x = (callStrike != null && netDebit != null) ? (callStrike + 4 * netDebit) : null;
     d.mslTarget3x = _t3x;
     d.mslMove3xPct = (_t3x !== null && pd.price) ? ((_t3x / pd.price - 1) * 100) : null;
     d.msl3xFail = (_t3x !== null && d.week52H) ? (_t3x > d.week52H) : null;
@@ -5887,12 +5887,11 @@ async function runMsl(forceTicker) {
     var riskVsStockPct = (mslMaxRisk && pd.price) ? (mslMaxRisk / (pd.price * 100) * 100) : null;
     c8 = riskVsStockPct !== null ? riskVsStockPct <= 50 : null;
     var c8Ideal = riskVsStockPct !== null && riskVsStockPct <= 40;
-    // MM60 "3x test" ("make at least 3x on my money"): profit must reach 3× the capital at risk.
-    // Profit only starts ABOVE breakeven (call strike + net debit), so the target = breakeven + 3 × risk.
-    // Flag when that target sits above the 52-week high (best available proxy for the all-time
-    // high) — Laura calls that unrealistic and a fail ("MRVL needs 515 vs a 340 ATH").
-    var riskPerShare = (mslMaxRisk !== null) ? mslMaxRisk / 100 : null;
-    var target3x = (riskPerShare !== null && breakeven != null) ? breakeven + 3 * riskPerShare : null;
+    // Laura's 3X rule (BUYING OPTIONS): new-trade target for a 3X PROFIT = strike + 4 × premium,
+    // where premium = the net debit (cash paid) — the extra 1× backs the cost out of the gain, so the
+    // net profit is 3× the money in. (Equivalent to breakeven + 3 × net debit.) Flag when that target
+    // sits above the 52-week high (resistance / ATH proxy) — reward is thin ("MRVL needs 515 vs a 340 ATH").
+    var target3x = (callStrike != null && netDebit != null) ? (callStrike + 4 * netDebit) : null;
     var move3xPct = (target3x !== null && pd.price) ? (target3x / pd.price - 1) * 100 : null;
     var target3xAboveHigh = (target3x !== null && pd.week52H) ? target3x > pd.week52H : null;
     // MM60 width rule: "the widest I go is 20% of the price." We allow up to 30% (MM56) but warn past 20%.
@@ -6085,7 +6084,7 @@ async function runMsl(forceTicker) {
     // Reward-quality flag (NOT scored, but caps the grade below IDEAL). Laura's 3× test: the price
     // needed for a 3× return is above the 52-wk high, so the reward side is thin at this entry.
     if (target3xAboveHigh === true) {
-      html += '<div class="criterion" style="border-left:3px solid var(--red)" title="Laura\'s 3× test (\'make at least 3x on my money\'): for a 3× return the stock must reach breakeven + 3× your risk. When that sits above the 52-week high, the reward is unrealistic at this entry — a fail, but not a structure flaw, so it caps the grade rather than dinging a box.">' +
+      html += '<div class="criterion" style="border-left:3px solid var(--red)" title="Laura\'s 3X rule (\'make at least 3x on my money\'): for a 3× PROFIT the stock must reach strike + 4× premium (premium = net debit paid; the extra 1× backs out the cost). When that sits above the 52-week high, the reward is unrealistic at this entry — a fail, but not a structure flaw, so it caps the grade rather than dinging a box.">' +
         '<span class="rank-pip" style="background:transparent">⚠</span>' +
         '<div class="badge-fail">✕</div>' +
         '<span class="crit-label"><strong>Reward flag — caps the grade (not a scored box):</strong> fails Laura\'s 3× test — needs ' + (target3x != null ? fmtDollar(target3x) : '—') + (move3xPct != null ? ' (+' + fmt(move3xPct,0) + '% from here)' : '') + ', above the 52-wk high ' + (pd.week52H != null ? fmtDollar(pd.week52H) : '—') + '. Reward side is thin — enter smaller, or wait for a deeper dip.</span>' +
@@ -6180,9 +6179,9 @@ async function runMsl(forceTicker) {
     }
     // MM60 3x test — flag when the price needed for a 3x return is above the 52-week high
     if (target3xAboveHigh === true && target3x !== null) {
-      suggWarn.push('❌ <strong>Fails the 3× test:</strong> a 3× needs the stock at ~' + fmtDollar(target3x) + ' (call strike + 3× risk) — that\'s <strong>' + (move3xPct !== null ? '+' + fmt(move3xPct,0) + '% from here' : 'a big move') + '</strong> and above the 52-week high ' + fmtDollar(pd.week52H) + '. Laura wants ≥3× against realistic upside; this only pencils out at a lower entry (more buffer, cheaper call). <span style="color:var(--text-muted)">(52-wk high used as an all-time-high proxy.)</span>');
+      suggWarn.push('❌ <strong>Fails the 3× test:</strong> a 3× profit needs the stock at ~' + fmtDollar(target3x) + ' (strike + 4× premium, premium = net debit) — that\'s <strong>' + (move3xPct !== null ? '+' + fmt(move3xPct,0) + '% from here' : 'a big move') + '</strong> and above the 52-week high ' + fmtDollar(pd.week52H) + '. Laura wants ≥3× against realistic upside; this only pencils out at a lower entry (more buffer, cheaper call). <span style="color:var(--text-muted)">(52-wk high used as an all-time-high proxy.)</span>');
     } else if (target3x !== null && move3xPct !== null) {
-      suggGood.push('ℹ️ <strong>3× target:</strong> ~' + fmtDollar(target3x) + ' (+' + fmt(move3xPct,0) + '% from here) for a 3× return — within/near the 52-week high, so the reward side is realistic. <span style="color:var(--text-muted)">(3× = Laura\'s minimum: make 3× your money at risk; price = breakeven + 3× risk.)</span>');
+      suggGood.push('ℹ️ <strong>3× target:</strong> ~' + fmtDollar(target3x) + ' (+' + fmt(move3xPct,0) + '% from here) for a 3× profit — within/near the 52-week high, so the reward side is realistic. <span style="color:var(--text-muted)">(3× = Laura\'s minimum: make 3× the cash paid; price = strike + 4× premium, premium = net debit.)</span>');
     }
     // MM60 width rule — allowed up to 30% (MM56) but warn past Laura's 20% baseline
     if (widthOverLaura) {

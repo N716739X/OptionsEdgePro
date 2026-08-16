@@ -748,11 +748,11 @@ function scoreMslChains(price, mr, expiry, dte, callChain, putChain, week52H) {
   out.c8 = riskVsStockPct !== null ? riskVsStockPct <= 50 : null; // MM60: ≤ 50% of owning stock
   out.c9 = (putSpreadCredit !== null && price) ? ((putSpreadCredit / price * 100) >= 6) : null; // credit ≥6% of stock price
   out.callRatio = callRatio; out.netDebitPct = netDebitPct; out.putCreditPct = putCreditPct; out.riskRatio = riskRatio; out.riskVsStockPct = riskVsStockPct;
-  // Laura's 3x test ("make at least 3x on my money"): profit must reach 3x the capital at risk.
-  // Profit only starts ABOVE breakeven (call strike + net debit), so the price for a 3x return is
-  // breakeven + 3 x per-share risk. Flag when that sits above the 52-wk high (upside proxy) —
-  // reward is thin at this entry (caps the grade).
-  const target3x = (mslRisk !== null && callStrike != null && netDebit != null) ? (callStrike + netDebit + 3 * mslRisk) : null;
+  // Laura's 3X rule (BUYING OPTIONS): new-trade target for a 3X PROFIT = strike + 4 x premium,
+  // where premium = the net debit (cash paid) — the extra 1x backs the cost out of the gain, so the
+  // net profit is 3x the money in. (Equivalent to breakeven + 3 x net debit.) Flag when that target
+  // sits above the 52-wk high (resistance / ATH proxy) — reward is thin at this entry (caps the grade).
+  const target3x = (callStrike != null && netDebit != null) ? (callStrike + 4 * netDebit) : null;
   out.target3x = target3x;
   out.move3xPct = (target3x !== null && price) ? ((target3x / price - 1) * 100) : null;
   out.threeXFail = (target3x !== null && week52H) ? (target3x > week52H) : null;
