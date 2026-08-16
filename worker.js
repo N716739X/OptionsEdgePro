@@ -1221,7 +1221,7 @@ async function scoreTicker(ticker, env) {
 // Fully seed one ticker's IV history in a single request (bounded to ~52 historical calls for THIS
 // ticker — safe subrequest budget), then return its true IV Rank. Called automatically by the client
 // in the background for each unseeded ticker, so users never wait through manual refreshes.
-const IV_SEED_VER = 'ivseed-4-delta-atm'; // bump on each worker deploy to confirm the live build
+const IV_SEED_VER = 'ivseed-5-probe-first'; // bump on each worker deploy to confirm the live build
 async function handleIvSeed(req, env) {
   const authCheck = await requireAuth(req, env);
   if (authCheck.error) return authCheck.error;
@@ -1230,22 +1230,13 @@ async function handleIvSeed(req, env) {
   let ticker = (url.searchParams.get('ticker') || '').trim().toUpperCase();
   if (!ticker) { try { const b = await req.json(); ticker = ((b && b.ticker) || '').trim().toUpperCase(); } catch (e) {} }
   if (!ticker) return json({ error: 'ticker required' }, 400);
+  let debug = null;
   try {
-    // Today's ~30-day ATM IV from a near-dated put chain (the point we rank within the 52-week window).
-    const expData = await cachedFetch('https://api.marketdata.app/v1/options/expirations/' + ticker + '/?token=' + env.MD_TOKEN).catch(() => ({ expirations: [] }));
-    const expirations = normalizeExpirations(expData.expirations || []);
-    const bestExpiry = findBestExpiry(expirations, 30, 45) || findBestExpiry(expirations, 25, 60);
-    let todayAtmIv = null;
-    if (bestExpiry) {
-      const putChain = await cachedFetch('https://api.marketdata.app/v1/options/chain/' + ticker + '/?expiration=' + bestExpiry + '&side=put&token=' + env.MD_TOKEN).catch(() => null);
-      todayAtmIv = atmIvFromChain(putChain, null);
-    }
-    // Debug probe: raw historical fetch of one sample date so we can see WHY backfill isn't storing IV.
-    let debug = null;
+    // Debug probe FIRST — so it survives even if a later step throws (then the catch still returns it).
     if (url.searchParams.get('debug')) {
       const probeDate = ivSampleDates()[0];
       const purl = 'https://api.marketdata.app/v1/options/chain/' + ticker + '/?date=' + probeDate + '&dte=30&side=put&token=' + env.MD_TOKEN;
-      let d = { probeDate, todayAtmIv, bestExpiry };
+      let d = { probeDate };
       try {
         const rr = await fetch(purl);
         d.status = rr.status;
@@ -1256,11 +1247,21 @@ async function handleIvSeed(req, env) {
       } catch (e2) { d.status = 'fetch-error'; d.err = e2.message; }
       debug = d;
     }
+    // Today's ~30-day ATM IV from a near-dated put chain (the point we rank within the 52-week window).
+    const expData = await cachedFetch('https://api.marketdata.app/v1/options/expirations/' + ticker + '/?token=' + env.MD_TOKEN).catch(() => ({ expirations: [] }));
+    const expirations = normalizeExpirations(expData.expirations || []);
+    const bestExpiry = findBestExpiry(expirations, 30, 45) || findBestExpiry(expirations, 25, 60);
+    let todayAtmIv = null;
+    if (bestExpiry) {
+      const putChain = await cachedFetch('https://api.marketdata.app/v1/options/chain/' + ticker + '/?expiration=' + bestExpiry + '&side=put&token=' + env.MD_TOKEN).catch(() => null);
+      todayAtmIv = atmIvFromChain(putChain, null);
+    }
+    if (debug) { debug.bestExpiry = bestExpiry; debug.todayAtmIv = todayAtmIv; }
     await backfillIvHistory(env, ticker, 52); // full year in one shot
     const st = await ivRankState(env, ticker, todayAtmIv);
     return json({ ticker, ver: IV_SEED_VER, ivRank: st.rank, ivRankSource: st.source, ivSamples: st.samples, debug });
   } catch (e) {
-    return json({ ticker, ver: IV_SEED_VER, error: e.message, ivRankSource: 'proxy', ivSamples: 0 });
+    return json({ ticker, ver: IV_SEED_VER, error: e.message, ivRankSource: 'proxy', ivSamples: 0, debug });
   }
 }
 
