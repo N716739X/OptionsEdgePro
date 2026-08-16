@@ -768,7 +768,7 @@ function scoreMslChains(price, mr, expiry, dte, callChain, putChain, week52H) {
 // We sample ~30-day ATM IV weekly from MarketData's historical chains (cached in D1) and
 // rank today's ATM IV within that window — E*Trade's IV Rank definition. Everything here is
 // best-effort: any failure falls back to the caller's cross-strike proxy so scoring never breaks.
-const IV_HIST_DAYS = 365, IV_MIN_SAMPLES = 20, IV_BACKFILL_MAX = 30, IV_BACKFILL_BATCH = 5;
+const IV_HIST_DAYS = 365, IV_MIN_SAMPLES = 20, IV_BACKFILL_MAX = 10, IV_BACKFILL_BATCH = 5;
 function _ivYmd(d) { return d.getUTCFullYear() + '-' + ('0'+(d.getUTCMonth()+1)).slice(-2) + '-' + ('0'+d.getUTCDate()).slice(-2); }
 // Most recent completed Friday on/before ms — a stable weekly grid (trading day) that doesn't drift day-to-day.
 function _mostRecentFriday(ms) {
