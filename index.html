@@ -3072,7 +3072,7 @@ function mslLetterGrade(d, phase) {
 function maxCriteriaFor(strategy) {
   if (strategy === 'put')   return 6;
   if (strategy === 'cc')    return 6;
-  if (strategy === 'synth') return 5;
+  if (strategy === 'synth') return 4; // MR + 3 scored (DTE, net debit, spreads) — IV is informational, not scored
   if (strategy === 'msl')   return 7;
   return 6;
 }
@@ -3181,9 +3181,7 @@ function buildColCard(ticker, d, strategy, rank, isBestTrade) {
   // mslScore then also lacks it, so this keeps numerator and denominator aligned.
   var _mslHasC9 = (d.msl_c9 === true || d.msl_c9 === false);
   if (strategy === 'msl' && !_mslHasC9) totalCriteria = Math.max(1, totalCriteria - 1);
-  // Same null-safety for Synthetic Long's IV criterion (c2): absent until the Worker is redeployed.
-  var _synthHasC2 = (d.synth_c2 === true || d.synth_c2 === false);
-  if (strategy === 'synth' && !_synthHasC2) totalCriteria = Math.max(1, totalCriteria - 1);
+  // Synthetic Long's IV (c2) is informational, not scored — never in the denominator (see maxCriteriaFor).
   // Earnings (put_c4 / cc_c4): when the date is unknown the criterion is null — drop it from the
   // denominator (shown as "verify" on the card) rather than counting a false pass or unfair fail.
   var _earnCrit = strategy === 'put' ? d.put_c4 : strategy === 'cc' ? d.cc_c4 : undefined;
@@ -3324,9 +3322,9 @@ function buildColCard(ticker, d, strategy, rank, isBestTrade) {
       mb('DELTA', cx.c6, ccDeltaDisp) +
       mb('DTE',   cx.c7, ccDteDisp);
   } else if (strategy === 'synth') {
-    // Synthetic Long: 4 criteria — MR≤-2 Wkly, DTE≥540, Debit≤5%, Spreads (IV>50% removed)
+    // Synthetic Long: 3 scored criteria — DTE≥540, Debit≤8%, Spreads≤10%. IV is informational (not a pill;
+    // it's ~neutral for a same-strike synthetic — sold put offsets bought call), shown on the analyzer.
     criteriaHtml =
-      (_synthHasC2 ? mb('IV', d.synth_c2, d.synth_c2 ? '✓' : '✗') : '') + // IV not inflated — only when the score source provides it
       mb('DUR',   d.synth_c3, d.synth_c3 === true ? '✓' : d.synth_c3 === false ? '✗' : '—') +
       mb('DEBIT', d.synth_c4, d.synth_c4 === null ? '—' : (d.synth_c4 ? '✓' : '✗')) +
       mb('SPRD',  d.synth_c7, d.synth_c7 === null ? '—' : (d.synth_c7 ? '✓' : '✗'));
@@ -3509,9 +3507,8 @@ function checkGradeAlerts() {
         g = mslLetterGrade(d, d.phase);
       } else {
         var mrCrit = s.key === 'put' ? d.put_c2 : s.key === 'cc' ? d.cc_c2 : d.synth_c1;
-        var mx = Math.max(1, maxCriteriaFor(s.key) - 1); // MR always excluded
-        // Match the card's null-safe denominator: drop Synth IV and CSP/CC earnings when unknown.
-        if (s.key === 'synth' && !(d.synth_c2 === true || d.synth_c2 === false)) mx = Math.max(1, mx - 1);
+        var mx = Math.max(1, maxCriteriaFor(s.key) - 1); // MR always excluded (Synth IV is informational, already out)
+        // Match the card's null-safe denominator: drop CSP/CC earnings when unknown.
         var _en = s.key === 'put' ? d.put_c4 : s.key === 'cc' ? d.cc_c4 : undefined;
         if ((s.key === 'put' || s.key === 'cc') && _en == null) mx = Math.max(1, mx - 1);
         if (mrCrit === true) sc = Math.max(0, sc - 1);
@@ -3820,13 +3817,13 @@ async function runSynthPhase3(ticker) {
     // James-aligned 7 criteria
     d.synth_c1 = !isNaN(pd.meanRev) ? pd.meanRev <= -2 : null; // Laura OG (MM46): synthetic-long entry at MR −2 (Deeply Oversold)
     d.synthMR  = weeklyMR; // store for card rendering
-    d.synth_c2 = d.ivRank != null ? d.ivRank <= 50 : null;                       // IV not inflated (≤30 = ideal)
+    d.synth_c2 = null;                                                           // IV informational for the SL — not scored (sold put offsets bought call)
     d.synth_c3 = dte >= 540;                                                     // Duration ≥ 540 DTE
     d.synth_c4 = netCostPct !== null ? netCostPct <= 8 : null;                   // Net Debit ≤ 8% (course examples: MRVL 7.5%, CPER 5.6%); credit always passes
     d.synth_c5 = slCall.oi !== null ? slCall.oi >= 500 : null;                   // Call OI ≥ 500
     d.synth_c6 = slPut.oi  !== null ? slPut.oi  >= 500 : null;                   // Put OI ≥ 500
     d.synth_c7 = (callSpreadPct !== null && putSpreadPct !== null) ? (callSpreadPct <= 10 && putSpreadPct <= 10) : null; // Spreads ≤ 10%
-    d.synthScore = [d.synth_c1,d.synth_c2,d.synth_c3,d.synth_c4,d.synth_c7]
+    d.synthScore = [d.synth_c1,d.synth_c3,d.synth_c4,d.synth_c7]
       .filter(function(x){return x===true;}).length;
     d.synthChainStale = false;
     d.phase = 3;
@@ -4248,6 +4245,17 @@ function critRow(rank, label, pass, valStr) {
     badge +
     '<span class="crit-label">' + label + '</span>' +
     '<span class="crit-val">' + (valStr || '') + '</span>' +
+  '</div>';
+}
+// Informational IV row for the Synthetic Long — NOT scored. IV is ~neutral for a same-strike synthetic
+// (the expensive put you sell funds the expensive call you buy — put-call parity), so per Laura it "isn't
+// as important" for an SL and high IV isn't a disqualifier. Shown for context only.
+function ivInfoRow(rank, source) {
+  return '<div class="criterion" style="border-left:3px solid var(--border2)" title="IV is largely neutral for a synthetic long: the expensive put you sell funds the expensive call you buy (put-call parity), so the net debit is IV-independent. High IV is NOT a disqualifier here — it matters for straight LEAPs and MSLs. Shown for context, not scored.">' +
+    '<span class="rank-pip" style="background:transparent">ℹ️</span>' +
+    '<div class="badge-na">i</div>' +
+    '<span class="crit-label"><strong>IV Rank</strong> <span style="color:var(--text-muted);font-weight:400">— informational, not scored. IV is ~neutral for a synthetic long (sold put offsets bought call); high IV isn\'t a knock here — it matters for straight LEAPs / MSLs.</span></span>' +
+    '<span class="crit-val">' + (rank != null ? ivRankLabel(rank, source) : 'N/A') + '</span>' +
   '</div>';
 }
 
@@ -4966,7 +4974,7 @@ async function runSynth(forceTicker) {
     var c3 = dte >= 540;                                                       // Duration ≥ 540 DTE
     var c4 = netCostPct !== null ? netCostPct <= 8 : null;                     // Net Debit ≤ 8% (course examples: MRVL 7.5%, CPER 5.6%); credit always passes
     var c7 = (callSpreadPct !== null && putSpreadPct !== null) ? (callSpreadPct <= 10 && putSpreadPct <= 10) : null; // Spreads ≤ 10%
-    var score = [c2,c3,c4,c7].filter(function(x){return x===true;}).length; // MR (c1) not scored — manual confirm on the user's ETH chart
+    var score = [c3,c4,c7].filter(function(x){return x===true;}).length; // MR (c1) + IV (c2) not scored — IV is informational for the SL
 
     setStatus('synth-status', 'Done', 'ok');
 
@@ -5073,11 +5081,11 @@ async function runSynth(forceTicker) {
 
     html += '<div class="scorecard"><h3>Synthetic Long — Score</h3><div class="criteria-list">';
     html += mrConfirmRow(ticker, 'bottom'); // MR not scored — manual confirm on the user's ETH chart
-    html += critRow(1,'IV Not Inflated — IV Rank ≤ 50 (≤30 = Ideal)', c2, synthIVRank !== null ? ivRankLabel(synthIVRank, synthIVSource) + (c2Ideal ? ' ✨ IDEAL' : '') : 'N/A');
-    html += critRow(2,'Duration ≥ 540 DTE (LEAPS-Length)', c3, dte + ' days');
-    html += critRow(3,'Net Debit ≤ 8% (Put Funds the Call)', c4, netCostPct !== null ? fmt(Math.abs(netCostPct),2) + '%' : 'N/A');
-    html += critRow(4,'Both Spreads ≤ 10% (Tight)', c7, (callSpreadPct !== null ? fmt(callSpreadPct,1)+'%' : '—')+' / '+(putSpreadPct !== null ? fmt(putSpreadPct,1)+'%' : '—'));
-    html += '</div>' + scoreSummaryHtml(score,4) + '</div>';
+    html += ivInfoRow(synthIVRank, synthIVSource); // IV informational (not scored) — neutral for a synthetic long
+    html += critRow(1,'Duration ≥ 540 DTE (LEAPS-Length)', c3, dte + ' days');
+    html += critRow(2,'Net Debit ≤ 8% (Put Funds the Call)', c4, netCostPct !== null ? fmt(Math.abs(netCostPct),2) + '%' : 'N/A');
+    html += critRow(3,'Both Spreads ≤ 10% (Tight)', c7, (callSpreadPct !== null ? fmt(callSpreadPct,1)+'%' : '—')+' / '+(putSpreadPct !== null ? fmt(putSpreadPct,1)+'%' : '—'));
+    html += '</div>' + scoreSummaryHtml(score,3) + '</div>';
 
     // ── Contextual suggestions ──
     var suggWarn = [], suggGood = [];
@@ -5398,7 +5406,7 @@ function synthComputeGrade(pd, callChain, putChain, callIdx, putIdx, dte) {
   var c3 = dte >= 540;
   var c4 = netCostPct !== null ? netCostPct <= 8 : null;
   var c7 = (callSpreadPct !== null && putSpreadPct !== null) ? (callSpreadPct <= 10 && putSpreadPct <= 10) : null;
-  var score = [c2, c3, c4, c7].filter(function(x) { return x === true; }).length; // MR (c1) not scored
+  var score = [c3, c4, c7].filter(function(x) { return x === true; }).length; // MR (c1) + IV (c2) not scored — IV informational for the SL
   return { callStrike: callStrike, putStrike: putStrike, callMid: callMid, putMid: putMid,
     callDelta: callDelta, putDelta: putDelta, callOI: callOI, putOI: putOI,
     netCost: netCost, netCostPct: netCostPct, callSpreadPct: callSpreadPct, putSpreadPct: putSpreadPct,
@@ -5470,10 +5478,8 @@ async function gradeSynth() {
     // IV is per-underlying, so apply it to both legs.
     var _giv = resolveIvRank(ticker, um.ivRank), synthIVSource = _giv.source;
     if (_giv.source !== 'proxy' && _giv.rank != null) {
-      um.ivRank = _giv.rank; um.c2 = _giv.rank <= 50; um.c2Ideal = _giv.rank <= 30;
-      um.score = [um.c2, um.c3, um.c4, um.c7].filter(function(x){return x===true;}).length;
-      if (app) { app.ivRank = _giv.rank; app.c2 = _giv.rank <= 50; app.c2Ideal = _giv.rank <= 30;
-        app.score = [app.c2, app.c3, app.c4, app.c7].filter(function(x){return x===true;}).length; }
+      um.ivRank = _giv.rank;             // show the real IV Rank (informational only — not in the score)
+      if (app) app.ivRank = _giv.rank;
     }
     setStatus('synth-status', 'Done', 'ok');
 
@@ -5494,11 +5500,11 @@ async function gradeSynth() {
     // Scorecard on the USER's legs (MR not scored — manual timing call)
     html += '<div class="scorecard"><h3>Your SL — Grade</h3><div class="criteria-list">';
     html += mrConfirmRow(ticker, 'bottom');
-    html += critRow(1, 'IV Not Inflated — IV Rank ≤ 50 (≤30 = Ideal)', um.c2, um.ivRank !== null ? ivRankLabel(um.ivRank, synthIVSource) + (um.c2Ideal ? ' ✨ IDEAL' : '') : 'N/A');
-    html += critRow(2, 'Duration ≥ 540 DTE (LEAPS-Length)', um.c3, dte + ' days');
-    html += critRow(3, 'Net Debit ≤ 8% (Put Funds the Call)', um.c4, um.netCostPct !== null ? fmt(Math.abs(um.netCostPct), 2) + '%' : 'N/A');
-    html += critRow(4, 'Both Spreads ≤ 10% (Tight)', um.c7, (um.callSpreadPct !== null ? fmt(um.callSpreadPct, 1) + '%' : '—') + ' / ' + (um.putSpreadPct !== null ? fmt(um.putSpreadPct, 1) + '%' : '—'));
-    html += '</div>' + scoreSummaryHtml(um.score, 4) + '</div>';
+    html += ivInfoRow(um.ivRank, synthIVSource); // IV informational (not scored) — neutral for a synthetic long
+    html += critRow(1, 'Duration ≥ 540 DTE (LEAPS-Length)', um.c3, dte + ' days');
+    html += critRow(2, 'Net Debit ≤ 8% (Put Funds the Call)', um.c4, um.netCostPct !== null ? fmt(Math.abs(um.netCostPct), 2) + '%' : 'N/A');
+    html += critRow(3, 'Both Spreads ≤ 10% (Tight)', um.c7, (um.callSpreadPct !== null ? fmt(um.callSpreadPct, 1) + '%' : '—') + ' / ' + (um.putSpreadPct !== null ? fmt(um.putSpreadPct, 1) + '%' : '—'));
+    html += '</div>' + scoreSummaryHtml(um.score, 3) + '</div>';
 
     // Side-by-side: your legs vs the app's same-strike ATM pick
     if (app) {

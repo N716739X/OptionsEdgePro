@@ -908,12 +908,13 @@ function scoreSynthChains(price, mr, expiry, dte, callChain, putChain) {
     if (ivs.length > 0) { ivs.sort((a, b) => a - b); const atmIV = ivs[Math.floor(ivs.length / 2)]; const range = ivs[ivs.length - 1] - ivs[0]; out.ivRank = range > 0 ? Math.min(100, Math.max(0, (atmIV - ivs[0]) / range * 100)) : 50; }
   }
   out.netCostPct = netCostPct;
-  out.c2 = out.ivRank !== null ? out.ivRank <= 50 : null; // IV not inflated (Laura: don't buy LEAPS at high IV); ≤30 = ideal
+  out.c2 = null; // IV Rank is INFORMATIONAL for the SL, NOT scored — the sold put offsets the bought call
+                 // (put-call parity: a same-strike synthetic's net debit is IV-neutral), per Laura's message.
   out.c4 = netCostPct !== null ? netCostPct <= 8 : null; // course SLs run ~5.5–7.5% of price
   out.c5 = slCall.oi !== null ? slCall.oi >= 500 : null;
   out.c6 = slPut.oi !== null ? slPut.oi >= 500 : null;
   out.c7 = (callSpreadPct !== null && putSpreadPct !== null) ? (callSpreadPct <= 10 && putSpreadPct <= 10) : null;
-  out.score = [out.c1, out.c2, out.c3, out.c4, out.c7].filter(x => x === true).length;
+  out.score = [out.c1, out.c3, out.c4, out.c7].filter(x => x === true).length; // IV (c2) excluded — informational
   out.chainScored = true;
   return out;
 }
@@ -1248,21 +1249,19 @@ async function scoreTicker(ticker, env) {
     const r = await computeIvRank(env, ticker, todayAtmIv); // records today's IV + ranks vs collected/seed range
     if (r) {
       ivRank = r.rank;
-      synthCh.ivRank = r.rank;
-      synthCh.c2 = r.rank <= 50;
-      synthCh.score = [synthCh.c1, synthCh.c2, synthCh.c3, synthCh.c4, synthCh.c7].filter(x => x === true).length;
-      ivRankSource = r.source; // 'seed' (bridge) → 'accum' (self-maintaining) once a year of history exists
+      synthCh.ivRank = r.rank;               // display only — IV is informational for the SL, not scored
+      ivRankSource = r.source;               // 'seed' (bridge) → 'accum' (self-maintaining) after ~a year
     }
   } catch (e) { /* keep the proxy */ }
   const chainScored = synthCh.chainScored && mslCh.chainScored;
 
-  const synthScore = synthCh.score !== null ? synthCh.score : [synthCh.c1, synthCh.c2, synthCh.c3, synthCh.c4, synthCh.c7].filter(x => x === true).length;
+  const synthScore = synthCh.score !== null ? synthCh.score : [synthCh.c1, synthCh.c3, synthCh.c4, synthCh.c7].filter(x => x === true).length;
   const mslScore   = mslCh.score   !== null ? mslCh.score   : [mslCh.c1, mslCh.c2, mslCh.c3, mslCh.c4, mslCh.c5, mslCh.c8, mslCh.c9].filter(x => x === true).length;
 
   // Build response — grades + badge info + display data
   const putBadge = badgeInfo(putScore, 6, true);
   const ccBadge = badgeInfo(ccScore, 6, true);
-  const synthBadge = badgeInfo(synthScore, 5, false);
+  const synthBadge = badgeInfo(synthScore, 4, false);
   const mslBadge = badgeInfo(mslScore, 7, false);
 
   return {
@@ -1274,7 +1273,7 @@ async function scoreTicker(ticker, env) {
     ccExpiry, ccDte, ccStrike, ccPremium, ccPremPct,
     put:   { score: putScore, total: 6, grade: scoreToGrade(putScore, 6), badge: putBadge, c1: put_c1, c2: put_c2, c3: put_c3, c4: put_c4, c5: put_c5, c6: put_c6, c7: put_c7 },
     cc:    { score: ccScore, total: 6, grade: scoreToGrade(ccScore, 6), badge: ccBadge, c1: cc_c1, c2: cc_c2, c3: cc_c3, c4: cc_c4, c5: cc_c5, c6: cc_c6, c7: cc_c7 },
-    synth: { score: synthScore, total: 5, grade: scoreToGrade(synthScore, 5), badge: synthBadge, mr: synthCh.mr, netCostPct: synthCh.netCostPct, ivRank: synthCh.ivRank, ivRankSource: ivRankSource,
+    synth: { score: synthScore, total: 4, grade: scoreToGrade(synthScore, 4), badge: synthBadge, mr: synthCh.mr, netCostPct: synthCh.netCostPct, ivRank: synthCh.ivRank, ivRankSource: ivRankSource,
              c1: synthCh.c1, c2: synthCh.c2, c3: synthCh.c3, c4: synthCh.c4, c5: synthCh.c5, c6: synthCh.c6, c7: synthCh.c7 },
     msl:   { score: mslScore, total: 7, grade: scoreToGrade(mslScore, 7), badge: mslBadge, weighted: mslCh.weighted, t1Pass: mslCh.t1Pass,
              mr: mslCh.mr, callRatio: mslCh.callRatio, netDebitPct: mslCh.netDebitPct, riskRatio: mslCh.riskRatio, riskVsStockPct: mslCh.riskVsStockPct, expiry: mslCh.expiry,
