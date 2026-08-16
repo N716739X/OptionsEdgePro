@@ -778,17 +778,37 @@ function _mostRecentFriday(ms) {
 // ATM IV (%) = the IV of the strike nearest the underlying price.
 function atmIvFromChain(chain, price) {
   if (!chain || !chain.strike || !chain.iv) return null;
+  const norm = v => (v == null || isNaN(v) || v <= 0) ? null : (v <= 1 ? v * 100 : v);
   let px = price;
   if (px == null) px = Array.isArray(chain.underlyingPrice) ? chain.underlyingPrice[0] : chain.underlyingPrice;
-  if (px == null || isNaN(px)) return null;
-  let best = Infinity, iv = null;
-  for (let i = 0; i < chain.strike.length; i++) {
-    const s = chain.strike[i]; if (s == null) continue;
-    const v = chain.iv[i]; if (v == null || isNaN(v) || v <= 0) continue;
-    const d = Math.abs(s - px);
-    if (d < best) { best = d; iv = v <= 1 ? v * 100 : v; }
+  // Preferred: strike nearest the underlying price.
+  if (px != null && !isNaN(px)) {
+    let best = Infinity, iv = null;
+    for (let i = 0; i < chain.strike.length; i++) {
+      const s = chain.strike[i]; if (s == null) continue;
+      const v = norm(chain.iv[i]); if (v == null) continue;
+      const d = Math.abs(s - px);
+      if (d < best) { best = d; iv = v; }
+    }
+    if (iv != null) return iv;
   }
-  return iv;
+  // Fallback (no underlying price — e.g. historical chains): the ~0.50-|delta| strike is ATM.
+  if (chain.delta) {
+    let best = Infinity, iv = null;
+    for (let i = 0; i < chain.strike.length; i++) {
+      const dl = chain.delta[i]; if (dl == null || isNaN(dl)) continue;
+      const v = norm(chain.iv[i]); if (v == null) continue;
+      const d = Math.abs(Math.abs(dl) - 0.5);
+      if (d < best) { best = d; iv = v; }
+    }
+    if (iv != null) return iv;
+  }
+  // Last resort: median of all valid IVs on the chain.
+  const ivs = [];
+  for (let i = 0; i < chain.iv.length; i++) { const v = norm(chain.iv[i]); if (v != null) ivs.push(v); }
+  if (!ivs.length) return null;
+  ivs.sort((a, b) => a - b);
+  return ivs[Math.floor(ivs.length / 2)];
 }
 // 52 stable weekly Fridays over the trailing year — anchored to calendar Fridays (a trading day), NOT to
 // "today", so the set doesn't shift day-to-day and backfill settles to empty once a ticker is seeded.
@@ -827,14 +847,15 @@ async function backfillIvHistory(env, ticker, max) {
 // IV-rank state: {rank, source, samples}. Records today's ATM IV, then ranks it within the trailing 52
 // weeks once >= IV_MIN_SAMPLES real samples exist. Under-seeded → source 'proxy' (caller keeps its proxy).
 async function ivRankState(env, ticker, todayIv) {
-  if (!env || !env.DB || todayIv == null || isNaN(todayIv)) return { rank: null, source: 'proxy', samples: 0 };
+  if (!env || !env.DB) return { rank: null, source: 'proxy', samples: 0 };
   try {
-    await recordAtmIv(env, ticker, _ivYmd(new Date()), todayIv);
+    const haveToday = todayIv != null && !isNaN(todayIv);
+    if (haveToday) await recordAtmIv(env, ticker, _ivYmd(new Date()), todayIv);
     const since = _ivYmd(new Date(Date.now() - IV_HIST_DAYS * 86400000));
     const rows = await env.DB.prepare("SELECT atm_iv FROM iv_history WHERE ticker = ? AND sample_date >= ? AND atm_iv IS NOT NULL").bind(ticker, since).all();
     const vals = (((rows && rows.results) || []).map(r => r.atm_iv)).filter(v => v != null && !isNaN(v) && v > 0);
-    const samples = vals.length;
-    if (samples < IV_MIN_SAMPLES) return { rank: null, source: 'proxy', samples };
+    const samples = vals.length; // real sample count — reported even when today's IV is momentarily null
+    if (!haveToday || samples < IV_MIN_SAMPLES) return { rank: null, source: 'proxy', samples };
     let lo = Infinity, hi = -Infinity;
     for (const v of vals) { if (v < lo) lo = v; if (v > hi) hi = v; }
     const rank = hi > lo ? Math.min(100, Math.max(0, (todayIv - lo) / (hi - lo) * 100)) : 50;
