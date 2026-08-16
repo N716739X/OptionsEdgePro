@@ -4158,7 +4158,7 @@ function autoSeedIvRank() {
       .then(function(r) { _http = r.status; return r.text(); })
       .then(function(txt) {
         var res = null; try { res = JSON.parse(txt); } catch (e) {}
-        if (dbg) showIvDebug(t, { httpStatus: _http, workerVer: (res && res.ver) || '(none — OLD worker)', probe: (res && res.debug) || null, ivRankSource: res && res.ivRankSource, ivSamples: res && res.ivSamples, rawBody: res ? undefined : String(txt).slice(0, 200) });
+        if (dbg) showIvDebug(t, { httpStatus: _http, workerVer: (res && res.ver) || '(none — OLD worker)', error: (res && res.error) || null, probe: (res && res.debug) || null, ivRankSource: res && res.ivRankSource, ivSamples: res && res.ivSamples, rawBody: res ? undefined : String(txt).slice(0, 200) });
         if (res && !res.error) {
           if (res.ivRankSource === 'true') _ivSeedDone[t] = true; // fully seeded — don't re-request this session
           var d = cardData[t];
