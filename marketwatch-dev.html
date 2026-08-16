@@ -4150,12 +4150,15 @@ function autoSeedIvRank() {
   var LIMIT = 2, idx = 0, active = 0, _dbgDone = false;
   function seedOne(t) {
     active++;
-    // Ask the first ticker for a debug probe so we can see why seeding isn't storing IV.
+    // First ticker carries a debug probe. Capture the RAW http status + body so the banner shows
+    // something even on a 404 (stale worker) or a non-JSON error, not just on a clean response.
     var dbg = !_dbgDone; if (dbg) _dbgDone = true;
+    var _http = null;
     fetch(CF_PROXY + 'api/iv-seed?ticker=' + encodeURIComponent(t) + (dbg ? '&debug=1' : ''), { headers: _authToken ? { 'Authorization': 'Bearer ' + _authToken } : {} })
-      .then(function(r) { return r.json(); })
-      .then(function(res) {
-        if (res && res.debug) { console.log('IV-SEED DEBUG [' + res.ticker + ']:', JSON.stringify(res.debug)); showIvDebug(res.ticker, res.debug); }
+      .then(function(r) { _http = r.status; return r.text(); })
+      .then(function(txt) {
+        var res = null; try { res = JSON.parse(txt); } catch (e) {}
+        if (dbg) showIvDebug(t, { httpStatus: _http, probe: (res && res.debug) || null, ivRankSource: res && res.ivRankSource, ivSamples: res && res.ivSamples, rawBody: res ? undefined : String(txt).slice(0, 200) });
         if (res && !res.error) {
           if (res.ivRankSource === 'true') _ivSeedDone[t] = true; // fully seeded — don't re-request this session
           var d = cardData[t];
@@ -4166,7 +4169,7 @@ function autoSeedIvRank() {
           }
         }
       })
-      .catch(function() {})
+      .catch(function(err) { if (dbg) showIvDebug(t, { fetchError: String(err), httpStatus: _http }); })
       .then(function() { active--; pump(); });
   }
   function pump() { while (active < LIMIT && idx < todo.length) seedOne(todo[idx++]); }
