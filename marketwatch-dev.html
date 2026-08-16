@@ -4121,6 +4121,24 @@ function applyServerScores(s) {
 // Automatically seed the true 52-week IV Rank in the BACKGROUND for every watchlist ticker that isn't
 // seeded yet — on startup and whenever tickers change — so the user never has to refresh repeatedly.
 // Each /api/iv-seed call fully seeds ONE ticker server-side; we throttle to a couple at a time.
+// Temporary on-screen diagnostic — shows the IV-seed debug probe without needing DevTools.
+function showIvDebug(ticker, debug) {
+  var el = document.getElementById('iv-debug-banner');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'iv-debug-banner';
+    el.style.cssText = 'position:fixed;left:12px;right:12px;bottom:12px;z-index:99999;background:#120a1e;border:2px solid #25e0d0;border-radius:10px;padding:14px 42px 14px 16px;font:12px/1.55 monospace;color:#e6e6ff;box-shadow:0 6px 30px rgba(0,0,0,.6);white-space:pre-wrap;word-break:break-word;max-height:45vh;overflow:auto';
+    var x = document.createElement('button');
+    x.textContent = '×';
+    x.style.cssText = 'position:absolute;top:4px;right:12px;background:none;border:none;color:#fff;font-size:22px;cursor:pointer;line-height:1';
+    x.onclick = function() { el.remove(); };
+    el.appendChild(x);
+    var body = document.createElement('div'); body.id = 'iv-debug-body'; el.appendChild(body);
+    document.body.appendChild(el);
+  }
+  var b = document.getElementById('iv-debug-body');
+  if (b) b.textContent = 'IV-SEED DEBUG [' + ticker + ']\n' + JSON.stringify(debug, null, 2);
+}
 var _ivSeedDone = {};
 function autoSeedIvRank() {
   if (!_authToken) return;
@@ -4137,7 +4155,7 @@ function autoSeedIvRank() {
     fetch(CF_PROXY + 'api/iv-seed?ticker=' + encodeURIComponent(t) + (dbg ? '&debug=1' : ''), { headers: _authToken ? { 'Authorization': 'Bearer ' + _authToken } : {} })
       .then(function(r) { return r.json(); })
       .then(function(res) {
-        if (res && res.debug) console.log('IV-SEED DEBUG [' + res.ticker + ']:', JSON.stringify(res.debug));
+        if (res && res.debug) { console.log('IV-SEED DEBUG [' + res.ticker + ']:', JSON.stringify(res.debug)); showIvDebug(res.ticker, res.debug); }
         if (res && !res.error) {
           if (res.ivRankSource === 'true') _ivSeedDone[t] = true; // fully seeded — don't re-request this session
           var d = cardData[t];
