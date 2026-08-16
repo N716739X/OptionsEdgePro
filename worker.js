@@ -1218,9 +1218,25 @@ async function handleIvSeed(req, env) {
       const putChain = await cachedFetch('https://api.marketdata.app/v1/options/chain/' + ticker + '/?expiration=' + bestExpiry + '&side=put&token=' + env.MD_TOKEN).catch(() => null);
       todayAtmIv = atmIvFromChain(putChain, null);
     }
+    // Debug probe: raw historical fetch of one sample date so we can see WHY backfill isn't storing IV.
+    let debug = null;
+    if (url.searchParams.get('debug')) {
+      const probeDate = ivSampleDates()[0];
+      const purl = 'https://api.marketdata.app/v1/options/chain/' + ticker + '/?date=' + probeDate + '&dte=30&side=put&token=' + env.MD_TOKEN;
+      let d = { probeDate, todayAtmIv, bestExpiry };
+      try {
+        const rr = await fetch(purl);
+        d.status = rr.status;
+        const txt = await rr.text();
+        d.snippet = txt.slice(0, 180);
+        let jj = null; try { jj = JSON.parse(txt); } catch (e2) {}
+        if (jj) { d.keys = Object.keys(jj); d.s = jj.s; d.ivLen = jj.iv ? jj.iv.length : null; d.upType = Array.isArray(jj.underlyingPrice) ? ('array[' + jj.underlyingPrice.length + ']') : (typeof jj.underlyingPrice); d.atmProbe = atmIvFromChain(jj, null); }
+      } catch (e2) { d.status = 'fetch-error'; d.err = e2.message; }
+      debug = d;
+    }
     await backfillIvHistory(env, ticker, 52); // full year in one shot
     const st = await ivRankState(env, ticker, todayAtmIv);
-    return json({ ticker, ivRank: st.rank, ivRankSource: st.source, ivSamples: st.samples });
+    return json({ ticker, ivRank: st.rank, ivRankSource: st.source, ivSamples: st.samples, debug });
   } catch (e) {
     return json({ ticker, error: e.message, ivRankSource: 'proxy', ivSamples: 0 });
   }

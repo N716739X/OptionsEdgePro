@@ -4129,12 +4129,15 @@ function autoSeedIvRank() {
     return d && d.ivRankSource !== 'true' && !_ivSeedDone[t];
   });
   if (!todo.length) return;
-  var LIMIT = 2, idx = 0, active = 0;
+  var LIMIT = 2, idx = 0, active = 0, _dbgDone = false;
   function seedOne(t) {
     active++;
-    fetch(CF_PROXY + 'api/iv-seed?ticker=' + encodeURIComponent(t), { headers: _authToken ? { 'Authorization': 'Bearer ' + _authToken } : {} })
+    // Ask the first ticker for a debug probe so we can see why seeding isn't storing IV.
+    var dbg = !_dbgDone; if (dbg) _dbgDone = true;
+    fetch(CF_PROXY + 'api/iv-seed?ticker=' + encodeURIComponent(t) + (dbg ? '&debug=1' : ''), { headers: _authToken ? { 'Authorization': 'Bearer ' + _authToken } : {} })
       .then(function(r) { return r.json(); })
       .then(function(res) {
+        if (res && res.debug) console.log('IV-SEED DEBUG [' + res.ticker + ']:', JSON.stringify(res.debug));
         if (res && !res.error) {
           if (res.ivRankSource === 'true') _ivSeedDone[t] = true; // fully seeded — don't re-request this session
           var d = cardData[t];
