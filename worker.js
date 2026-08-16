@@ -805,14 +805,14 @@ async function recordAtmIv(env, ticker, dateStr, iv) {
   try { await env.DB.prepare("INSERT OR IGNORE INTO iv_history (ticker, sample_date, atm_iv) VALUES (?, ?, ?)").bind(ticker, dateStr, val).run(); } catch (e) {}
 }
 // Bounded, best-effort backfill of missing weekly ATM-IV samples from historical ~30-DTE chains.
-async function backfillIvHistory(env, ticker) {
+async function backfillIvHistory(env, ticker, max) {
   if (!env || !env.DB) return;
   let have = new Set();
   try {
     const rows = await env.DB.prepare("SELECT sample_date FROM iv_history WHERE ticker = ?").bind(ticker).all();
     ((rows && rows.results) || []).forEach(r => have.add(r.sample_date));
   } catch (e) { return; }
-  const missing = ivSampleDates().filter(d => !have.has(d)).slice(0, IV_BACKFILL_MAX);
+  const missing = ivSampleDates().filter(d => !have.has(d)).slice(0, max || IV_BACKFILL_MAX);
   if (!missing.length) return;
   // Throttled batches — one successful refresh seeds the year without a huge parallel burst.
   for (let i = 0; i < missing.length; i += IV_BACKFILL_BATCH) {
@@ -1197,6 +1197,35 @@ async function scoreTicker(ticker, env) {
 
 // POST /api/scores — accepts { tickers: ["TSLA","NVDA"] }
 // Enforces tier-based ticker restrictions
+// Fully seed one ticker's IV history in a single request (bounded to ~52 historical calls for THIS
+// ticker — safe subrequest budget), then return its true IV Rank. Called automatically by the client
+// in the background for each unseeded ticker, so users never wait through manual refreshes.
+async function handleIvSeed(req, env) {
+  const authCheck = await requireAuth(req, env);
+  if (authCheck.error) return authCheck.error;
+  await initDB(env.DB);
+  const url = new URL(req.url);
+  let ticker = (url.searchParams.get('ticker') || '').trim().toUpperCase();
+  if (!ticker) { try { const b = await req.json(); ticker = ((b && b.ticker) || '').trim().toUpperCase(); } catch (e) {} }
+  if (!ticker) return json({ error: 'ticker required' }, 400);
+  try {
+    // Today's ~30-day ATM IV from a near-dated put chain (the point we rank within the 52-week window).
+    const expData = await cachedFetch('https://api.marketdata.app/v1/options/expirations/' + ticker + '/?token=' + env.MD_TOKEN).catch(() => ({ expirations: [] }));
+    const expirations = normalizeExpirations(expData.expirations || []);
+    const bestExpiry = findBestExpiry(expirations, 30, 45) || findBestExpiry(expirations, 25, 60);
+    let todayAtmIv = null;
+    if (bestExpiry) {
+      const putChain = await cachedFetch('https://api.marketdata.app/v1/options/chain/' + ticker + '/?expiration=' + bestExpiry + '&side=put&token=' + env.MD_TOKEN).catch(() => null);
+      todayAtmIv = atmIvFromChain(putChain, null);
+    }
+    await backfillIvHistory(env, ticker, 52); // full year in one shot
+    const st = await ivRankState(env, ticker, todayAtmIv);
+    return json({ ticker, ivRank: st.rank, ivRankSource: st.source, ivSamples: st.samples });
+  } catch (e) {
+    return json({ ticker, error: e.message, ivRankSource: 'proxy', ivSamples: 0 });
+  }
+}
+
 async function handleScores(req, env) {
   const authCheck = await requireAuth(req, env);
   if (authCheck.error) return authCheck.error;
@@ -1257,6 +1286,9 @@ export default {
 
       // Server-side scoring (IP-protected scoring engine)
       if (url.pathname === '/api/scores' && request.method === 'POST') return handleScores(request, env);
+
+      // Background IV-history seeding for one ticker (auto-called by the client)
+      if (url.pathname === '/api/iv-seed') return handleIvSeed(request, env);
 
       // Data proxy (existing functionality, now JWT-gated)
       if (url.pathname === '/' || url.pathname === '') return handleProxy(request, env);

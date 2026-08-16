@@ -4118,6 +4118,40 @@ function applyServerScores(s) {
   updateCard(s.ticker);
 }
 
+// Automatically seed the true 52-week IV Rank in the BACKGROUND for every watchlist ticker that isn't
+// seeded yet — on startup and whenever tickers change — so the user never has to refresh repeatedly.
+// Each /api/iv-seed call fully seeds ONE ticker server-side; we throttle to a couple at a time.
+var _ivSeedDone = {};
+function autoSeedIvRank() {
+  if (!_authToken) return;
+  var todo = (tickers || []).filter(function(t) {
+    var d = cardData[t];
+    return d && d.ivRankSource !== 'true' && !_ivSeedDone[t];
+  });
+  if (!todo.length) return;
+  var LIMIT = 2, idx = 0, active = 0;
+  function seedOne(t) {
+    active++;
+    fetch(CF_PROXY + 'api/iv-seed?ticker=' + encodeURIComponent(t), { headers: _authToken ? { 'Authorization': 'Bearer ' + _authToken } : {} })
+      .then(function(r) { return r.json(); })
+      .then(function(res) {
+        if (res && !res.error) {
+          if (res.ivRankSource === 'true') _ivSeedDone[t] = true; // fully seeded — don't re-request this session
+          var d = cardData[t];
+          if (d) {
+            if (res.ivSamples != null) d.ivSamples = res.ivSamples;
+            if (res.ivRankSource === 'true' && res.ivRank != null) { d.ivRank = res.ivRank; d.ivRankSource = 'true'; d.synth_c2 = res.ivRank <= 50; }
+            renderColumns(); renderMiniRankings('synth');
+          }
+        }
+      })
+      .catch(function() {})
+      .then(function() { active--; pump(); });
+  }
+  function pump() { while (active < LIMIT && idx < todo.length) seedOne(todo[idx++]); }
+  pump();
+}
+
 function refreshDashboard(forceRefresh) {
   if (forceRefresh) clearMDCache(); // manual refresh clears cache
   cardData = {};
@@ -4145,6 +4179,8 @@ function refreshDashboard(forceRefresh) {
     });
     // Trigger phase 3 for top LEAPS/Synth tickers
     triggerPhase3();
+    // Kick off background IV-Rank seeding for any ticker not yet on the true 52-week rank
+    autoSeedIvRank();
   })
   .catch(function(err) { console.error('Scores fetch failed:', err); });
 }
