@@ -936,6 +936,42 @@ function seedIvRank(ticker, liveIv) {
   if (hi <= lo) return null;
   return Math.min(100, Math.max(0, (liveIv - lo) / (hi - lo) * 100));
 }
+// IV Rank with FORWARD ACCUMULATION: records today's live IV daily (iv_history), then computes the rank
+// against the trailing-365-day high/low the app has collected. While young, it uses the Barchart SEED
+// (widened by any collected extreme). Once it has ~a year of its own data (≥60 samples spanning ≥300d),
+// it switches to its OWN trailing range — which ages out stale old extremes (auto-narrows) and retires
+// the seed entirely, so it's self-maintaining from then on. Best-effort; returns null if uncomputable.
+async function computeIvRank(env, ticker, liveIv) {
+  if (liveIv == null || isNaN(liveIv)) return null;
+  let accHi = null, accLo = null, cnt = 0, spanDays = 0;
+  if (env && env.DB) {
+    try {
+      await recordAtmIv(env, ticker, _ivYmd(new Date()), liveIv); // one sample per calendar day
+      const since = _ivYmd(new Date(Date.now() - 365 * 86400000));
+      const row = await env.DB.prepare("SELECT MIN(atm_iv) lo, MAX(atm_iv) hi, COUNT(*) c, MIN(sample_date) mn, MAX(sample_date) mx FROM iv_history WHERE ticker = ? AND sample_date >= ? AND atm_iv IS NOT NULL").bind(ticker, since).first();
+      if (row && row.c) {
+        accLo = row.lo; accHi = row.hi; cnt = row.c;
+        if (row.mn && row.mx) spanDays = Math.round((new Date(row.mx) - new Date(row.mn)) / 86400000);
+      }
+    } catch (e) { /* accumulation is best-effort */ }
+  }
+  const seed = IV_SEED[ticker];
+  const mature = cnt >= 60 && spanDays >= 300; // ~a year of self-collected history → trust it, drop the seed
+  let hi, lo, source;
+  if (mature) {
+    hi = Math.max(accHi, liveIv); lo = Math.min(accLo, liveIv); source = 'accum';
+  } else if (seed) {
+    hi = Math.max(seed.h, accHi != null ? accHi : seed.h, liveIv);
+    lo = Math.min(seed.l, accLo != null ? accLo : seed.l, liveIv);
+    source = 'seed';
+  } else if (cnt > 0) {
+    hi = Math.max(accHi, liveIv); lo = Math.min(accLo, liveIv); source = 'accum';
+  } else {
+    return null;
+  }
+  if (hi <= lo) return null;
+  return { rank: Math.min(100, Math.max(0, (liveIv - lo) / (hi - lo) * 100)), source, samples: cnt };
+}
 
 async function scoreTicker(ticker, env) {
   // Use internal cache for upstream API calls
@@ -1208,14 +1244,16 @@ async function scoreTicker(ticker, env) {
   // Uses today's ~30-day ATM IV and self-corrects the range if IV breaks past the seed. Tickers with no
   // seed fall back to the cross-strike proxy (labeled "est" on the client).
   let ivRankSource = 'proxy';
-  const seededRank = seedIvRank(ticker, todayAtmIv);
-  if (seededRank != null) {
-    ivRank = seededRank;
-    synthCh.ivRank = seededRank;
-    synthCh.c2 = seededRank <= 50;
-    synthCh.score = [synthCh.c1, synthCh.c2, synthCh.c3, synthCh.c4, synthCh.c7].filter(x => x === true).length;
-    ivRankSource = 'seed';
-  }
+  try {
+    const r = await computeIvRank(env, ticker, todayAtmIv); // records today's IV + ranks vs collected/seed range
+    if (r) {
+      ivRank = r.rank;
+      synthCh.ivRank = r.rank;
+      synthCh.c2 = r.rank <= 50;
+      synthCh.score = [synthCh.c1, synthCh.c2, synthCh.c3, synthCh.c4, synthCh.c7].filter(x => x === true).length;
+      ivRankSource = r.source; // 'seed' (bridge) → 'accum' (self-maintaining) once a year of history exists
+    }
+  } catch (e) { /* keep the proxy */ }
   const chainScored = synthCh.chainScored && mslCh.chainScored;
 
   const synthScore = synthCh.score !== null ? synthCh.score : [synthCh.c1, synthCh.c2, synthCh.c3, synthCh.c4, synthCh.c7].filter(x => x === true).length;
