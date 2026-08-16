@@ -1234,7 +1234,7 @@ async function scoreTicker(ticker, env) {
 // Fully seed one ticker's IV history in a single request (bounded to ~52 historical calls for THIS
 // ticker — safe subrequest budget), then return its true IV Rank. Called automatically by the client
 // in the background for each unseeded ticker, so users never wait through manual refreshes.
-const IV_SEED_VER = 'ivseed-6-cachedfetch'; // bump on each worker deploy to confirm the live build
+const IV_SEED_VER = 'ivseed-7-ivvalues'; // bump on each worker deploy to confirm the live build
 async function handleIvSeed(req, env) {
   const authCheck = await requireAuth(req, env);
   if (authCheck.error) return authCheck.error;
@@ -1256,7 +1256,18 @@ async function handleIvSeed(req, env) {
         const txt = await rr.text();
         d.snippet = txt.slice(0, 180);
         let jj = null; try { jj = JSON.parse(txt); } catch (e2) {}
-        if (jj) { d.keys = Object.keys(jj); d.s = jj.s; d.ivLen = jj.iv ? jj.iv.length : null; d.upType = Array.isArray(jj.underlyingPrice) ? ('array[' + jj.underlyingPrice.length + ']') : (typeof jj.underlyingPrice); d.atmProbe = atmIvFromChain(jj, null); }
+        if (jj) {
+          d.keys = Object.keys(jj); d.s = jj.s; d.ivLen = jj.iv ? jj.iv.length : null;
+          d.upType = Array.isArray(jj.underlyingPrice) ? ('array[' + jj.underlyingPrice.length + ']') : (typeof jj.underlyingPrice);
+          d.atmProbe = atmIvFromChain(jj, null);
+          // Are the historical IV/greek VALUES actually populated, or just empty slots?
+          const mid = jj.iv ? Math.floor(jj.iv.length / 2) : 0;
+          d.ivSample = jj.iv ? jj.iv.slice(mid, mid + 5) : null;
+          d.deltaSample = jj.delta ? jj.delta.slice(mid, mid + 5) : null;
+          d.upSample = jj.underlyingPrice ? jj.underlyingPrice.slice(0, 2) : null;
+          d.strikeSample = jj.strike ? jj.strike.slice(mid, mid + 5) : null;
+          d.ivNonNull = jj.iv ? jj.iv.filter(v => v != null && !isNaN(v) && v > 0).length : 0;
+        }
       } catch (e2) { d.status = 'fetch-error'; d.err = e2.message; }
       debug = d;
     }
