@@ -3813,7 +3813,7 @@ async function runSynthPhase3(ticker) {
       }
     }
     // Keep the worker's TRUE IV Rank (52-wk) if it already set one; otherwise fall back to this proxy.
-    if ((d.ivRankSource !== 'seed' && d.ivRankSource !== 'true') || d.ivRank == null) {
+    if ((d.ivRankSource !== 'seed' && d.ivRankSource !== 'accum' && d.ivRankSource !== 'true') || d.ivRank == null) {
       d.ivRank = synthIVRank !== null ? synthIVRank : d.ivRank; // update card's ivRank to match synth expiry (proxy)
     }
 
@@ -5299,15 +5299,16 @@ function mslComputeGrade(pd, callChain, putChain, cIdx, sIdx, bIdx, dte) {
 // PROXY locally, so prefer the card's true value when it's available; otherwise keep the proxy.
 function resolveIvRank(ticker, localProxyRank) {
   var cd = (typeof cardData !== 'undefined' && ticker) ? cardData[ticker] : null;
-  // Barchart-seeded live IV Rank ('seed') is authoritative; else the local cross-strike proxy.
-  if (cd && (cd.ivRankSource === 'seed' || cd.ivRankSource === 'true') && cd.ivRank != null) return { rank: cd.ivRank, source: cd.ivRankSource };
+  // Worker's real IV Rank — 'seed' (Barchart bridge) or 'accum' (self-collected 52-wk) — is authoritative;
+  // else the local cross-strike proxy.
+  if (cd && (cd.ivRankSource === 'seed' || cd.ivRankSource === 'accum' || cd.ivRankSource === 'true') && cd.ivRank != null) return { rank: cd.ivRank, source: cd.ivRankSource };
   return { rank: localProxyRank, source: 'proxy' };
 }
 function ivRankLabel(rank, source) {
   if (rank == null) return 'N/A';
-  if (source === 'seed') return 'IVR ' + fmt(rank, 0);            // live, Barchart-matched IV Rank
+  if (source === 'seed' || source === 'accum') return 'IVR ' + fmt(rank, 0); // live, real IV Rank
   if (source === 'true') return 'IVR ' + fmt(rank, 0) + ' · 52-wk';
-  return 'IVR ' + fmt(rank, 0) + ' · est';                        // cross-strike proxy fallback (no seed yet)
+  return 'IVR ' + fmt(rank, 0) + ' · est';                                   // cross-strike proxy fallback
 }
 // Render one option-chain leg (call or put) as a browsable LEAPS table, marking the ATM (★)
 // and, when given, the user's chosen strike (◆ + highlighted row). Shared by SL Find Best & Grade Mine.
@@ -5818,7 +5819,7 @@ async function runMsl(forceTicker) {
       '<span style="color:var(--text-muted);text-transform:uppercase;letter-spacing:0.8px;font-weight:700">Expiry</span><span style="color:var(--accent);font-weight:800">' + expiryDisplay(bestExpiry) + '</span>' +
       '<span style="color:var(--text-muted);text-transform:uppercase;letter-spacing:0.8px;font-weight:700;margin-left:8px">DTE</span><span style="color:var(--accent);font-weight:800">' + dte + ' days</span>' +
       '<span style="color:var(--text-muted);text-transform:uppercase;letter-spacing:0.8px;font-weight:700;margin-left:8px">Net Debit % of Price</span><span style="color:' + (netDebitPct !== null && netDebitPct <= 33 ? 'var(--green)' : 'var(--accent)') + ';font-weight:800">' + (netDebitPct !== null ? fmt(netDebitPct,1) + '%' : '—') + '</span>' +
-      '<span style="color:var(--text-muted);text-transform:uppercase;letter-spacing:0.8px;font-weight:700;margin-left:8px" title="IV Rank at this LEAPS expiry — informational, not scored. High IV inflates the call; watch the debit & risk criteria.">IV Rank</span><span style="color:' + (mslIVHigh ? 'var(--red)' : mslIVRank !== null ? 'var(--green)' : 'var(--text-muted)') + ';font-weight:800">' + (mslIVRank !== null ? fmt(mslIVRank,0) + (mslIVSource === 'seed' ? '' : mslIVSource === 'true' ? ' · 52wk' : ' · est') + (mslIVHigh ? ' · high' : '') : '—') + '</span>' +
+      '<span style="color:var(--text-muted);text-transform:uppercase;letter-spacing:0.8px;font-weight:700;margin-left:8px" title="IV Rank at this LEAPS expiry — informational, not scored. High IV inflates the call; watch the debit & risk criteria.">IV Rank</span><span style="color:' + (mslIVHigh ? 'var(--red)' : mslIVRank !== null ? 'var(--green)' : 'var(--text-muted)') + ';font-weight:800">' + (mslIVRank !== null ? fmt(mslIVRank,0) + (mslIVSource === 'seed' || mslIVSource === 'accum' ? '' : mslIVSource === 'true' ? ' · 52wk' : ' · est') + (mslIVHigh ? ' · high' : '') : '—') + '</span>' +
       '<span style="color:var(--text-muted);text-transform:uppercase;letter-spacing:0.8px;font-weight:700;margin-left:8px" title="App regular-hours MR estimate — not scored; confirm on your ETH chart">MR · 4H (RTH est.)</span><span style="color:var(--' + (mrZone(pd.meanRev).cls === 'down' ? 'green' : mrZone(pd.meanRev).cls === 'up' ? 'red' : 'text-muted') + ');font-weight:800">' + (!isNaN(pd.meanRev) ? fmt(pd.meanRev,2) + ' · ' + mrZone(pd.meanRev).short : '—') + '</span>' +
     '</div>';
 
