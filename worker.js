@@ -763,6 +763,19 @@ function scoreMslChains(price, mr, expiry, dte, callChain, putChain, week52H) {
   return out;
 }
 
+// Module-level cached fetch (same behavior as scoreTicker's inner helper) so top-level functions
+// — handleIvSeed / backfillIvHistory — can use it too. (scoreTicker's own nested cachedFetch shadows
+// this within its scope; both are fine.) This was the seeding bug: those functions referenced a
+// cachedFetch that only existed inside scoreTicker → "cachedFetch is not defined" → nothing stored.
+async function cachedFetch(url) {
+  const cached = getCached(url);
+  if (cached) return JSON.parse(cached.data);
+  const data = await fetchJSON(url);
+  const ttl = url.includes('api.marketdata.app') ? CACHE_TTL_OPTIONS : CACHE_TTL_STOCK;
+  putCache(url, JSON.stringify(data), 'application/json', 200, ttl);
+  return data;
+}
+
 // ── True IV Rank ────────────────────────────────────────────────────────────────
 // Laura's "don't buy LEAPS when IV is inflated" needs IMPLIED vol ranked over ~1 year.
 // We sample ~30-day ATM IV weekly from MarketData's historical chains (cached in D1) and
@@ -1221,7 +1234,7 @@ async function scoreTicker(ticker, env) {
 // Fully seed one ticker's IV history in a single request (bounded to ~52 historical calls for THIS
 // ticker — safe subrequest budget), then return its true IV Rank. Called automatically by the client
 // in the background for each unseeded ticker, so users never wait through manual refreshes.
-const IV_SEED_VER = 'ivseed-5-probe-first'; // bump on each worker deploy to confirm the live build
+const IV_SEED_VER = 'ivseed-6-cachedfetch'; // bump on each worker deploy to confirm the live build
 async function handleIvSeed(req, env) {
   const authCheck = await requireAuth(req, env);
   if (authCheck.error) return authCheck.error;
