@@ -1853,7 +1853,7 @@ var _authUser  = null;
 var _selectedTier = 'ia';
 var _selectedPlan = 'monthly';
 var _userTier = 'trial'; // current user's active tier from server
-var IA11 = ['TSLA','NVDA','AMD','MRVL','PLTR','ALAB','AVGO','MU','GOOG','SATS'];
+var IA11 = ['TSLA','NVDA','AMD','MRVL','PLTR','ALAB','AVGO','MU','GOOG'];
 
 function authSwitchTab(tab) {
   document.getElementById('form-login').style.display  = tab === 'login'  ? '' : 'none';
@@ -2098,7 +2098,7 @@ document.addEventListener('DOMContentLoaded', function() {
   initAuth();
 });
 
-const DEFAULT_TICKERS = ['TSLA','NVDA','AMD','MRVL','PLTR','ALAB','AVGO','MU','GOOG','SATS']; // IA11 (NPPTF removed)
+const DEFAULT_TICKERS = ['TSLA','NVDA','AMD','MRVL','PLTR','ALAB','AVGO','MU','GOOG']; // IA11 (SATS, NPPTF removed)
 
 // Hardcoded earnings dates (YYYY-MM-DD)
 const EARNINGS = {
@@ -2118,6 +2118,7 @@ var currentTF       = '4h'; // James's indicator: always 4H
 var currentSort     = localStorage.getItem('owp-sort')     || 'score';
 var currentTab      = localStorage.getItem('owp-tab')      || 'dashboard';
 var tickers         = JSON.parse(localStorage.getItem('owp-tickers') || 'null') || DEFAULT_TICKERS.slice();
+tickers = tickers.filter(function(t) { return t !== 'SATS'; }); // SATS removed — drop from any saved watchlist
 var cardData        = {}; // ticker -> data object
 // Last-good MSL scoring per ticker — survives the cardData wipe on refresh so a transient
 // LEAPS-chain rate-limit doesn't drop an A-grade setup out of the banner (it shows stale instead).
@@ -3812,7 +3813,7 @@ async function runSynthPhase3(ticker) {
       }
     }
     // Keep the worker's TRUE IV Rank (52-wk) if it already set one; otherwise fall back to this proxy.
-    if (d.ivRankSource !== 'true' || d.ivRank == null) {
+    if ((d.ivRankSource !== 'seed' && d.ivRankSource !== 'true') || d.ivRank == null) {
       d.ivRank = synthIVRank !== null ? synthIVRank : d.ivRank; // update card's ivRank to match synth expiry (proxy)
     }
 
@@ -4203,8 +4204,6 @@ function refreshDashboard(forceRefresh) {
     });
     // Trigger phase 3 for top LEAPS/Synth tickers
     triggerPhase3();
-    // Kick off background IV-Rank seeding for any ticker not yet on the true 52-week rank
-    autoSeedIvRank();
   })
   .catch(function(err) { console.error('Scores fetch failed:', err); });
 }
@@ -4958,7 +4957,7 @@ async function runSynth(forceTicker) {
     }
     // Prefer the worker's TRUE IV Rank (52-wk) when seeded; otherwise this local cross-strike proxy.
     var _synthIv = resolveIvRank(ticker, synthIVRank);
-    synthIVRank = _synthIv.rank; var synthIVSource = _synthIv.source, synthIVSamples = _synthIv.samples;
+    synthIVRank = _synthIv.rank; var synthIVSource = _synthIv.source;
 
     // 5 criteria (MR not scored). c2 = IV not inflated (LEAPS entry timing).
     var c1 = !isNaN(pd.meanRev) ? pd.meanRev <= -2 : null; // Laura OG (MM46): synthetic-long entry at MR −2 (Deeply Oversold)
@@ -5074,7 +5073,7 @@ async function runSynth(forceTicker) {
 
     html += '<div class="scorecard"><h3>Synthetic Long — Score</h3><div class="criteria-list">';
     html += mrConfirmRow(ticker, 'bottom'); // MR not scored — manual confirm on the user's ETH chart
-    html += critRow(1,'IV Not Inflated — IV Rank ≤ 50 (≤30 = Ideal)', c2, synthIVRank !== null ? ivRankLabel(synthIVRank, synthIVSource, synthIVSamples) + (c2Ideal ? ' ✨ IDEAL' : '') : 'N/A');
+    html += critRow(1,'IV Not Inflated — IV Rank ≤ 50 (≤30 = Ideal)', c2, synthIVRank !== null ? ivRankLabel(synthIVRank, synthIVSource) + (c2Ideal ? ' ✨ IDEAL' : '') : 'N/A');
     html += critRow(2,'Duration ≥ 540 DTE (LEAPS-Length)', c3, dte + ' days');
     html += critRow(3,'Net Debit ≤ 8% (Put Funds the Call)', c4, netCostPct !== null ? fmt(Math.abs(netCostPct),2) + '%' : 'N/A');
     html += critRow(4,'Both Spreads ≤ 10% (Tight)', c7, (callSpreadPct !== null ? fmt(callSpreadPct,1)+'%' : '—')+' / '+(putSpreadPct !== null ? fmt(putSpreadPct,1)+'%' : '—'));
@@ -5300,16 +5299,15 @@ function mslComputeGrade(pd, callChain, putChain, cIdx, sIdx, bIdx, dte) {
 // PROXY locally, so prefer the card's true value when it's available; otherwise keep the proxy.
 function resolveIvRank(ticker, localProxyRank) {
   var cd = (typeof cardData !== 'undefined' && ticker) ? cardData[ticker] : null;
-  var samples = (cd && cd.ivSamples != null) ? cd.ivSamples : null;
-  if (cd && cd.ivRankSource === 'true' && cd.ivRank != null) return { rank: cd.ivRank, source: 'true', samples: samples };
-  return { rank: localProxyRank, source: 'proxy', samples: samples };
+  // Barchart-seeded live IV Rank ('seed') is authoritative; else the local cross-strike proxy.
+  if (cd && (cd.ivRankSource === 'seed' || cd.ivRankSource === 'true') && cd.ivRank != null) return { rank: cd.ivRank, source: cd.ivRankSource };
+  return { rank: localProxyRank, source: 'proxy' };
 }
-function ivRankLabel(rank, source, samples) {
+function ivRankLabel(rank, source) {
   if (rank == null) return 'N/A';
+  if (source === 'seed') return 'IVR ' + fmt(rank, 0);            // live, Barchart-matched IV Rank
   if (source === 'true') return 'IVR ' + fmt(rank, 0) + ' · 52-wk';
-  // proxy — show seeding progress toward the true 52-week rank when we know it
-  var seed = (samples != null && samples > 0) ? ' · seeding ' + Math.min(samples, 20) + '/20' : '';
-  return 'IVR ' + fmt(rank, 0) + ' · est' + seed;
+  return 'IVR ' + fmt(rank, 0) + ' · est';                        // cross-strike proxy fallback (no seed yet)
 }
 // Render one option-chain leg (call or put) as a browsable LEAPS table, marking the ATM (★)
 // and, when given, the user's chosen strike (◆ + highlighted row). Shared by SL Find Best & Grade Mine.
@@ -5468,7 +5466,7 @@ async function gradeSynth() {
     var ai = synthAtmIdx(callChain, putChain, pd.price);
     var app = (ai.callIdx >= 0) ? synthComputeGrade(pd, callChain, putChain, ai.callIdx, ai.putIdx, dte) : null;
     // Prefer the worker's TRUE IV Rank (52-wk) when seeded; IV is per-underlying, so apply to both legs.
-    var _giv = resolveIvRank(ticker, um.ivRank), synthIVSource = _giv.source, synthIVSamples = _giv.samples;
+    var _giv = resolveIvRank(ticker, um.ivRank), synthIVSource = _giv.source;
     if (_giv.source === 'true' && _giv.rank != null) {
       um.ivRank = _giv.rank; um.c2 = _giv.rank <= 50; um.c2Ideal = _giv.rank <= 30;
       um.score = [um.c2, um.c3, um.c4, um.c7].filter(function(x){return x===true;}).length;
@@ -5494,7 +5492,7 @@ async function gradeSynth() {
     // Scorecard on the USER's legs (MR not scored — manual timing call)
     html += '<div class="scorecard"><h3>Your SL — Grade</h3><div class="criteria-list">';
     html += mrConfirmRow(ticker, 'bottom');
-    html += critRow(1, 'IV Not Inflated — IV Rank ≤ 50 (≤30 = Ideal)', um.c2, um.ivRank !== null ? ivRankLabel(um.ivRank, synthIVSource, synthIVSamples) + (um.c2Ideal ? ' ✨ IDEAL' : '') : 'N/A');
+    html += critRow(1, 'IV Not Inflated — IV Rank ≤ 50 (≤30 = Ideal)', um.c2, um.ivRank !== null ? ivRankLabel(um.ivRank, synthIVSource) + (um.c2Ideal ? ' ✨ IDEAL' : '') : 'N/A');
     html += critRow(2, 'Duration ≥ 540 DTE (LEAPS-Length)', um.c3, dte + ' days');
     html += critRow(3, 'Net Debit ≤ 8% (Put Funds the Call)', um.c4, um.netCostPct !== null ? fmt(Math.abs(um.netCostPct), 2) + '%' : 'N/A');
     html += critRow(4, 'Both Spreads ≤ 10% (Tight)', um.c7, (um.callSpreadPct !== null ? fmt(um.callSpreadPct, 1) + '%' : '—') + ' / ' + (um.putSpreadPct !== null ? fmt(um.putSpreadPct, 1) + '%' : '—'));
@@ -5820,7 +5818,7 @@ async function runMsl(forceTicker) {
       '<span style="color:var(--text-muted);text-transform:uppercase;letter-spacing:0.8px;font-weight:700">Expiry</span><span style="color:var(--accent);font-weight:800">' + expiryDisplay(bestExpiry) + '</span>' +
       '<span style="color:var(--text-muted);text-transform:uppercase;letter-spacing:0.8px;font-weight:700;margin-left:8px">DTE</span><span style="color:var(--accent);font-weight:800">' + dte + ' days</span>' +
       '<span style="color:var(--text-muted);text-transform:uppercase;letter-spacing:0.8px;font-weight:700;margin-left:8px">Net Debit % of Price</span><span style="color:' + (netDebitPct !== null && netDebitPct <= 33 ? 'var(--green)' : 'var(--accent)') + ';font-weight:800">' + (netDebitPct !== null ? fmt(netDebitPct,1) + '%' : '—') + '</span>' +
-      '<span style="color:var(--text-muted);text-transform:uppercase;letter-spacing:0.8px;font-weight:700;margin-left:8px" title="IV Rank at this LEAPS expiry — informational, not scored. High IV inflates the call; watch the debit & risk criteria.">IV Rank</span><span style="color:' + (mslIVHigh ? 'var(--red)' : mslIVRank !== null ? 'var(--green)' : 'var(--text-muted)') + ';font-weight:800">' + (mslIVRank !== null ? fmt(mslIVRank,0) + (mslIVSource === 'true' ? ' · 52wk' : ' · est') + (mslIVHigh ? ' · high' : '') : '—') + '</span>' +
+      '<span style="color:var(--text-muted);text-transform:uppercase;letter-spacing:0.8px;font-weight:700;margin-left:8px" title="IV Rank at this LEAPS expiry — informational, not scored. High IV inflates the call; watch the debit & risk criteria.">IV Rank</span><span style="color:' + (mslIVHigh ? 'var(--red)' : mslIVRank !== null ? 'var(--green)' : 'var(--text-muted)') + ';font-weight:800">' + (mslIVRank !== null ? fmt(mslIVRank,0) + (mslIVSource === 'seed' ? '' : mslIVSource === 'true' ? ' · 52wk' : ' · est') + (mslIVHigh ? ' · high' : '') : '—') + '</span>' +
       '<span style="color:var(--text-muted);text-transform:uppercase;letter-spacing:0.8px;font-weight:700;margin-left:8px" title="App regular-hours MR estimate — not scored; confirm on your ETH chart">MR · 4H (RTH est.)</span><span style="color:var(--' + (mrZone(pd.meanRev).cls === 'down' ? 'green' : mrZone(pd.meanRev).cls === 'up' ? 'red' : 'text-muted') + ');font-weight:800">' + (!isNaN(pd.meanRev) ? fmt(pd.meanRev,2) + ' · ' + mrZone(pd.meanRev).short : '—') + '</span>' +
     '</div>';
 

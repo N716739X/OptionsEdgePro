@@ -4,7 +4,7 @@
 // ── Tier & ticker configuration ─────────────────────────────────────────────────
 // Admin emails get full Trader-tier access regardless of subscription status
 const ADMIN_EMAILS = ['mattdavis@whiskerseeker.com'];
-const IA11_TICKERS = ['TSLA','NVDA','AMD','MRVL','PLTR','ALAB','AVGO','MU','GOOG','SATS'];
+const IA11_TICKERS = ['TSLA','NVDA','AMD','MRVL','PLTR','ALAB','AVGO','MU','GOOG'];
 const TIER_LIMITS = {
   ia:     { tickers: IA11_TICKERS, maxCustom: 0,  maxTotal: 11 },
   trader: { tickers: IA11_TICKERS, maxCustom: 14, maxTotal: 25 },
@@ -440,7 +440,7 @@ const EARNINGS = {
   SNOW: '2026-05-28', SHOP: '2026-05-01', NET: '2026-05-01',
   CRWD: '2026-06-03', DDOG: '2026-05-06', SOFI: '2026-04-28',
   MRVL: '2026-05-28', ALAB: '2026-05-05', AVGO: '2026-06-04',
-  MU: '2026-06-24', SATS: '2026-05-08',
+  MU: '2026-06-24',
 };
 
 async function fetchJSON(url, headers = {}, attempt = 0) {
@@ -918,6 +918,25 @@ function scoreSynthChains(price, mr, expiry, dte, callChain, putChain) {
   return out;
 }
 
+// Barchart-seeded 52-week IV High/Low per ticker (user-provided, from barchart.com Options Overview).
+// Laura reads "Current IV%" (IV percentile / rank) to decide LEAPS vs stock; IV Rank only needs the
+// 52-wk high/low, so we compute it LIVE from today's ~30-day ATM IV and self-correct the range on the fly.
+const IV_SEED = {
+  TSLA: { h: 64.73, l: 37.65 }, NVDA: { h: 54.93, l: 32.2 }, AMD:  { h: 90.89, l: 38.67 },
+  MRVL: { h: 112.82, l: 41.8 }, PLTR: { h: 74.75, l: 40.69 }, ALAB: { h: 133.56, l: 63.74 },
+  AVGO: { h: 64.55, l: 35.8 }, MU:   { h: 107.9, l: 41.89 }, GOOG: { h: 44.48, l: 25.14 },
+  GOLD: { h: 78.48, l: 43.19 }, SLVR: { h: 101.53, l: 32.46 }, CRCL: { h: 116.64, l: 61.83 },
+};
+// Live IV Rank = (IV − 52wk low) / (52wk high − 52wk low) × 100 — Barchart's exact formula. Self-corrects:
+// if live IV breaks past the seeded high/low, the range widens so the rank stays valid. Null = no seed.
+function seedIvRank(ticker, liveIv) {
+  const s = IV_SEED[ticker];
+  if (!s || liveIv == null || isNaN(liveIv)) return null;
+  const hi = Math.max(s.h, liveIv), lo = Math.min(s.l, liveIv);
+  if (hi <= lo) return null;
+  return Math.min(100, Math.max(0, (liveIv - lo) / (hi - lo) * 100));
+}
+
 async function scoreTicker(ticker, env) {
   // Use internal cache for upstream API calls
   async function cachedFetch(url) {
@@ -1185,21 +1204,18 @@ async function scoreTicker(ticker, env) {
   const synthCh = scoreSynthChains(price, weeklyMeanRev, leapsExpiry, leapsDte, leapsCall, leapsPut);
   const mslCh   = scoreMslChains(price, meanRev, leapsExpiry, leapsDte, leapsCall, leapsPut, week52H);
   if (synthCh.ivRank !== null) ivRank = synthCh.ivRank; // match the analyzer's LEAPS-expiry IV rank (proxy)
-  // TRUE IV Rank (implied vol vs its own trailing 52 weeks) — Laura's "don't buy inflated IV". Overrides
-  // the cross-strike proxy once enough history is seeded; otherwise leaves the proxy in place. Best-effort.
-  let ivRankSource = 'proxy', ivSamples = 0;
-  try {
-    const tiv = await ivRankState(env, ticker, todayAtmIv);
-    ivSamples = tiv.samples;
-    if (tiv.source === 'true' && tiv.rank != null) {
-      ivRank = tiv.rank;
-      synthCh.ivRank = tiv.rank;
-      synthCh.c2 = tiv.rank <= 50;
-      synthCh.score = [synthCh.c1, synthCh.c2, synthCh.c3, synthCh.c4, synthCh.c7].filter(x => x === true).length;
-      ivRankSource = 'true';
-    }
-    await backfillIvHistory(env, ticker); // bounded, best-effort — seeds future requests
-  } catch (e) { /* keep the proxy */ }
+  // IV Rank — LIVE, from the Barchart-seeded 52-week high/low (Laura's "don't buy inflated IV"; ideal ≤30).
+  // Uses today's ~30-day ATM IV and self-corrects the range if IV breaks past the seed. Tickers with no
+  // seed fall back to the cross-strike proxy (labeled "est" on the client).
+  let ivRankSource = 'proxy';
+  const seededRank = seedIvRank(ticker, todayAtmIv);
+  if (seededRank != null) {
+    ivRank = seededRank;
+    synthCh.ivRank = seededRank;
+    synthCh.c2 = seededRank <= 50;
+    synthCh.score = [synthCh.c1, synthCh.c2, synthCh.c3, synthCh.c4, synthCh.c7].filter(x => x === true).length;
+    ivRankSource = 'seed';
+  }
   const chainScored = synthCh.chainScored && mslCh.chainScored;
 
   const synthScore = synthCh.score !== null ? synthCh.score : [synthCh.c1, synthCh.c2, synthCh.c3, synthCh.c4, synthCh.c7].filter(x => x === true).length;
@@ -1214,7 +1230,7 @@ async function scoreTicker(ticker, env) {
   return {
     ticker,
     price, change, changePct, week52H, week52L, meanRev, weeklyMeanRev, sma200,
-    ivRank, ivRankSource, ivSamples, expiry: bestExpiry, dte, bestStrike, bestPremium, premPct, earningsRisk, nextEarnings,
+    ivRank, ivRankSource, expiry: bestExpiry, dte, bestStrike, bestPremium, premPct, earningsRisk, nextEarnings,
     atrSeries, chainScored, mslExpiry: leapsExpiry,
     // Covered-call-specific display data (its own expiry/strike/premium from the call chain)
     ccExpiry, ccDte, ccStrike, ccPremium, ccPremPct,
@@ -1349,9 +1365,6 @@ export default {
 
       // Server-side scoring (IP-protected scoring engine)
       if (url.pathname === '/api/scores' && request.method === 'POST') return handleScores(request, env);
-
-      // Background IV-history seeding for one ticker (auto-called by the client)
-      if (url.pathname === '/api/iv-seed') return handleIvSeed(request, env);
 
       // Data proxy (existing functionality, now JWT-gated)
       if (url.pathname === '/' || url.pathname === '') return handleProxy(request, env);
