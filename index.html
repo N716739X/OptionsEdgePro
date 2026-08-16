@@ -5466,9 +5466,10 @@ async function gradeSynth() {
     if (!um) throw new Error('Could not price your legs from the chain.');
     var ai = synthAtmIdx(callChain, putChain, pd.price);
     var app = (ai.callIdx >= 0) ? synthComputeGrade(pd, callChain, putChain, ai.callIdx, ai.putIdx, dte) : null;
-    // Prefer the worker's TRUE IV Rank (52-wk) when seeded; IV is per-underlying, so apply to both legs.
+    // Prefer the worker's real IV Rank (Barchart 'seed' or self-collected 'accum') over the local proxy;
+    // IV is per-underlying, so apply it to both legs.
     var _giv = resolveIvRank(ticker, um.ivRank), synthIVSource = _giv.source;
-    if (_giv.source === 'true' && _giv.rank != null) {
+    if (_giv.source !== 'proxy' && _giv.rank != null) {
       um.ivRank = _giv.rank; um.c2 = _giv.rank <= 50; um.c2Ideal = _giv.rank <= 30;
       um.score = [um.c2, um.c3, um.c4, um.c7].filter(function(x){return x===true;}).length;
       if (app) { app.ivRank = _giv.rank; app.c2 = _giv.rank <= 50; app.c2Ideal = _giv.rank <= 30;
@@ -5512,7 +5513,7 @@ async function gradeSynth() {
           gmRow('Sell Put', fmtDollar(um.putStrike), fmtDollar(app.putStrike), um.putStrike === app.putStrike ? 'ok' : 'diff') +
           gmRow('Same strike?', um.sameStrike ? 'Yes' : 'No', app.sameStrike ? 'Yes' : 'No', um.sameStrike ? 'ok' : 'diff') +
           gmRow('Net debit', um.netCostPct != null ? fmt(um.netCostPct, 2) + '% of price' : '—', app.netCostPct != null ? fmt(app.netCostPct, 2) + '% of price' : '—', '') +
-          gmRow('IV Rank' + (synthIVSource === 'true' ? ' (52-wk)' : ' (est)'), um.ivRank != null ? fmt(um.ivRank, 0) : '—', app.ivRank != null ? fmt(app.ivRank, 0) : '—', '') +
+          gmRow('IV Rank' + (synthIVSource === 'proxy' ? ' (est)' : synthIVSource === 'true' ? ' (52-wk)' : ''), um.ivRank != null ? fmt(um.ivRank, 0) : '—', app.ivRank != null ? fmt(app.ivRank, 0) : '—', '') +
           gmRow('Breakeven', um.breakeven != null ? fmtDollar(um.breakeven) + (um.beAboveCur != null ? ' (' + (um.beAboveCur >= 0 ? '+' : '') + fmt(um.beAboveCur, 1) + '%)' : '') : '—', app.breakeven != null ? fmtDollar(app.breakeven) + (app.beAboveCur != null ? ' (' + (app.beAboveCur >= 0 ? '+' : '') + fmt(app.beAboveCur, 1) + '%)' : '') : '—', '') +
           gmRow('Max loss (stock → $0)', um.maxLoss != null ? '$' + fmt(um.maxLoss, 0) : '—', app.maxLoss != null ? '$' + fmt(app.maxLoss, 0) : '—', '') +
           gmRow('Margin req (est)', um.marginReq != null ? '$' + fmt(um.marginReq, 0) : '—', app.marginReq != null ? '$' + fmt(app.marginReq, 0) : '—', '') +
