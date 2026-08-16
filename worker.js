@@ -1221,6 +1221,7 @@ async function scoreTicker(ticker, env) {
 // Fully seed one ticker's IV history in a single request (bounded to ~52 historical calls for THIS
 // ticker — safe subrequest budget), then return its true IV Rank. Called automatically by the client
 // in the background for each unseeded ticker, so users never wait through manual refreshes.
+const IV_SEED_VER = 'ivseed-4-delta-atm'; // bump on each worker deploy to confirm the live build
 async function handleIvSeed(req, env) {
   const authCheck = await requireAuth(req, env);
   if (authCheck.error) return authCheck.error;
@@ -1257,9 +1258,9 @@ async function handleIvSeed(req, env) {
     }
     await backfillIvHistory(env, ticker, 52); // full year in one shot
     const st = await ivRankState(env, ticker, todayAtmIv);
-    return json({ ticker, ivRank: st.rank, ivRankSource: st.source, ivSamples: st.samples, debug });
+    return json({ ticker, ver: IV_SEED_VER, ivRank: st.rank, ivRankSource: st.source, ivSamples: st.samples, debug });
   } catch (e) {
-    return json({ ticker, error: e.message, ivRankSource: 'proxy', ivSamples: 0 });
+    return json({ ticker, ver: IV_SEED_VER, error: e.message, ivRankSource: 'proxy', ivSamples: 0 });
   }
 }
 
