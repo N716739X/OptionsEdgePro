@@ -4824,7 +4824,7 @@ async function runCC(forceTicker) {
     }
     html += renderGroupedSuggestions(suggWarnC, suggGoodC);
 
-    html += '<div class="btc-note">📌 BTC at 80% profit or 21 DTE, whichever comes first.</div>';
+    html += '<div class="btc-note">📌 Buy back at 80–90% profit to free the shares.</div>';
 
     html += '<div class="chain-section" style="margin-top:14px"><h3>Call Chain — '+bestExpiry+' ('+dte+' DTE)</h3>';
     html += buildChainTable(chain, bestStrike, pd.price, false, true) + '</div>'; // true = match by strike not delta
