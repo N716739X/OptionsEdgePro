@@ -5612,7 +5612,7 @@ async function gradeMsl() {
     html += '<div class="scorecard"><h3>Your MSL — Grade</h3><div class="criteria-list">';
     html += mrConfirmRow(ticker, 'bottom'); // MR not scored — manual confirm on the user's ETH chart
     html += critRow(1, 'Put Credit ≥ 42% of Width (≥50% = Ideal)', um.c2, um.putCreditPct != null ? fmt(um.putCreditPct, 1) + '%' : 'N/A');
-    html += critRow(2, 'MSL Risk ≤ 50% of Owning Stock (≤40% = Ideal)', um.c8, um.riskVsStockPct != null ? fmt(um.riskVsStockPct, 0) + '% of stock' : 'N/A');
+    html += critRow(2, 'MSL Risk ≤ 50% of Owning Stock (MM60)', um.c8, um.riskVsStockPct != null ? fmt(um.riskVsStockPct, 0) + '% of stock' : 'N/A');
     html += critRow(3, 'Call Intrinsic/Extrinsic 40–60% (45–55% = Ideal)', um.c3, um.callRatio != null ? fmt(um.callRatio * 100, 0) + '/' + fmt((1 - um.callRatio) * 100, 0) : 'N/A');
     html += critRow(4, 'Net Debit ≤ 45% of Price (≤33% = Ideal)', um.c5, um.netDebitPct != null ? fmt(um.netDebitPct, 1) + '%' : 'N/A');
     html += critRow(5, 'Duration ≥ 365 DTE (LEAPS — ≥540 = Ideal)', um.c4, dte + ' days');
@@ -5886,7 +5886,7 @@ async function runMsl(forceTicker) {
     // 124/196 = 63% → fail; Astera 66% → fail.) The synthetic-long ratio stays as context below.
     var riskVsStockPct = (mslMaxRisk && pd.price) ? (mslMaxRisk / (pd.price * 100) * 100) : null;
     c8 = riskVsStockPct !== null ? riskVsStockPct <= 50 : null;
-    var c8Ideal = riskVsStockPct !== null && riskVsStockPct <= 40;
+    var c8Ideal = riskVsStockPct !== null && riskVsStockPct <= 50; // Laura's MM60 rule: within 50% of owning the stock = good (no separate 40% tier)
     // Laura's 3X rule (BUYING OPTIONS): new-trade target for a 3X PROFIT = strike + 4 × premium,
     // where premium = the net debit (cash paid) — the extra 1× backs the cost out of the gain, so the
     // net profit is 3× the money in. (Equivalent to breakeven + 3 × net debit.) Flag when that target
@@ -6076,7 +6076,7 @@ async function runMsl(forceTicker) {
     html += mrConfirmRow(ticker, 'bottom');
     // Structure criteria (SCORED) — Tier 1 gates (credit, risk) then quality/formality.
     html += critRow(1,'Put Credit ≥ 42% of Width (≥50% = Ideal) ' + pPill2, c2, putCreditPct !== null ? fmt(putCreditPct,1) + '%' + (c2Ideal ? ' ✨ IDEAL' : '') : 'N/A');
-    html += critRow(2,'MSL Risk ≤ 50% of Owning Stock (≤40% = Ideal) ' + pPill2, c8, riskVsStockPct !== null ? fmt(riskVsStockPct,0) + '% of stock' + (c8Ideal ? ' ✨ IDEAL' : '') : 'N/A');
+    html += critRow(2,'MSL Risk ≤ 50% of Owning Stock (MM60) ' + pPill2, c8, riskVsStockPct !== null ? fmt(riskVsStockPct,0) + '% of stock' + (c8Ideal ? ' ✨ IDEAL' : '') : 'N/A');
     html += critRow(3,'Call Intrinsic/Extrinsic 40–60% (45–55% = Ideal) ' + pPill1, c3, (callRatio !== null && !isNaN(callRatio)) ? fmt(callRatio*100,0) + '/' + fmt((1-callRatio)*100,0) + (c3Ideal ? ' ✨ IDEAL' : '') : 'N/A');
     html += critRow(4,'Net Debit ≤ 45% of Price (≤33% = Ideal) ' + pPill1, c5, netDebitPct !== null ? fmt(netDebitPct,1) + '%' + (c5Ideal ? ' ✨ IDEAL' : '') : 'N/A');
     html += critRow(5,'Duration ≥ 365 DTE (LEAPS — ≥540 = Ideal) ' + pPill1, c4, dte + ' days' + (c4Ideal ? ' ✨ IDEAL' : ''));
@@ -6244,7 +6244,7 @@ async function runMsl(forceTicker) {
     // MM60 risk rule — strength only when the gate PASSES (the fail case is the ❌ warning above).
     // The synthetic-long reduction is shown as secondary context, not as the rule.
     if (c8 === true && riskVsStockPct !== null) {
-      suggGood.push('✅ <strong>Risk under half the stock:</strong> max risk $' + fmt(mslMaxRisk,0) + ' is ' + fmt(riskVsStockPct,0) + '% of owning ' + fmtDollar(pd.price * 100) + ' of stock — inside Laura\'s "less than half" rule' + (c8Ideal ? ' (≤40% ✨ IDEAL)' : '') + '.' + (riskReductionPct !== null && riskReductionPct > 0 ? ' <span style="color:var(--text-muted)">(≈' + fmt(riskReductionPct,0) + '% less risk than a synthetic long.)</span>' : ''));
+      suggGood.push('✅ <strong>Risk under half the stock:</strong> max risk $' + fmt(mslMaxRisk,0) + ' is ' + fmt(riskVsStockPct,0) + '% of owning ' + fmtDollar(pd.price * 100) + ' of stock — inside Laura\'s "less than half" rule (MM60)' + (c8Ideal ? ' ✨ IDEAL' : '') + '.' + (riskReductionPct !== null && riskReductionPct > 0 ? ' <span style="color:var(--text-muted)">(≈' + fmt(riskReductionPct,0) + '% less risk than a synthetic long.)</span>' : ''));
     }
     // Breakeven vs the synthetic long: Laura's course rule is the MSL breakeven should sit WITHIN 10%
     // of the SL breakeven — you trade a slightly higher breakeven for ~half the risk and the roll levers.
