@@ -1723,7 +1723,6 @@ input, textarea, select { -webkit-user-select: text; user-select: text; }
       <label id="collar-buydate-wrap" style="display:none;font-size:11px;color:var(--text-muted);font-weight:700">Stock buy date<br><input id="collar-buydate" type="date" style="margin-top:3px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:6px 8px;font-size:12px" /></label>
       <label id="collar-cost-wrap" style="display:none;font-size:11px;color:var(--text-muted);font-weight:700">Your cost basis ($/sh)<br><input id="collar-cost" type="number" step="0.01" placeholder="optional" style="margin-top:3px;width:130px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:6px 8px;font-size:12px" /></label>
       <label id="collar-floor-wrap" style="display:none;font-size:11px;color:var(--text-muted);font-weight:700">Floor — won't give back below<br><input id="collar-floor" type="number" step="1" placeholder="put strike" style="margin-top:3px;width:150px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:6px 8px;font-size:12px" /></label>
-      <label style="font-size:11px;color:var(--text-muted);font-weight:700;display:flex;align-items:center;gap:6px"><input id="collar-third" type="checkbox" onchange="var t=document.getElementById('collar-ticker').value.trim(); if(t) runCollar(t);" /> Collar 1/3 of position</label>
     </div>
     <details id="collar-track-box" style="margin-bottom:12px;border:1px solid var(--border);border-radius:8px;padding:6px 12px;background:rgba(0,0,0,0.12)">
       <summary style="cursor:pointer;font-size:12px;font-weight:800;color:var(--accent);padding:4px 0">＋ Track a collar you already hold</summary>
@@ -5045,7 +5044,6 @@ async function runCollar(forceTicker) {
     var upsideToCapPct = (cap - pd.price) / pd.price * 100;
     var costBasis = mode === 'tax' ? parseFloat(document.getElementById('collar-cost').value) : NaN;
     var lockedGain = !isNaN(costBasis) ? (lockedIn - costBasis) : null;
-    var third = document.getElementById('collar-third').checked;
 
     // ── Scorecard (Laura-stated rules only) ──
     var c_call200 = (pd.sma200 != null) ? cap >= pd.sma200 : null; // short call above the 200 MA = "perfection" (L1)
@@ -5074,7 +5072,7 @@ async function runCollar(forceTicker) {
       _cChip('Upside to cap', '+' + fmt(upsideToCapPct, 1) + '%') +
     '</div>';
 
-    html += '<div class="trade-summary"><h4>The Collar — ' + (third ? '1/3 of your position' : '1 per 100 shares') + '</h4><div class="trade-summary-grid">' +
+    html += '<div class="trade-summary"><h4>The Collar — 1 per 100 shares</h4><div class="trade-summary-grid">' +
       _tsCell('Sell Call (cap)', fmtDollar(cap) + ' @ $' + fmt(callMid, 2), 'ts-gain', '+$' + fmt(callMid * 100, 0) + (callDelta != null ? ' · Δ' + fmt(Math.abs(callDelta), 2) : '') + ' · OI ' + _kOI(callOI)) +
       _tsCell('Buy Put (floor)', fmtDollar(floor) + ' @ $' + fmt(putMid, 2), 'ts-loss', '−$' + fmt(putMid * 100, 0) + (putDelta != null ? ' · Δ' + fmt(Math.abs(putDelta), 2) : '') + ' · OI ' + _kOI(putOI)) +
       _tsCell(isCredit ? 'Net credit' : 'Net debit', (isCredit ? '+' : '−') + '$' + fmt(Math.abs(net100), 2), isCredit ? 'ts-gain' : 'ts-neutral', isCredit ? 'a free hedge (paid to you)' : 'you pay for a higher floor') +
@@ -5089,7 +5087,7 @@ async function runCollar(forceTicker) {
     if (mode === 'tax') html += critRow(2, 'Expiration past the 1-year (366-day) mark', c_dte, expiryDisplay(expiry) + ' · ' + dte + ' DTE');
     else html += critRow(2, 'Short-call DTE ≤ 45 (30-45 window)', c_dte, dte + ' days');
     html += critRow(3, 'No earnings before the short-call expiry', c_earn, earningsRisk === true ? ('Earnings ' + nextEarnings + (earningsEst ? ' ≈ est.' : '')) : earningsRisk === null ? '⚠ Verify — no date' : 'Clear');
-    html += '<div class="criterion" style="border-left:3px solid var(--border2)"><span class="rank-pip" style="background:transparent">ℹ️</span><div class="badge-na">i</div><span class="crit-label"><strong>Covered:</strong> own 100 shares (or a deep-ITM LEAP) per collar — never naked. <span style="color:var(--text-muted)">Not scored — the app can\'t see your shares.</span></span><span class="crit-val">' + (third ? '1/3 size' : '1:100') + '</span></div>';
+    html += '<div class="criterion" style="border-left:3px solid var(--border2)"><span class="rank-pip" style="background:transparent">ℹ️</span><div class="badge-na">i</div><span class="crit-label"><strong>Covered:</strong> own 100 shares (or a deep-ITM LEAP) per collar — never naked. <span style="color:var(--text-muted)">Not scored — the app can\'t see your shares.</span></span><span class="crit-val">1:100</span></div>';
     html += '</div>' + scoreSummaryHtml(score, total) + '</div>';
 
     // At-expiry scenarios
@@ -5119,7 +5117,7 @@ async function runCollar(forceTicker) {
     html += _collarChain('Call Chain — pick your resistance strike (★ = app pick)', callChain, callStrike, pd.price, 'call');
     html += _collarChain('Put Chain — pick your floor (★ = app pick)', putChain, putStrike, pd.price, 'put');
 
-    _lastCollar = { ticker: ticker, mode: mode, cap: cap, floor: floor, expiry: expiry, callMid: callMid, putMid: putMid, buyDate: (mode === 'tax' ? document.getElementById('collar-buydate').value : ''), cost: costBasis, third: third };
+    _lastCollar = { ticker: ticker, mode: mode, cap: cap, floor: floor, expiry: expiry, callMid: callMid, putMid: putMid, buyDate: (mode === 'tax' ? document.getElementById('collar-buydate').value : ''), cost: costBasis };
     document.getElementById('collar-results').innerHTML = html;
     setStatus('collar-status', 'Done', 'ok');
   } catch (e) {
@@ -5254,7 +5252,7 @@ function renderCollarPositions() {
     var st = p.lastStatus || { icon: '·', color: 'var(--text-muted)', short: '—', label: 'Not checked yet — hit ↻ Check status.' };
     return '<div style="border:1px solid var(--border);border-left:3px solid ' + st.color + ';border-radius:8px;padding:10px 13px;margin-bottom:8px;background:rgba(0,0,0,0.16)">' +
       '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">' +
-        '<div><strong style="color:var(--accent)">' + p.ticker + '</strong> <span style="color:var(--text-muted);font-size:11px">' + (p.mode === 'tax' ? 'Tax/Lock' : 'Hedge') + ' · Cap ' + fmtDollar(p.cap) + ' / Floor ' + fmtDollar(p.floor) + ' · ' + expiryDisplay(p.expiry) + ' · ' + (isCr ? '+' : '−') + '$' + fmt(Math.abs(net * 100), 0) + (p.third ? ' · 1/3' : '') + '</span></div>' +
+        '<div><strong style="color:var(--accent)">' + p.ticker + '</strong> <span style="color:var(--text-muted);font-size:11px">' + (p.mode === 'tax' ? 'Tax/Lock' : 'Hedge') + ' · Cap ' + fmtDollar(p.cap) + ' / Floor ' + fmtDollar(p.floor) + ' · ' + expiryDisplay(p.expiry) + ' · ' + (isCr ? '+' : '−') + '$' + fmt(Math.abs(net * 100), 0) + '</span></div>' +
         '<div style="display:flex;gap:6px;align-items:center">' +
           '<span style="color:' + st.color + ';font-weight:800;font-size:12px">' + st.icon + ' ' + st.short + '</span>' +
           '<button onclick="collarPosRemove(\'' + p.id + '\')" title="Stop tracking" style="background:transparent;border:1px solid var(--border);border-radius:5px;color:var(--text-muted);font-size:11px;padding:3px 8px;cursor:pointer">✕</button>' +
