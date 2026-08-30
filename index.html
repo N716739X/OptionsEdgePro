@@ -5157,14 +5157,34 @@ function loadCollarTrackExpirations() {
   if (t === _collarTrackExpTicker && sel.options.length > 1) return; // already loaded for this ticker
   _collarTrackExpTicker = t;
   sel.innerHTML = '<option value="">Loading…</option>';
-  fetchExpirations(t).then(function(exps) {
+  return fetchExpirations(t).then(function(exps) {
     if (!exps || !exps.length) { sel.innerHTML = '<option value="">(no expirations)</option>'; return; }
     sel.innerHTML = '<option value="">Select expiration…</option>' +
       exps.map(function(e) { return '<option value="' + e + '">' + expiryDisplay(e) + ' · ' + dteFromStr(e) + 'd</option>'; }).join('');
   }).catch(function() { sel.innerHTML = '<option value="">(couldn\'t load — re-enter ticker)</option>'; _collarTrackExpTicker = null; });
 }
 
-// Track a collar the user ALREADY HOLDS — their own strikes and fills.
+// Load a tracked collar back into the manual form so its fills / strikes can be fixed.
+var _collarEditId = null;
+function collarPosEdit(id) {
+  var p = collarPosLoad().filter(function(x) { return x.id === id; })[0];
+  if (!p) { setStatus('collar-status', 'Could not find that collar', 'error'); return; }
+  _collarEditId = id;
+  var box = document.getElementById('collar-track-box'); if (box) box.open = true;
+  document.getElementById('collar-track-ticker').value = p.ticker;
+  document.getElementById('collar-track-cap').value = p.cap;
+  document.getElementById('collar-track-floor').value = p.floor;
+  document.getElementById('collar-track-callcr').value = (p.entryCallMid ? p.entryCallMid : '');
+  document.getElementById('collar-track-putcost').value = (p.entryPutMid ? p.entryPutMid : '');
+  document.getElementById('collar-track-tax').checked = (p.mode === 'tax');
+  var apply = function() { var sel = document.getElementById('collar-track-exp'); if (sel) sel.value = p.expiry; };
+  var done = loadCollarTrackExpirations();
+  if (done && done.then) done.then(apply); else apply();
+  setStatus('collar-status', 'Editing ' + p.ticker + ' — add Call credit / Put cost, then hit Track to save', 'ok');
+  try { if (box) box.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (e) {}
+}
+
+// Track a collar the user ALREADY HOLDS — their own strikes and fills. Upserts (updates if it exists).
 function collarPosAddManual() {
   var t = (document.getElementById('collar-track-ticker').value || '').trim().toUpperCase();
   var exp = (document.getElementById('collar-track-exp').value || '').trim();
@@ -5177,12 +5197,13 @@ function collarPosAddManual() {
   if (!exp) { setStatus('collar-status', 'Select your expiration from the dropdown', 'error'); return; }
   if (isNaN(cap) || isNaN(floor)) { setStatus('collar-status', 'Enter your cap (call) and floor (put) strikes', 'error'); return; }
   if (cap <= floor) { setStatus('collar-status', 'Cap (call) must be above the floor (put)', 'error'); return; }
-  var arr = collarPosLoad();
   var id = t + '-' + cap + '-' + floor + '-' + exp;
-  if (arr.some(function(x) { return x.id === id; })) { setStatus('collar-status', 'That collar is already tracked', 'ok'); renderCollarPositions(); return; }
-  arr.push({ id: id, ticker: t, mode: isTax ? 'tax' : 'hedge', cap: cap, floor: floor, expiry: exp, entryCallMid: (!isNaN(cc) ? cc : 0), entryPutMid: (!isNaN(pc) ? pc : 0), buyDate: '', cost: null, third: false, manual: true, lastStatus: null });
+  // Upsert: drop any entry with this id (dedupe) and the one being edited (in case strikes changed), then add fresh.
+  var arr = collarPosLoad().filter(function(x) { return x.id !== id && x.id !== _collarEditId; });
+  arr.push({ id: id, ticker: t, mode: isTax ? 'tax' : 'hedge', cap: cap, floor: floor, expiry: exp, entryCallMid: (!isNaN(cc) ? cc : 0), entryPutMid: (!isNaN(pc) ? pc : 0), buyDate: '', cost: null, manual: true, lastStatus: null });
+  var wasEdit = !!_collarEditId; _collarEditId = null;
   collarPosSave(arr);
-  setStatus('collar-status', '✓ Tracking ' + t + ' collar', 'ok');
+  setStatus('collar-status', (wasEdit ? '✓ Updated ' : '✓ Tracking ') + t + ' collar', 'ok');
   ['collar-track-ticker', 'collar-track-exp', 'collar-track-cap', 'collar-track-floor', 'collar-track-callcr', 'collar-track-putcost'].forEach(function(id2) { var e = document.getElementById(id2); if (e) e.value = ''; });
   renderCollarPositions();
   checkCollarStatus(true);
@@ -5255,6 +5276,7 @@ function renderCollarPositions() {
         '<div><strong style="color:var(--accent)">' + p.ticker + '</strong> <span style="color:var(--text-muted);font-size:11px">' + (p.mode === 'tax' ? 'Tax/Lock' : 'Hedge') + ' · Cap ' + fmtDollar(p.cap) + ' / Floor ' + fmtDollar(p.floor) + ' · ' + expiryDisplay(p.expiry) + ' · ' + (isCr ? '+' : '−') + '$' + fmt(Math.abs(net * 100), 0) + '</span></div>' +
         '<div style="display:flex;gap:6px;align-items:center">' +
           '<span style="color:' + st.color + ';font-weight:800;font-size:12px">' + st.icon + ' ' + st.short + '</span>' +
+          '<button onclick="collarPosEdit(\'' + p.id + '\')" title="Edit strikes / fills" style="background:transparent;border:1px solid var(--border);border-radius:5px;color:var(--accent);font-size:11px;padding:3px 8px;cursor:pointer">✎</button>' +
           '<button onclick="collarPosRemove(\'' + p.id + '\')" title="Stop tracking" style="background:transparent;border:1px solid var(--border);border-radius:5px;color:var(--text-muted);font-size:11px;padding:3px 8px;cursor:pointer">✕</button>' +
         '</div>' +
       '</div>' +
