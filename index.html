@@ -1725,6 +1725,7 @@ input, textarea, select { -webkit-user-select: text; user-select: text; }
       <label id="collar-floor-wrap" style="display:none;font-size:11px;color:var(--text-muted);font-weight:700">Floor — won't give back below<br><input id="collar-floor" type="number" step="1" placeholder="put strike" style="margin-top:3px;width:150px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:6px 8px;font-size:12px" /></label>
       <label style="font-size:11px;color:var(--text-muted);font-weight:700;display:flex;align-items:center;gap:6px"><input id="collar-third" type="checkbox" onchange="var t=document.getElementById('collar-ticker').value.trim(); if(t) runCollar(t);" /> Collar 1/3 of position</label>
     </div>
+    <div id="collar-positions"></div>
     <div id="collar-results"><div class="placeholder"><div class="ph-icon">🛡</div><p>Select a ticker above to analyze</p></div></div>
   </div>
 </div>
@@ -2013,6 +2014,8 @@ function authSuccess(data) {
   // If MSL Adjust is the restored tab, render tracked positions (now that _authUser is set)
   var mp = document.getElementById('panel-msl-adjust');
   if (mp && mp.classList.contains('active')) { renderMslPositions(); checkMslRollStatus(false); }
+  var cp = document.getElementById('panel-collar');
+  if (cp && cp.classList.contains('active')) { renderCollarPositions(); checkCollarStatus(false); }
 }
 
 function authLogout(msg) {
@@ -2226,6 +2229,7 @@ document.querySelectorAll('.tab').forEach(function(tab) {
       renderMiniRankings(tid, null);
     }
     if (tid === 'msl-adjust') { renderMslPositions(); checkMslRollStatus(false); } // show saved MSLs + refresh flags if stale
+    if (tid === 'collar') { renderCollarPositions(); checkCollarStatus(false); } // show tracked collars + refresh flags if stale
   });
 });
 
@@ -5063,6 +5067,8 @@ async function runCollar(forceTicker) {
       _tsCell('Locked-in price', fmtDollar(lockedIn), 'ts-neutral', 'floor ' + (isCredit ? '+ credit' : '− debit')) +
     '</div></div>';
 
+    html += '<div style="margin:4px 0 12px"><button onclick="collarPosAddFromLast()" title="Save these legs so the app flags roll / BTC windows" style="padding:8px 16px;background:transparent;border:1px solid var(--accent);border-radius:6px;color:var(--accent);font-size:12px;font-weight:800;cursor:pointer">＋ Track this collar</button></div>';
+
     html += '<div class="scorecard"><h3>Collar — Score <span style="color:var(--text-muted);font-weight:400;font-size:11px">(Laura\'s stated rules)</span></h3><div class="criteria-list">';
     html += mrConfirmRow(ticker, 'top'); // +2 MR spike — your ETH call, not scored
     html += critRow(1, 'Short call above the 200 MA (Laura: "perfection")', c_call200, pd.sma200 != null ? fmtDollar(cap) + ' vs SMA ' + fmtDollar(pd.sma200) : 'N/A');
@@ -5099,12 +5105,115 @@ async function runCollar(forceTicker) {
     html += _collarChain('Call Chain — pick your resistance strike (★ = app pick)', callChain, callStrike, pd.price, 'call');
     html += _collarChain('Put Chain — pick your floor (★ = app pick)', putChain, putStrike, pd.price, 'put');
 
+    _lastCollar = { ticker: ticker, mode: mode, cap: cap, floor: floor, expiry: expiry, callMid: callMid, putMid: putMid, buyDate: (mode === 'tax' ? document.getElementById('collar-buydate').value : ''), cost: costBasis, third: third };
     document.getElementById('collar-results').innerHTML = html;
     setStatus('collar-status', 'Done', 'ok');
   } catch (e) {
     setStatus('collar-status', '✗ ' + e.message, 'error');
     document.getElementById('collar-results').innerHTML = '<div class="notice">' + e.message + '</div>';
   }
+}
+
+// ═══════════════════════════════════════════════════════
+// COLLAR POSITION TRACKER — save your collar legs; the app flags Laura's
+// management windows (decision point, roll up, roll the whole collar forward,
+// BTC 80-90%, protected floor) on a live price + leg-mid check.
+// ═══════════════════════════════════════════════════════
+var _lastCollar = null;
+var COLLAR_POS_KEY = 'owp-collar-positions';
+function collarPosLoad() { try { var r = localStorage.getItem(COLLAR_POS_KEY); var a = r ? JSON.parse(r) : []; return Array.isArray(a) ? a : []; } catch (e) { return []; } }
+function collarPosSave(a) { try { localStorage.setItem(COLLAR_POS_KEY, JSON.stringify(a)); } catch (e) {} }
+function collarPosAddFromLast() {
+  var p = _lastCollar;
+  if (!p) { setStatus('collar-status', 'Run a collar first, then Track it', 'error'); return; }
+  var arr = collarPosLoad();
+  var id = p.ticker + '-' + p.cap + '-' + p.floor + '-' + p.expiry;
+  if (arr.some(function(x) { return x.id === id; })) { setStatus('collar-status', 'That collar is already tracked', 'ok'); renderCollarPositions(); return; }
+  arr.push({ id: id, ticker: p.ticker, mode: p.mode, cap: p.cap, floor: p.floor, expiry: p.expiry, entryCallMid: p.callMid, entryPutMid: p.putMid, buyDate: p.buyDate || '', cost: (!isNaN(p.cost) ? p.cost : null), third: !!p.third, lastStatus: null });
+  collarPosSave(arr);
+  setStatus('collar-status', '✓ Tracking ' + p.ticker + ' collar', 'ok');
+  renderCollarPositions();
+  checkCollarStatus(true);
+}
+function collarPosRemove(id) { collarPosSave(collarPosLoad().filter(function(x) { return x.id !== id; })); renderCollarPositions(); }
+function _midForStrike(chain, strike) {
+  if (!chain || !chain.strike) return null;
+  for (var i = 0; i < chain.strike.length; i++) { if (Math.abs(chain.strike[i] - strike) < 0.01) return chain.mid ? chain.mid[i] : null; }
+  return null;
+}
+// Laura's collar management triggers, priced live. Priority: through-cap > BTC window > decision point > protected floor > in band.
+function collarStatus(p, pd, callMidNow, putMidNow) {
+  var price = pd.price;
+  var net = p.entryCallMid - p.entryPutMid;      // + credit / − debit at entry
+  var decisionPt = p.cap + net;                  // Laura: short strike + credit
+  var lockedIn = p.floor + net;
+  var dte = dteFromStr(p.expiry);
+  var callProfit = (callMidNow != null && p.entryCallMid > 0) ? (p.entryCallMid - callMidNow) / p.entryCallMid * 100 : null;
+  var dteTag = (dte != null && dte <= 21 && p.mode !== 'tax') ? ' · ' + dte + ' DTE left' : (dte != null ? ' · ' + dte + ' DTE' : '');
+  if (price >= p.cap) {
+    return { icon: '🔴', color: 'var(--red)', short: 'ROLL FWD', label: 'Price ' + fmtDollar(price) + ' is THROUGH your ' + fmtDollar(p.cap) + ' cap — early-assignment risk. Laura: roll the WHOLE collar forward in time (or BTC the call). Upside is capped here.' + dteTag };
+  }
+  if (callProfit != null && callProfit >= 80) {
+    return { icon: '🟢', color: 'var(--green)', short: 'BTC CALL', label: 'Short call has decayed ' + fmt(callProfit, 0) + '% (GTC 80–90% window). If the hedge job is done, buy the call back and leave the put on. (BTC rule is taught on the covered-call leg.)' + dteTag };
+  }
+  if (price >= decisionPt) {
+    return { icon: '⚠️', color: 'var(--yellow)', short: 'DECISION', label: 'Price ' + fmtDollar(price) + ' at/above the decision point ' + fmtDollar(decisionPt) + ' (cap + credit). If you don\'t want to be called away, roll the call UP — check earnings, then sell divergence (present = OK to hold).' + dteTag };
+  }
+  if (price <= p.floor) {
+    return { icon: '🛡', color: 'var(--accent)', short: 'PROTECTED', label: 'Price ' + fmtDollar(price) + ' at/below your ' + fmtDollar(p.floor) + ' floor — the put is protecting you; gain locks at ' + fmtDollar(lockedIn) + ' if it stays here into expiry.' + dteTag };
+  }
+  return { icon: '⏳', color: 'var(--text-muted)', short: 'IN BAND', label: 'Price ' + fmtDollar(price) + ' is between floor ' + fmtDollar(p.floor) + ' and cap ' + fmtDollar(p.cap) + ' — no action needed. Decision point ' + fmtDollar(decisionPt) + '.' + dteTag };
+}
+var _collarChecking = false, _collarLastCheck = 0;
+async function checkCollarStatus(force) {
+  var arr = collarPosLoad();
+  if (!arr.length) { renderCollarPositions(); return; }
+  if (_collarChecking) return;
+  if (!force && Date.now() - _collarLastCheck < 60000) { renderCollarPositions(); return; }
+  _collarChecking = true;
+  var btn = document.getElementById('collar-check'); if (btn) { btn.disabled = true; btn.textContent = '↻ Checking…'; }
+  try {
+    for (var i = 0; i < arr.length; i++) {
+      var p = arr[i];
+      try {
+        var pd = await fetchPriceData(p.ticker, '4h');
+        var cc = await fetchChain(p.ticker, p.expiry, 'call');
+        var pc = await fetchChain(p.ticker, p.expiry, 'put');
+        p.lastStatus = collarStatus(p, pd, _midForStrike(cc, p.cap), _midForStrike(pc, p.floor));
+      } catch (e) {
+        p.lastStatus = { icon: '·', color: 'var(--text-muted)', short: 'ERR', label: 'Could not fetch live data — hit ↻ to retry.' };
+      }
+    }
+    collarPosSave(arr); _collarLastCheck = Date.now();
+  } finally {
+    _collarChecking = false;
+    var b = document.getElementById('collar-check'); if (b) { b.disabled = false; b.textContent = '↻ Check status'; }
+    renderCollarPositions();
+  }
+}
+function renderCollarPositions() {
+  var el = document.getElementById('collar-positions'); if (!el) return;
+  var arr = collarPosLoad();
+  if (!arr.length) { el.innerHTML = ''; return; }
+  var rows = arr.map(function(p) {
+    var net = p.entryCallMid - p.entryPutMid; var isCr = net >= 0;
+    var st = p.lastStatus || { icon: '·', color: 'var(--text-muted)', short: '—', label: 'Not checked yet — hit ↻ Check status.' };
+    return '<div style="border:1px solid var(--border);border-left:3px solid ' + st.color + ';border-radius:8px;padding:10px 13px;margin-bottom:8px;background:rgba(0,0,0,0.16)">' +
+      '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">' +
+        '<div><strong style="color:var(--accent)">' + p.ticker + '</strong> <span style="color:var(--text-muted);font-size:11px">' + (p.mode === 'tax' ? 'Tax/Lock' : 'Hedge') + ' · Cap ' + fmtDollar(p.cap) + ' / Floor ' + fmtDollar(p.floor) + ' · ' + expiryDisplay(p.expiry) + ' · ' + (isCr ? '+' : '−') + '$' + fmt(Math.abs(net * 100), 0) + (p.third ? ' · 1/3' : '') + '</span></div>' +
+        '<div style="display:flex;gap:6px;align-items:center">' +
+          '<span style="color:' + st.color + ';font-weight:800;font-size:12px">' + st.icon + ' ' + st.short + '</span>' +
+          '<button onclick="collarPosRemove(\'' + p.id + '\')" title="Stop tracking" style="background:transparent;border:1px solid var(--border);border-radius:5px;color:var(--text-muted);font-size:11px;padding:3px 8px;cursor:pointer">✕</button>' +
+        '</div>' +
+      '</div>' +
+      '<div style="font-size:11.5px;color:var(--text);margin-top:6px;line-height:1.5">' + st.label + '</div>' +
+    '</div>';
+  }).join('');
+  el.innerHTML = '<div style="margin-bottom:14px">' +
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">' +
+      '<span style="font-weight:800;color:var(--text);font-size:13px">Tracked Collars</span>' +
+      '<button id="collar-check" onclick="checkCollarStatus(true)" style="padding:5px 12px;background:transparent;border:1px solid var(--accent);border-radius:5px;color:var(--accent);font-size:11px;font-weight:700;cursor:pointer">↻ Check status</button>' +
+    '</div>' + rows + '</div>';
 }
 
 // ═══════════════════════════════════════════════════════
