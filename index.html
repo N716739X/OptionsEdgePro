@@ -1615,6 +1615,7 @@ input, textarea, select { -webkit-user-select: text; user-select: text; }
   <div class="tab" data-tab="synth">Synthetic Long</div>
   <div class="tab" data-tab="msl">MSL</div>
   <div class="tab" data-tab="msl-adjust">MSL Adjust</div>
+  <div class="tab" data-tab="collar">Collar</div>
 </div>
 
 <!-- ═══ TICKER STRIP ═══ -->
@@ -1700,6 +1701,31 @@ input, textarea, select { -webkit-user-select: text; user-select: text; }
       <input type="hidden" id="cc-ticker" />
     </div>
     <div id="cc-results"><div class="placeholder"><div class="ph-icon">↑</div><p>Select a ticker above to analyze</p></div></div>
+  </div>
+</div>
+
+<!-- ═══ COLLAR PANEL ═══ -->
+<div id="panel-collar" class="panel">
+  <div class="analyzer-container">
+    <div class="analyzer-status-row">
+      <span class="analyzer-label">Collar</span>
+      <span class="status-msg" id="collar-status"></span>
+      <input type="hidden" id="collar-ticker" />
+    </div>
+    <div style="font-size:12px;color:var(--text-muted);margin-bottom:10px;line-height:1.5">
+      Laura's collar (Course 202 L4 + Rapid Fire): on a <strong>+2 MR</strong> spike, sell a call at/near resistance and use the premium to buy a protective put. Pick the job below. You must own <strong>100 shares (or a deep-ITM LEAP) per collar</strong> — never naked. <strong>Not financial advice.</strong>
+    </div>
+    <div class="msl-mode-row">
+      <button id="collar-mode-hedge" class="msl-mode on" onclick="setCollarMode('hedge')">Hedge (short-term)</button>
+      <button id="collar-mode-tax" class="msl-mode" onclick="setCollarMode('tax')">Tax / Lock (long-term)</button>
+    </div>
+    <div id="collar-inputs" style="display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;margin-bottom:12px">
+      <label id="collar-buydate-wrap" style="display:none;font-size:11px;color:var(--text-muted);font-weight:700">Stock buy date<br><input id="collar-buydate" type="date" style="margin-top:3px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:6px 8px;font-size:12px" /></label>
+      <label id="collar-cost-wrap" style="display:none;font-size:11px;color:var(--text-muted);font-weight:700">Your cost basis ($/sh)<br><input id="collar-cost" type="number" step="0.01" placeholder="optional" style="margin-top:3px;width:130px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:6px 8px;font-size:12px" /></label>
+      <label id="collar-floor-wrap" style="display:none;font-size:11px;color:var(--text-muted);font-weight:700">Floor — won't give back below<br><input id="collar-floor" type="number" step="1" placeholder="put strike" style="margin-top:3px;width:150px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:6px 8px;font-size:12px" /></label>
+      <label style="font-size:11px;color:var(--text-muted);font-weight:700;display:flex;align-items:center;gap:6px"><input id="collar-third" type="checkbox" onchange="var t=document.getElementById('collar-ticker').value.trim(); if(t) runCollar(t);" /> Collar 1/3 of position</label>
+    </div>
+    <div id="collar-results"><div class="placeholder"><div class="ph-icon">🛡</div><p>Select a ticker above to analyze</p></div></div>
   </div>
 </div>
 
@@ -4863,6 +4889,225 @@ async function runCC(forceTicker) {
 }
 
 // ═══════════════════════════════════════════════════════
+// COLLAR ANALYZER — Laura Course 202 L4 + Rapid Fire rules
+// Two jobs: (1) short-term hedge on a +2 MR spike (sell call ≤45 DTE, buy put near price),
+// (2) tax/lock collar past the 366-day mark. No option deltas or a "4:1" formula are used —
+// Laura states neither. Call strike is a resistance proxy (~9% OTM, lifted to the 200 MA); pick
+// your own from the chain. Not financial advice.
+// ═══════════════════════════════════════════════════════
+function _cChip(label, val, color) {
+  return '<span style="display:inline-flex;gap:5px;align-items:baseline">' +
+    '<span style="color:var(--text-muted);text-transform:uppercase;letter-spacing:0.8px;font-weight:700;font-size:10px">' + label + '</span>' +
+    '<span style="color:' + (color || 'var(--accent)') + ';font-weight:800">' + val + '</span></span>';
+}
+function _tsCell(label, val, cls, note) {
+  return '<div class="ts-item"><div class="ts-label">' + label + '</div>' +
+    '<div class="ts-val ' + (cls || '') + '">' + val + '</div>' +
+    (note ? '<div class="ts-note">' + note + '</div>' : '') + '</div>';
+}
+function _kOI(n) { return (n == null) ? '—' : (n >= 1000 ? fmt(n / 1000, 1) + 'k' : fmt(n, 0)); }
+function _collarChain(title, chain, sel, price, side) {
+  if (!chain || !chain.strike || !chain.strike.length) return '';
+  var rows = '';
+  for (var i = 0; i < chain.strike.length; i++) {
+    var k = chain.strike[i]; var mid = chain.mid ? chain.mid[i] : null;
+    if (mid == null || mid <= 0) continue;
+    var dist = (k / price - 1) * 100;
+    if (side === 'call' && (k <= price || dist > 40)) continue;   // OTM calls, within +40%
+    if (side === 'put'  && (k >= price || dist < -40)) continue;  // OTM puts, within −40%
+    var isSel = k === sel;
+    rows += '<tr' + (isSel ? ' style="background:rgba(0,255,204,0.08)"' : '') + '>' +
+      '<td style="padding:5px 10px;font-weight:' + (isSel ? '800' : '600') + ';color:' + (isSel ? 'var(--accent)' : 'var(--text)') + '">' + (isSel ? '★ ' : '') + fmtDollar(k) + '</td>' +
+      '<td style="padding:5px 10px;text-align:right">$' + fmt(mid, 2) + '</td>' +
+      '<td style="padding:5px 10px;text-align:right;color:var(--text-muted)">' + (chain.delta && chain.delta[i] != null ? fmt(Math.abs(chain.delta[i]), 2) : '—') + '</td>' +
+      '<td style="padding:5px 10px;text-align:right;color:var(--text-muted)">' + _kOI(chain.openInterest ? chain.openInterest[i] : null) + '</td>' +
+      '<td style="padding:5px 10px;text-align:right;color:' + (dist >= 0 ? 'var(--green)' : 'var(--red)') + '">' + (dist >= 0 ? '+' : '') + fmt(dist, 1) + '%</td>' +
+    '</tr>';
+  }
+  return '<div class="chain-section" style="margin-top:14px"><h3>' + title + '</h3>' +
+    '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">' +
+    '<thead><tr style="color:var(--text-muted);text-transform:uppercase;font-size:10px;letter-spacing:0.5px">' +
+    '<th style="padding:5px 10px;text-align:left">Strike</th><th style="padding:5px 10px;text-align:right">Mid</th><th style="padding:5px 10px;text-align:right">&Delta;</th><th style="padding:5px 10px;text-align:right">OI</th><th style="padding:5px 10px;text-align:right">Dist</th></tr></thead>' +
+    '<tbody>' + rows + '</tbody></table></div></div>';
+}
+
+var _collarMode = 'hedge';
+function setCollarMode(m) {
+  _collarMode = m;
+  var h = document.getElementById('collar-mode-hedge'), t = document.getElementById('collar-mode-tax');
+  if (h) h.classList.toggle('on', m === 'hedge');
+  if (t) t.classList.toggle('on', m === 'tax');
+  var taxOnly = (m === 'tax');
+  ['collar-buydate-wrap', 'collar-cost-wrap', 'collar-floor-wrap'].forEach(function(id) {
+    var e = document.getElementById(id); if (e) e.style.display = taxOnly ? '' : 'none';
+  });
+  var tk = document.getElementById('collar-ticker').value.trim();
+  if (tk) runCollar(tk);
+}
+
+async function runCollar(forceTicker) {
+  var ticker = forceTicker || document.getElementById('collar-ticker').value.trim().toUpperCase();
+  if (!ticker) return;
+  var inp = document.getElementById('collar-ticker'); if (inp) inp.value = ticker;
+  var mode = _collarMode;
+  document.getElementById('collar-results').innerHTML = '';
+  try {
+    setStatus('collar-status', spinner() + 'Price & indicators…', 'loading');
+    var pd = await fetchPriceData(ticker, '4h'); // collar sold on the 4H IADSS chart (Laura OG)
+
+    setStatus('collar-status', spinner() + 'Expirations…', 'loading');
+    var expirations = await fetchExpirations(ticker);
+
+    // ── Pick the expiration for the job ──
+    var expiry, dte, taxInfo = null;
+    if (mode === 'tax') {
+      var buyStr = document.getElementById('collar-buydate').value;
+      if (!buyStr) {
+        setStatus('collar-status', 'Enter your stock buy date', 'error');
+        document.getElementById('collar-results').innerHTML = '<div class="notice">Tax / Lock mode needs your original <strong>stock buy date</strong> so the app can find an expiration past the 1-year (366-day) mark for long-term capital gains. Laura is <strong>not a tax professional</strong> — confirm with yours.</div>';
+        return;
+      }
+      var buyDate = new Date(buyStr + 'T00:00:00');
+      var cutoff = new Date(buyDate.getTime()); cutoff.setDate(cutoff.getDate() + 366);
+      var elig = expirations.map(function(e) { return { e: e, d: new Date(e + 'T00:00:00') }; })
+        .filter(function(x) { return x.d > cutoff; })
+        .sort(function(a, b) { return a.d - b.d; });
+      if (!elig.length) throw new Error('No listed expiration is past 366 days from ' + buyStr + ' — the longest LEAPS may not reach long-term-gains territory yet.');
+      var pick = elig.length > 1 ? elig[1] : elig[0]; // Laura prefers skipping the first eligible month for a bigger buffer
+      expiry = pick.e; dte = dteFromStr(expiry);
+      taxInfo = { earliest: elig[0].e, skippedFirst: elig.length > 1 };
+    } else {
+      expiry = findBestExpiry(expirations, 30, 45) || findBestExpiry(expirations, 25, 45);
+      if (!expiry) throw new Error('No expiry in the 30-45 DTE (max 45) hedge window.');
+      dte = dteFromStr(expiry);
+    }
+
+    var _ne = await fetchNextEarnings(ticker);
+    var nextEarnings = _ne ? _ne.date : null, earningsEst = _ne ? _ne.estimated : false;
+    var earningsRisk = earningsRiskVs(nextEarnings, expiry);
+
+    setStatus('collar-status', spinner() + 'Chains…', 'loading');
+    var callChain = await fetchChain(ticker, expiry, 'call');
+    var putChain  = await fetchChain(ticker, expiry, 'put');
+
+    // ── Short call: at/near resistance, above the 200 MA when possible (L1). No delta target.
+    // Proxy: ~9% OTM (same as the Covered Call tab), lifted to the 200 MA if that sits higher.
+    var callTarget = Math.max(pd.price * 1.09, (pd.sma200 && pd.sma200 > pd.price) ? pd.sma200 : 0);
+    var callStrike = null, callMid = null, callDelta = null, callOI = null;
+    if (callChain && callChain.strike) {
+      var cb = Infinity;
+      for (var i = 0; i < callChain.strike.length; i++) {
+        if (callChain.strike[i] <= pd.price) continue;
+        var cm = callChain.mid ? callChain.mid[i] : null; if (cm == null || cm <= 0) continue;
+        var cd2 = Math.abs(callChain.strike[i] - callTarget);
+        if (cd2 < cb) { cb = cd2; callStrike = callChain.strike[i]; callMid = cm; callDelta = callChain.delta ? callChain.delta[i] : null; callOI = callChain.openInterest ? callChain.openInterest[i] : null; }
+      }
+    }
+    // ── Long put: hedge → nearest strike below price (close to current); tax → nearest to your floor.
+    var floorInput = mode === 'tax' ? parseFloat(document.getElementById('collar-floor').value) : NaN;
+    var putTarget = (!isNaN(floorInput)) ? floorInput : pd.price;
+    var putStrike = null, putMid = null, putDelta = null, putOI = null;
+    if (putChain && putChain.strike) {
+      var pbb = Infinity;
+      for (var j = 0; j < putChain.strike.length; j++) {
+        if (putChain.strike[j] >= pd.price) continue;
+        var pm = putChain.mid ? putChain.mid[j] : null; if (pm == null || pm <= 0) continue;
+        var pdd = Math.abs(putChain.strike[j] - putTarget);
+        if (pdd < pbb) { pbb = pdd; putStrike = putChain.strike[j]; putMid = pm; putDelta = putChain.delta ? putChain.delta[j] : null; putOI = putChain.openInterest ? putChain.openInterest[j] : null; }
+      }
+    }
+    if (callStrike == null || putStrike == null) throw new Error('Could not price both legs on ' + expiryDisplay(expiry) + '. Try another expiration or ticker.');
+
+    var netPerShare = callMid - putMid;            // + credit / − debit
+    var net100 = netPerShare * 100;
+    var isCredit = netPerShare >= 0;
+    var floor = putStrike, cap = callStrike;
+    var lockedIn = floor + netPerShare;            // GLD: floor 420 − $4 debit = 416
+    var decisionPt = cap + netPerShare;            // Laura: short strike + credit
+    var upsideToCapPct = (cap - pd.price) / pd.price * 100;
+    var costBasis = mode === 'tax' ? parseFloat(document.getElementById('collar-cost').value) : NaN;
+    var lockedGain = !isNaN(costBasis) ? (lockedIn - costBasis) : null;
+    var third = document.getElementById('collar-third').checked;
+
+    // ── Scorecard (Laura-stated rules only) ──
+    var c_call200 = (pd.sma200 != null) ? cap >= pd.sma200 : null; // short call above the 200 MA = "perfection" (L1)
+    var c_dte = mode === 'tax' ? true : (dte <= 45 && dte >= 25);   // ≤45 hedge / past-366 tax (true by construction)
+    var c_earn = earningsRisk === null ? null : !earningsRisk;      // no earnings before the short-call expiry
+    var scoreArr = [c_call200, c_dte, c_earn];
+    var score = scoreArr.filter(function(x) { return x === true; }).length;
+    var total = scoreArr.filter(function(x) { return x !== null && x !== undefined; }).length;
+
+    var html = priceBarHtml(ticker, pd, '4H');
+
+    html += '<div class="btc-note" style="border-color:var(--accent);color:var(--text);margin-bottom:12px">' +
+      (mode === 'tax'
+        ? '<strong>Tax / Lock collar.</strong> Sell the ' + fmtDollar(cap) + ' call / buy the ' + fmtDollar(floor) + ' put, expiring ' + expiryDisplay(expiry) + ' — past the 1-year mark for long-term gains' + (taxInfo && taxInfo.skippedFirst ? ' (skipped the first eligible month, ' + expiryDisplay(taxInfo.earliest) + ', for a bigger buffer — Laura\'s preference)' : '') + '. Floor locks in ' + fmtDollar(lockedIn) + '. Laura is not a tax pro — confirm with yours.'
+        : '<strong>Hedge collar (short-term).</strong> On a +2 MR spike, sell the ' + fmtDollar(cap) + ' call (' + dte + ' DTE, ≤45) and use the ' + (isCredit ? 'credit' : 'premium') + ' to buy the ' + fmtDollar(floor) + ' put near price — protecting the gains. Goal is protection, not getting called away, so keep the short call short-dated.') +
+    '</div>';
+
+    html += '<div style="display:flex;flex-wrap:wrap;gap:14px;align-items:center;padding:9px 14px;margin-bottom:10px;background:var(--surface2);border-radius:8px;border:1px solid var(--border)">' +
+      _cChip('Expiry', expiryDisplay(expiry)) +
+      _cChip('DTE', dte + ' days') +
+      _cChip(isCredit ? 'Net credit' : 'Net debit', (isCredit ? '+' : '−') + '$' + fmt(Math.abs(net100), 0), isCredit ? 'var(--green)' : 'var(--yellow)') +
+      _cChip('Floor (put)', fmtDollar(floor)) +
+      _cChip('Cap (call)', fmtDollar(cap)) +
+      _cChip('Locked-in', fmtDollar(lockedIn)) +
+      (lockedGain != null ? _cChip('Locked gain', (lockedGain >= 0 ? '+' : '') + '$' + fmt(lockedGain * 100, 0), lockedGain >= 0 ? 'var(--green)' : 'var(--red)') : '') +
+      _cChip('Upside to cap', '+' + fmt(upsideToCapPct, 1) + '%') +
+    '</div>';
+
+    html += '<div class="trade-summary"><h4>The Collar — ' + (third ? '1/3 of your position' : '1 per 100 shares') + '</h4><div class="trade-summary-grid">' +
+      _tsCell('Sell Call (cap)', fmtDollar(cap) + ' @ $' + fmt(callMid, 2), 'ts-gain', '+$' + fmt(callMid * 100, 0) + (callDelta != null ? ' · Δ' + fmt(Math.abs(callDelta), 2) : '') + ' · OI ' + _kOI(callOI)) +
+      _tsCell('Buy Put (floor)', fmtDollar(floor) + ' @ $' + fmt(putMid, 2), 'ts-loss', '−$' + fmt(putMid * 100, 0) + (putDelta != null ? ' · Δ' + fmt(Math.abs(putDelta), 2) : '') + ' · OI ' + _kOI(putOI)) +
+      _tsCell(isCredit ? 'Net credit' : 'Net debit', (isCredit ? '+' : '−') + '$' + fmt(Math.abs(net100), 2), isCredit ? 'ts-gain' : 'ts-neutral', isCredit ? 'a free hedge (paid to you)' : 'you pay for a higher floor') +
+      _tsCell('Locked-in price', fmtDollar(lockedIn), 'ts-neutral', 'floor ' + (isCredit ? '+ credit' : '− debit')) +
+    '</div></div>';
+
+    html += '<div class="scorecard"><h3>Collar — Score <span style="color:var(--text-muted);font-weight:400;font-size:11px">(Laura\'s stated rules)</span></h3><div class="criteria-list">';
+    html += mrConfirmRow(ticker, 'top'); // +2 MR spike — your ETH call, not scored
+    html += critRow(1, 'Short call above the 200 MA (Laura: "perfection")', c_call200, pd.sma200 != null ? fmtDollar(cap) + ' vs SMA ' + fmtDollar(pd.sma200) : 'N/A');
+    if (mode === 'tax') html += critRow(2, 'Expiration past the 1-year (366-day) mark', c_dte, expiryDisplay(expiry) + ' · ' + dte + ' DTE');
+    else html += critRow(2, 'Short-call DTE ≤ 45 (30-45 window)', c_dte, dte + ' days');
+    html += critRow(3, 'No earnings before the short-call expiry', c_earn, earningsRisk === true ? ('Earnings ' + nextEarnings + (earningsEst ? ' ≈ est.' : '')) : earningsRisk === null ? '⚠ Verify — no date' : 'Clear');
+    html += '<div class="criterion" style="border-left:3px solid var(--border2)"><span class="rank-pip" style="background:transparent">ℹ️</span><div class="badge-na">i</div><span class="crit-label"><strong>Covered:</strong> own 100 shares (or a deep-ITM LEAP) per collar — never naked. <span style="color:var(--text-muted)">Not scored — the app can\'t see your shares.</span></span><span class="crit-val">' + (third ? '1/3 size' : '1:100') + '</span></div>';
+    html += '</div>' + scoreSummaryHtml(score, total) + '</div>';
+
+    // At-expiry scenarios
+    html += '<div class="btc-note" style="margin-top:10px;line-height:1.55"><strong>At expiry:</strong> ' +
+      'between ' + fmtDollar(floor) + ' and ' + fmtDollar(cap) + ' → both legs expire worthless, net is the ' + (isCredit ? 'credit you kept' : 'debit you paid') + ' (a wash). ' +
+      'Above ' + fmtDollar(cap) + ' → called away at the cap; your upside is capped there (stock +$1 / short call −$1). ' +
+      'Below ' + fmtDollar(floor) + ' → the put is ITM, you\'re assigned short shares at ' + fmtDollar(floor) + ', which offsets your stock and <strong>locks the gain</strong>. Early assignment through the short call is the one risk you can\'t fully control.</div>';
+
+    // Management
+    html += '<div class="btc-note" style="margin-top:10px;line-height:1.55"><strong>Managing it (Laura):</strong> decision point = short strike + credit = ' + fmtDollar(decisionPt) + '; below it, no action. ' +
+      'If it runs toward the cap and you don\'t want to be called away, <strong>roll the call up</strong> (higher strike, same or later expiry) once higher strikes list. ' +
+      'GTC <strong>buy-to-close the short call at 80-90% profit</strong> <span style="color:var(--text-muted)">(she teaches this on the covered-call leg; whether it applies to a collar\'s call is an open question in her notes)</span>. ' +
+      'If the stock rips <strong>through</strong> the call, roll the <strong>whole collar forward in time</strong> to cut early-assignment risk; if it dumps, roll the <strong>put down and the call up</strong>. When the hedge job\'s done, buy the call back and leave the put on. <strong>You must be okay getting called away.</strong></div>';
+
+    // Contextual suggestions
+    var sug = [];
+    if (!isNaN(pd.meanRev)) {
+      if (pd.meanRev < 1) sug.push('⚠️ <strong>Not a +2 spike:</strong> 4H MR is ' + fmt(pd.meanRev, 2) + ' (' + mrZone(pd.meanRev).label + '). Laura sells collars on a <strong>+2 or higher</strong> MR spike — that\'s when the call is expensive and the put is cheaper, so the call funds the put best.');
+      else if (pd.meanRev < 2) sug.push('💡 <strong>MR approaching +2:</strong> 4H MR is ' + fmt(pd.meanRev, 2) + ' — close to Laura\'s +2 sell spike. A bit more upside and the call premium fattens.');
+    }
+    if (earningsRisk === true) sug.push('⚠️ <strong>Earnings ' + nextEarnings + ' before expiry:</strong> only collar into earnings if you\'re willing to be called away, or plan to buy the short call back before the report.');
+    if (mode === 'tax' && isNaN(costBasis)) sug.push('💡 Add your <strong>cost basis</strong> above to see the locked-in gain (floor − debit − your cost).');
+    if (mode === 'tax' && isNaN(floorInput)) sug.push('💡 Set a <strong>floor</strong> above — the price you won\'t give back below. Locked-in = floor ' + (isCredit ? '+ credit' : '− debit') + '.');
+    if (sug.length) { html += '<div style="margin-top:10px">'; sug.forEach(function(s) { html += '<div class="btc-note" style="margin-bottom:6px">' + s + '</div>'; }); html += '</div>'; }
+
+    // Chains for picking strikes
+    html += _collarChain('Call Chain — pick your resistance strike (★ = app pick)', callChain, callStrike, pd.price, 'call');
+    html += _collarChain('Put Chain — pick your floor (★ = app pick)', putChain, putStrike, pd.price, 'put');
+
+    document.getElementById('collar-results').innerHTML = html;
+    setStatus('collar-status', 'Done', 'ok');
+  } catch (e) {
+    setStatus('collar-status', '✗ ' + e.message, 'error');
+    document.getElementById('collar-results').innerHTML = '<div class="notice">' + e.message + '</div>';
+  }
+}
+
+// ═══════════════════════════════════════════════════════
 // SYNTHETIC LONG ANALYZER — same-strike call+put
 // ═══════════════════════════════════════════════════════
 async function runSynth(forceTicker) {
@@ -6406,6 +6651,7 @@ function stripSelect(ticker) {
   else if (tabId === 'cc')    runCC(ticker);
   else if (tabId === 'synth') { if (typeof _synthMode !== 'undefined' && _synthMode === 'grade') synthGradePrep(ticker); else runSynth(ticker); }
   else if (tabId === 'msl')   { if (typeof _mslMode !== 'undefined' && _mslMode === 'grade') mslGradePrep(ticker); else runMsl(ticker); }
+  else if (tabId === 'collar') runCollar(ticker);
 }
 
 // Re-render columns + strip whenever card data updates
@@ -7148,12 +7394,13 @@ function navigateToAnalyzer(ticker, strategy) {
 // ═══════════════════════════════════════════════════════
 // ENTER KEY SUPPORT
 // ═══════════════════════════════════════════════════════
-['put-ticker','cc-ticker','synth-ticker','msl-ticker'].forEach(function(id) {
+['put-ticker','cc-ticker','synth-ticker','msl-ticker','collar-ticker'].forEach(function(id) {
   var el = document.getElementById(id);
   if (el) el.addEventListener('keydown', function(e) {
     if (e.key === 'Enter') {
       if (id === 'put-ticker')   runPut();
       if (id === 'cc-ticker')    runCC();
+      if (id === 'collar-ticker') runCollar();
       if (id === 'synth-ticker') { if (typeof _synthMode !== 'undefined' && _synthMode === 'grade') synthGradePrep(document.getElementById('synth-ticker').value); else runSynth(); }
       if (id === 'msl-ticker')   { if (typeof _mslMode !== 'undefined' && _mslMode === 'grade') mslGradePrep(document.getElementById('msl-ticker').value); else runMsl(); }
     }
