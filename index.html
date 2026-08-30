@@ -5894,6 +5894,16 @@ async function runMsl(forceTicker) {
     var target3x = (callStrike != null && netDebit != null) ? (callStrike + 4 * netDebit) : null;
     var move3xPct = (target3x !== null && pd.price) ? (target3x / pd.price - 1) * 100 : null;
     var target3xAboveHigh = (target3x !== null && pd.week52H) ? target3x > pd.week52H : null;
+    // How close the 3× target sits to the resistance ceiling (52-wk high): + = above (reward thin), − = below (clean, with headroom).
+    var gap3xPct = (target3x !== null && pd.week52H) ? ((target3x / pd.week52H - 1) * 100) : null;
+    // Near-miss window: a 3× target only modestly above the high is "almost clean" — a dip / IV cool-off likely clears it.
+    var threeXNearMiss = gap3xPct !== null && gap3xPct > 0 && gap3xPct <= 15;
+    // Human phrase for how far the 3× target is from the ceiling — drives the "how close are we" readout.
+    var gap3xLabel = gap3xPct === null ? '' :
+      gap3xPct <= -15 ? 'the 3× target sits ' + fmt(Math.abs(gap3xPct),0) + '% below the 52-wk high — clean, with plenty of headroom' :
+      gap3xPct < 0    ? 'the 3× target is just ' + fmt(Math.abs(gap3xPct),0) + '% under the 52-wk high — clean, but tight' :
+      gap3xPct <= 15  ? 'the 3× target is only ' + fmt(gap3xPct,0) + '% above the 52-wk high — almost clean; a modest dip or IV cool-off likely brings it under' :
+                        'the 3× target is ' + fmt(gap3xPct,0) + '% above the 52-wk high — well above, so it needs a much deeper dip / cheaper entry to get clean';
     // MM60 width rule: "the widest I go is 20% of the price." We allow up to 30% (MM56) but warn past 20%.
     var spreadWidthPct = (spreadWidth && pd.price) ? (spreadWidth / pd.price * 100) : null;
     var widthOverLaura = spreadWidthPct !== null && spreadWidthPct > 21; // ~1pp grace so ~20% spreads don't nag
@@ -6084,11 +6094,21 @@ async function runMsl(forceTicker) {
     // Reward-quality flag (NOT scored, but caps the grade below IDEAL). Laura's 3× test: the price
     // needed for a 3× return is above the 52-wk high, so the reward side is thin at this entry.
     if (target3xAboveHigh === true) {
-      html += '<div class="criterion" style="border-left:3px solid var(--red)" title="Laura\'s 3X rule (\'make at least 3x on my money\'): for a 3× PROFIT the stock must reach strike + 4× premium (premium = net debit paid; the extra 1× backs out the cost). When that sits above the 52-week high, the reward is unrealistic at this entry — a fail, but not a structure flaw, so it caps the grade rather than dinging a box.">' +
+      var _3xColor = threeXNearMiss ? 'var(--yellow)' : 'var(--red)';
+      var _3xIcon  = threeXNearMiss ? '⚠' : '✕';
+      var _3xLead  = threeXNearMiss ? 'Reward flag — almost clean (caps the grade, not a scored box):' : 'Reward flag — caps the grade (not a scored box):';
+      html += '<div class="criterion" style="border-left:3px solid ' + _3xColor + '" title="Laura\'s 3X rule (\'make at least 3x on my money\'): for a 3× PROFIT the stock must reach strike + 4× premium (premium = net debit paid; the extra 1× backs out the cost). The app measures how far that target sits from the 52-week high (its resistance / ATH proxy): only modestly above = almost clean; well above = wait for a deeper dip.">' +
         '<span class="rank-pip" style="background:transparent">⚠</span>' +
-        '<div class="badge-fail">✕</div>' +
-        '<span class="crit-label"><strong>Reward flag — caps the grade (not a scored box):</strong> fails Laura\'s 3× test — needs ' + (target3x != null ? fmtDollar(target3x) : '—') + (move3xPct != null ? ' (+' + fmt(move3xPct,0) + '% from here)' : '') + ', above the 52-wk high ' + (pd.week52H != null ? fmtDollar(pd.week52H) : '—') + '. Reward side is thin — enter smaller, or wait for a deeper dip.</span>' +
-        '<span class="crit-val down">3× ✕</span>' +
+        '<div class="badge-fail" style="' + (threeXNearMiss ? 'background:var(--yellow)' : '') + '">' + _3xIcon + '</div>' +
+        '<span class="crit-label"><strong>' + _3xLead + '</strong> a 3× needs ' + (target3x != null ? fmtDollar(target3x) : '—') + (move3xPct != null ? ' (+' + fmt(move3xPct,0) + '% from here)' : '') + ' — ' + gap3xLabel + '. ' + (threeXNearMiss ? 'Close; a slightly lower entry gets you there.' : 'Enter smaller, or wait for a deeper dip.') + '</span>' +
+        '<span class="crit-val down">3× ' + (target3x != null && pd.week52H != null ? '+' + fmt(gap3xPct,0) + '% vs high' : _3xIcon) + '</span>' +
+      '</div>';
+    } else if (gap3xPct !== null) {
+      html += '<div class="criterion" style="border-left:3px solid var(--green)" title="Laura\'s 3X rule: for a 3× PROFIT the stock must reach strike + 4× premium (premium = net debit). This target sits below the 52-week high, so a 3× is reachable without breaking into new-high territory — a clean setup.">' +
+        '<span class="rank-pip" style="background:transparent">✓</span>' +
+        '<div class="badge-pass">✓</div>' +
+        '<span class="crit-label"><strong>Reward check — clean:</strong> a 3× needs ' + (target3x != null ? fmtDollar(target3x) : '—') + (move3xPct != null ? ' (+' + fmt(move3xPct,0) + '% from here)' : '') + ' — ' + gap3xLabel + '.</span>' +
+        '<span class="crit-val up">3× ' + fmt(gap3xPct,0) + '% vs high</span>' +
       '</div>';
     }
     // Structure-only weighted score (0-8): credit + risk (2 each) + I/E + debit + DTE + premium%price (1 each). MR excluded.
@@ -6133,7 +6153,9 @@ async function runMsl(forceTicker) {
     } else if (mslWeighted >= 7 && target3xAboveHigh === true) {
       // Structure is ideal/strong, but the 3× reward test fails — cap below IDEAL.
       sumCls = 'moderate';
-      sumLabel = '⚠️ Strong structure, thin reward — fails the 3× test (target above the 52-wk high). Confirm the −2 on your ETH chart and size down.';
+      sumLabel = (threeXNearMiss
+        ? '⚠️ Strong structure, almost-clean reward — the 3× target is only ' + fmt(gap3xPct,0) + '% above the 52-wk high. Nearly there; a slightly lower entry clears it. Confirm the −2 on your ETH chart.'
+        : '⚠️ Strong structure, thin reward — the 3× target is ' + fmt(gap3xPct,0) + '% above the 52-wk high. Confirm the −2 on your ETH chart and size down (or wait for a deeper dip).');
     } else if (mslWeighted >= 7) {
       sumCls = 'strong';
       sumLabel = '✅ ' + (mslWeighted === 8 ? 'Ideal' : 'Strong') + ' structure — now confirm the −2 on your ETH chart';
@@ -6179,9 +6201,9 @@ async function runMsl(forceTicker) {
     }
     // MM60 3x test — flag when the price needed for a 3x return is above the 52-week high
     if (target3xAboveHigh === true && target3x !== null) {
-      suggWarn.push('❌ <strong>Fails the 3× test:</strong> a 3× profit needs the stock at ~' + fmtDollar(target3x) + ' (strike + 4× premium, premium = net debit) — that\'s <strong>' + (move3xPct !== null ? '+' + fmt(move3xPct,0) + '% from here' : 'a big move') + '</strong> and above the 52-week high ' + fmtDollar(pd.week52H) + '. Laura wants ≥3× against realistic upside; this only pencils out at a lower entry (more buffer, cheaper call). <span style="color:var(--text-muted)">(52-wk high used as an all-time-high proxy.)</span>');
+      suggWarn.push((threeXNearMiss ? '⚠️' : '❌') + ' <strong>3× — ' + (threeXNearMiss ? 'almost clean' : 'not clean') + ':</strong> a 3× profit needs the stock at ~' + fmtDollar(target3x) + ' (strike + 4× premium, premium = net debit) — that\'s <strong>+' + (move3xPct !== null ? fmt(move3xPct,0) + '% from here' : 'a big move') + '</strong>, and ' + gap3xLabel + '. ' + (threeXNearMiss ? 'A slightly lower entry (deeper dip / IV cool-off) shrinks the net debit and pulls the target under the high.' : 'Laura wants ≥3× against realistic upside; this only pencils out at a lower entry.') + ' <span style="color:var(--text-muted)">(52-wk high used as a resistance proxy.)</span>');
     } else if (target3x !== null && move3xPct !== null) {
-      suggGood.push('ℹ️ <strong>3× target:</strong> ~' + fmtDollar(target3x) + ' (+' + fmt(move3xPct,0) + '% from here) for a 3× profit — within/near the 52-week high, so the reward side is realistic. <span style="color:var(--text-muted)">(3× = Laura\'s minimum: make 3× the cash paid; price = strike + 4× premium, premium = net debit.)</span>');
+      suggGood.push('✅ <strong>3× — clean:</strong> a 3× profit needs ~' + fmtDollar(target3x) + ' (+' + fmt(move3xPct,0) + '% from here), and ' + gap3xLabel + '. <span style="color:var(--text-muted)">(3× = Laura\'s minimum: make 3× the cash paid; price = strike + 4× premium, premium = net debit.)</span>');
     }
     // MM60 width rule — allowed up to 30% (MM56) but warn past Laura's 20% baseline
     if (widthOverLaura) {
