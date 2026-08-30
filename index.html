@@ -5082,7 +5082,7 @@ async function runSynth(forceTicker) {
 
     html += '<div class="scorecard"><h3>Synthetic Long — Score</h3><div class="criteria-list">';
     html += mrConfirmRow(ticker, 'bottom'); // MR not scored — manual confirm on the user's ETH chart
-    html += ivInfoRow(synthIVRank, synthIVSource); // IV informational (not scored) — neutral for a synthetic long
+    // IV Rank removed — was informational only, not scored.
     html += critRow(1,'Duration ≥ 540 DTE (LEAPS-Length)', c3, dte + ' days');
     html += critRow(2,'Net Debit ≤ 8% (Put Funds the Call)', c4, netCostPct !== null ? fmt(Math.abs(netCostPct),2) + '%' : 'N/A');
     html += critRow(3,'Both Spreads ≤ 10% (Tight)', c7, (callSpreadPct !== null ? fmt(callSpreadPct,1)+'%' : '—')+' / '+(putSpreadPct !== null ? fmt(putSpreadPct,1)+'%' : '—'));
@@ -5501,7 +5501,7 @@ async function gradeSynth() {
     // Scorecard on the USER's legs (MR not scored — manual timing call)
     html += '<div class="scorecard"><h3>Your SL — Grade</h3><div class="criteria-list">';
     html += mrConfirmRow(ticker, 'bottom');
-    html += ivInfoRow(um.ivRank, synthIVSource); // IV informational (not scored) — neutral for a synthetic long
+    // IV Rank removed — was informational only, not scored.
     html += critRow(1, 'Duration ≥ 540 DTE (LEAPS-Length)', um.c3, dte + ' days');
     html += critRow(2, 'Net Debit ≤ 8% (Put Funds the Call)', um.c4, um.netCostPct !== null ? fmt(Math.abs(um.netCostPct), 2) + '%' : 'N/A');
     html += critRow(3, 'Both Spreads ≤ 10% (Tight)', um.c7, (um.callSpreadPct !== null ? fmt(um.callSpreadPct, 1) + '%' : '—') + ' / ' + (um.putSpreadPct !== null ? fmt(um.putSpreadPct, 1) + '%' : '—'));
@@ -5520,7 +5520,6 @@ async function gradeSynth() {
           gmRow('Sell Put', fmtDollar(um.putStrike), fmtDollar(app.putStrike), um.putStrike === app.putStrike ? 'ok' : 'diff') +
           gmRow('Same strike?', um.sameStrike ? 'Yes' : 'No', app.sameStrike ? 'Yes' : 'No', um.sameStrike ? 'ok' : 'diff') +
           gmRow('Net debit', um.netCostPct != null ? fmt(um.netCostPct, 2) + '% of price' : '—', app.netCostPct != null ? fmt(app.netCostPct, 2) + '% of price' : '—', '') +
-          gmRow('IV Rank' + (synthIVSource === 'proxy' ? ' (est)' : synthIVSource === 'true' ? ' (52-wk)' : ''), um.ivRank != null ? fmt(um.ivRank, 0) : '—', app.ivRank != null ? fmt(app.ivRank, 0) : '—', '') +
           gmRow('Breakeven', um.breakeven != null ? fmtDollar(um.breakeven) + (um.beAboveCur != null ? ' (' + (um.beAboveCur >= 0 ? '+' : '') + fmt(um.beAboveCur, 1) + '%)' : '') : '—', app.breakeven != null ? fmtDollar(app.breakeven) + (app.beAboveCur != null ? ' (' + (app.beAboveCur >= 0 ? '+' : '') + fmt(app.beAboveCur, 1) + '%)' : '') : '—', '') +
           gmRow('Max loss (stock → $0)', um.maxLoss != null ? '$' + fmt(um.maxLoss, 0) : '—', app.maxLoss != null ? '$' + fmt(app.maxLoss, 0) : '—', '') +
           gmRow('Margin req (est)', um.marginReq != null ? '$' + fmt(um.marginReq, 0) : '—', app.marginReq != null ? '$' + fmt(app.marginReq, 0) : '—', '') +
@@ -5827,7 +5826,6 @@ async function runMsl(forceTicker) {
       '<span style="color:var(--text-muted);text-transform:uppercase;letter-spacing:0.8px;font-weight:700">Expiry</span><span style="color:var(--accent);font-weight:800">' + expiryDisplay(bestExpiry) + '</span>' +
       '<span style="color:var(--text-muted);text-transform:uppercase;letter-spacing:0.8px;font-weight:700;margin-left:8px">DTE</span><span style="color:var(--accent);font-weight:800">' + dte + ' days</span>' +
       '<span style="color:var(--text-muted);text-transform:uppercase;letter-spacing:0.8px;font-weight:700;margin-left:8px">Net Debit % of Price</span><span style="color:' + (netDebitPct !== null && netDebitPct <= 33 ? 'var(--green)' : 'var(--accent)') + ';font-weight:800">' + (netDebitPct !== null ? fmt(netDebitPct,1) + '%' : '—') + '</span>' +
-      '<span style="color:var(--text-muted);text-transform:uppercase;letter-spacing:0.8px;font-weight:700;margin-left:8px" title="IV Rank at this LEAPS expiry — informational, not scored. High IV inflates the call; watch the debit & risk criteria.">IV Rank</span><span style="color:' + (mslIVHigh ? 'var(--red)' : mslIVRank !== null ? 'var(--green)' : 'var(--text-muted)') + ';font-weight:800">' + (mslIVRank !== null ? fmt(mslIVRank,0) + (mslIVSource === 'seed' || mslIVSource === 'accum' ? '' : mslIVSource === 'true' ? ' · 52wk' : ' · est') + (mslIVHigh ? ' · high' : '') : '—') + '</span>' +
       '<span style="color:var(--text-muted);text-transform:uppercase;letter-spacing:0.8px;font-weight:700;margin-left:8px" title="App regular-hours MR estimate — not scored; confirm on your ETH chart">MR · 4H (RTH est.)</span><span style="color:var(--' + (mrZone(pd.meanRev).cls === 'down' ? 'green' : mrZone(pd.meanRev).cls === 'up' ? 'red' : 'text-muted') + ');font-weight:800">' + (!isNaN(pd.meanRev) ? fmt(pd.meanRev,2) + ' · ' + mrZone(pd.meanRev).short : '—') + '</span>' +
     '</div>';
 
@@ -6213,12 +6211,6 @@ async function runMsl(forceTicker) {
       suggWarn.push('💡 <strong>Net debit too high:</strong> ' + fmt(netDebitPct,1) + '% of price — above the 45% sanity cap (course MSLs run 24-42%). The put spread credit isn\'t offsetting enough of the call cost.');
     } else if (c5 && netDebitPct !== null && netDebitPct > 33) {
       suggWarn.push('⚠️ <strong>Net debit elevated:</strong> ' + fmt(netDebitPct,1) + '% of price — passes the ≤45% cap but above the ≤33% ideal zone.');
-    }
-    // High IV isn't a separate MSL gate (it already lands on debit/risk) — but explain it when those fail.
-    if (mslIVHigh && (c5 !== true || c8 !== true)) {
-      suggWarn.push('💡 <strong>Elevated IV (IV Rank ' + fmt(mslIVRank,0) + '):</strong> high IV is inflating the deep-ITM call, which is pushing your ' + ((c5 !== true && c8 !== true) ? 'net debit and risk' : c5 !== true ? 'net debit' : 'risk') + ' over the line. Laura doesn\'t score IV separately on an MSL — she waits for lower price / lower IV (near the 200 SMA), where the call prices under Laura\'s limits. Not scored — informational.');
-    } else if (mslIVHigh) {
-      suggGood.push('ℹ️ <strong>IV Rank ' + fmt(mslIVRank,0) + ' (elevated):</strong> IV is on the high side but your debit and risk still pass — the deep-ITM call keeps vega low enough that it isn\'t hurting the structure. Not scored — informational.');
     }
     if (!c9 && premOfPricePct !== null) {
       suggWarn.push('💡 <strong>Thin premium credit:</strong> the put spread collects ' + fmt(premOfPricePct,1) + '% of the stock price — under Laura\'s ≥6% target, so the income relative to the stock is light.');

@@ -1111,9 +1111,6 @@ async function scoreTicker(ticker, env) {
         'https://api.marketdata.app/v1/options/chain/' + ticker + '/?expiration=' + bestExpiry + '&side=put&token=' + env.MD_TOKEN
       );
 
-      // Today's ~30-day ATM IV — the current point for the true IV Rank (E*Trade uses ~30d IV).
-      todayAtmIv = atmIvFromChain(putChain, price);
-
       // IV rank from chain
       if (putChain?.iv?.length > 0) {
         const ivs = putChain.iv.filter(v => v !== null && v !== undefined && !isNaN(v) && v > 0)
@@ -1243,18 +1240,9 @@ async function scoreTicker(ticker, env) {
   const synthCh = scoreSynthChains(price, weeklyMeanRev, leapsExpiry, leapsDte, leapsCall, leapsPut);
   const mslCh   = scoreMslChains(price, meanRev, leapsExpiry, leapsDte, leapsCall, leapsPut, week52H);
   if (synthCh.ivRank !== null) ivRank = synthCh.ivRank; // match the analyzer's LEAPS-expiry IV rank (proxy)
-  // IV Rank — LIVE, from the Barchart-seeded 52-week high/low (Laura's "don't buy inflated IV"; ideal ≤30).
-  // Uses today's ~30-day ATM IV and self-corrects the range if IV breaks past the seed. Tickers with no
-  // seed fall back to the cross-strike proxy (labeled "est" on the client).
+  // IV Rank removed from the scoring path — it was informational only (never scored on the SL, not used in
+  // MSL grades) and its per-ticker D1 write+read added serial latency to every card, slowing the dashboard.
   let ivRankSource = 'proxy';
-  try {
-    const r = await computeIvRank(env, ticker, todayAtmIv); // records today's IV + ranks vs collected/seed range
-    if (r) {
-      ivRank = r.rank;
-      synthCh.ivRank = r.rank;               // display only — IV is informational for the SL, not scored
-      ivRankSource = r.source;               // 'seed' (bridge) → 'accum' (self-maintaining) after ~a year
-    }
-  } catch (e) { /* keep the proxy */ }
   const chainScored = synthCh.chainScored && mslCh.chainScored;
 
   const synthScore = synthCh.score !== null ? synthCh.score : [synthCh.c1, synthCh.c3, synthCh.c4, synthCh.c7].filter(x => x === true).length;
