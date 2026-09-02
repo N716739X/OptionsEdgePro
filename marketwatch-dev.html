@@ -5876,9 +5876,10 @@ function synthGradePrep(ticker) {
   if (sel) sel.innerHTML = '<option>loading…</option>';
   fetchExpirations(ticker).then(function(exps) {
     if (!sel) return;
-    var leaps = (exps || []).filter(function(e) { return dteFromStr(e) >= 365; }).sort(function(a, b) { return dteFromStr(b) - dteFromStr(a); });
-    if (!leaps.length) leaps = (exps || []).slice().sort(function(a, b) { return dteFromStr(b) - dteFromStr(a); });
-    sel.innerHTML = leaps.map(function(e) { return '<option value="' + e + '">' + expiryDisplay(e) + ' · ' + dteFromStr(e) + 'd</option>'; }).join('');
+    // List ALL listed expirations (farthest-first) so you can grade on the exact expiry you hold,
+    // not just the longest LEAPS. Farthest stays the default; DTE is shown on each option.
+    var opts = (exps || []).slice().sort(function(a, b) { return dteFromStr(b) - dteFromStr(a); });
+    sel.innerHTML = opts.map(function(e) { return '<option value="' + e + '">' + expiryDisplay(e) + ' · ' + dteFromStr(e) + 'd</option>'; }).join('');
   }).catch(function() { if (sel) sel.innerHTML = '<option value="">(no expirations)</option>'; });
 }
 async function gradeSynth() {
@@ -5991,9 +5992,10 @@ function mslGradePrep(ticker) {
   if (sel) sel.innerHTML = '<option>loading…</option>';
   fetchExpirations(ticker).then(function(exps) {
     if (!sel) return;
-    var leaps = (exps || []).filter(function(e) { return dteFromStr(e) >= 365; }).sort(function(a, b) { return dteFromStr(b) - dteFromStr(a); });
-    if (!leaps.length) leaps = (exps || []).slice().sort(function(a, b) { return dteFromStr(b) - dteFromStr(a); });
-    sel.innerHTML = leaps.map(function(e) { return '<option value="' + e + '">' + expiryDisplay(e) + ' · ' + dteFromStr(e) + 'd</option>'; }).join('');
+    // List ALL listed expirations (farthest-first) so you can grade on the exact expiry you hold,
+    // not just the longest LEAPS. Farthest stays the default; DTE is shown on each option.
+    var opts = (exps || []).slice().sort(function(a, b) { return dteFromStr(b) - dteFromStr(a); });
+    sel.innerHTML = opts.map(function(e) { return '<option value="' + e + '">' + expiryDisplay(e) + ' · ' + dteFromStr(e) + 'd</option>'; }).join('');
   }).catch(function() { if (sel) sel.innerHTML = '<option value="">(no expirations)</option>'; });
 }
 
