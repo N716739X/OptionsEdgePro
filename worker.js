@@ -76,6 +76,10 @@ async function initDB(db) {
   await db.prepare(
     "CREATE TABLE IF NOT EXISTS iv_history (ticker TEXT NOT NULL, sample_date TEXT NOT NULL, atm_iv REAL, PRIMARY KEY (ticker, sample_date))"
   ).run();
+  // Latest ETH Mean-Reversion (Mean-BT) signal per ticker, pushed in from TradingView alert webhooks.
+  await db.prepare(
+    "CREATE TABLE IF NOT EXISTS mr_signals (ticker TEXT PRIMARY KEY, signal TEXT, mr_value REAL, interval TEXT, updated_at INTEGER)"
+  ).run();
 }
 
 function json(data, status = 200) {
@@ -1332,6 +1336,57 @@ async function handleIvSeed(req, env) {
   }
 }
 
+// ── ETH Mean-Reversion (Mean-BT) webhook — TradingView alert → this endpoint → D1 ──
+// Protected by a shared token (not JWT — TradingView can't send one). MR is a timing signal,
+// not money/auth, so a baked token is acceptable; rotate MR_TOKEN below (or set env.MR_TOKEN) if needed.
+const MR_TOKEN = 'owp-mr-7f3a9c2e5b41';
+function _mrToken(env) { return (env && env.MR_TOKEN) || MR_TOKEN; }
+function _normTicker(t) { return String(t || '').trim().toUpperCase().split(':').pop(); } // "NASDAQ:KWEB" → "KWEB"
+
+async function handleMrWebhook(req, env, url) {
+  // POST: TradingView posts the alert Message (we expect JSON) as the body. GET: read (token-gated) for debugging.
+  if (req.method === 'GET') {
+    if (url.searchParams.get('token') !== _mrToken(env)) return json({ error: 'bad token' }, 403);
+    await initDB(env.DB);
+    const one = url.searchParams.get('ticker');
+    if (one) {
+      const row = await env.DB.prepare("SELECT ticker, signal, mr_value, interval, updated_at FROM mr_signals WHERE ticker = ?").bind(_normTicker(one)).first();
+      return json({ signal: row || null });
+    }
+    const rows = await env.DB.prepare("SELECT ticker, signal, mr_value, interval, updated_at FROM mr_signals ORDER BY updated_at DESC").all();
+    return json({ signals: (rows && rows.results) || [] });
+  }
+  // POST
+  let body = {};
+  try { body = await req.json(); }
+  catch (e) {
+    // fall back to raw text so a mis-formatted alert still tells us what came in
+    try { const txt = await req.text(); body = JSON.parse(txt); } catch (e2) { return json({ error: 'body must be JSON' }, 400); }
+  }
+  if ((body.token || (url && url.searchParams.get('token'))) !== _mrToken(env)) return json({ error: 'bad token' }, 403);
+  const ticker = _normTicker(body.ticker);
+  if (!ticker) return json({ error: 'ticker required' }, 400);
+  // Map the alert to a buy/sell signal. Accept explicit signal, or infer from a value/name.
+  let signal = String(body.signal || '').toLowerCase();
+  if (signal !== 'buy' && signal !== 'sell') {
+    const s = (body.signal || body.action || body.alert || '').toString().toLowerCase();
+    if (s.includes('buy') || s.includes('oversold') || s.includes('long')) signal = 'buy';
+    else if (s.includes('sell') || s.includes('overbought') || s.includes('short')) signal = 'sell';
+  }
+  const mrVal = (body.mr != null && !isNaN(parseFloat(body.mr))) ? parseFloat(body.mr) : null;
+  if (signal !== 'buy' && signal !== 'sell') {
+    if (mrVal != null && mrVal <= -2) signal = 'buy';
+    else if (mrVal != null && mrVal >= 2) signal = 'sell';
+  }
+  if (signal !== 'buy' && signal !== 'sell') return json({ error: 'could not resolve buy/sell signal' }, 400);
+  const interval = String(body.interval || body.timeframe || '').slice(0, 16) || null;
+  await initDB(env.DB);
+  await env.DB.prepare(
+    "INSERT OR REPLACE INTO mr_signals (ticker, signal, mr_value, interval, updated_at) VALUES (?, ?, ?, ?, ?)"
+  ).bind(ticker, signal, mrVal, interval, Date.now()).run();
+  return json({ ok: true, ticker, signal, mr: mrVal, interval });
+}
+
 async function handleScores(req, env) {
   const authCheck = await requireAuth(req, env);
   if (authCheck.error) return authCheck.error;
@@ -1366,6 +1421,14 @@ async function handleScores(req, env) {
     }
   });
 
+  // Attach the latest ETH Mean-BT signal per ticker (one batched read — no per-ticker cost).
+  try {
+    const mrRows = await env.DB.prepare("SELECT ticker, signal, mr_value, interval, updated_at FROM mr_signals").all();
+    const mrMap = {};
+    ((mrRows && mrRows.results) || []).forEach(r => { mrMap[r.ticker] = { signal: r.signal, value: r.mr_value, interval: r.interval, updatedAt: r.updated_at }; });
+    results.forEach(s => { if (s && s.ticker && mrMap[s.ticker]) s.ethMr = mrMap[s.ticker]; });
+  } catch (e) { /* MR overlay is best-effort */ }
+
   return json({ scores: results, tier: userTier, allowedTickers });
 }
 
@@ -1392,6 +1455,9 @@ export default {
 
       // Server-side scoring (IP-protected scoring engine)
       if (url.pathname === '/api/scores' && request.method === 'POST') return handleScores(request, env);
+
+      // ETH Mean-BT signal webhook (TradingView) + token-gated read
+      if (url.pathname === '/api/mr') return handleMrWebhook(request, env, url);
 
       // Data proxy (existing functionality, now JWT-gated)
       if (url.pathname === '/' || url.pathname === '') return handleProxy(request, env);

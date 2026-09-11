@@ -3140,14 +3140,51 @@ function toggleMrConfirm(ticker, dir) {
 // A scorecard row that is a manual toggle, not a scored criterion.
 function mrConfirmRow(ticker, dir) {
   var trig = dir === 'top' ? '≥ +2 (Deeply Overbought)' : '≤ −2 (Deeply Oversold)';
-  var on = mrConfirmGet(ticker, dir);
-  return '<div class="criterion" data-mrc="' + (ticker || '').toUpperCase() + '|' + dir + '" onclick="toggleMrConfirm(\'' + (ticker || '').toUpperCase() + '\',\'' + dir + '\')" style="cursor:pointer;border-left:3px solid ' + (on ? 'var(--green)' : 'var(--yellow)') + '" title="Tick this when your TradingView ETH chart shows MR ' + trig + '. The app can\'t read extended-hours data, so this is your call.">' +
+  var tk = (ticker || '').toUpperCase();
+  var manualOn = mrConfirmGet(tk, dir);
+  // Live ETH Mean-BT signal pushed from TradingView (via the dashboard's /api/scores). 'bottom' wants a
+  // buy (≤−2), 'top' wants a sell (≥+2). Fresh = within 5 days (signals fire on 4H/12H crossings).
+  var em = (cardData[tk] || {}).ethMr;
+  var want = dir === 'top' ? 'sell' : 'buy';
+  var FRESH_MS = 5 * 24 * 60 * 60 * 1000;
+  if (em && em.signal && em.updatedAt) {
+    var ageMs = Date.now() - em.updatedAt;
+    var fresh = ageMs <= FRESH_MS;
+    var matches = em.signal === want && fresh;
+    var ageStr = _mrAgo(em.updatedAt);
+    var valStr = (em.value != null) ? ' (' + fmt(em.value, 1) + ')' : '';
+    if (matches) {
+      return '<div class="criterion" style="border-left:3px solid var(--green)" title="Live ETH Mean-BT signal received from your TradingView alert. This replaces the manual chart check.">' +
+        '<span class="rank-pip" style="background:transparent">📡</span>' +
+        '<div class="badge-pass">✓</div>' +
+        '<span class="crit-label"><strong>Timing — ETH Mean-BT:</strong> ' + (want === 'buy' ? 'BUY' : 'SELL') + ' signal' + valStr + ' from TradingView <span style="color:var(--text-muted)">· ' + ageStr + ' · not scored</span></span>' +
+        '<span class="crit-val up">📡 ' + (want === 'buy' ? 'BUY' : 'SELL') + '</span>' +
+      '</div>';
+    }
+    // A signal exists but it's the opposite side or stale — show it as context, still let the user confirm manually.
+    var oppLabel = em.signal === 'buy' ? 'BUY' : 'SELL';
+    return '<div class="criterion" data-mrc="' + tk + '|' + dir + '" onclick="toggleMrConfirm(\'' + tk + '\',\'' + dir + '\')" style="cursor:pointer;border-left:3px solid ' + (manualOn ? 'var(--green)' : 'var(--yellow)') + '" title="Latest ETH Mean-BT from TradingView shown for context. Tap to confirm your ' + trig + ' manually.">' +
+      '<span class="rank-pip" style="background:transparent">⏱</span>' +
+      '<div class="' + (manualOn ? 'badge-pass' : 'badge-na') + '">' + (manualOn ? '✓' : '☐') + '</div>' +
+      '<span class="crit-label"><strong>Timing — your call:</strong> MR · 4H ' + trig + '. <span style="color:var(--text-muted)">Last ETH signal: ' + oppLabel + valStr + ' ' + ageStr + (fresh ? '' : ' · stale') + ' — ' + (manualOn ? '<span style="color:var(--green)">confirmed</span>' : 'tap to confirm (not scored)') + '</span></span>' +
+      '<span class="crit-val ' + (manualOn ? 'up' : '') + '">' + (manualOn ? '✓ SET' : 'tap') + '</span>' +
+    '</div>';
+  }
+  // No signal received yet — original manual confirm.
+  return '<div class="criterion" data-mrc="' + tk + '|' + dir + '" onclick="toggleMrConfirm(\'' + tk + '\',\'' + dir + '\')" style="cursor:pointer;border-left:3px solid ' + (manualOn ? 'var(--green)' : 'var(--yellow)') + '" title="Tick this when your TradingView ETH chart shows MR ' + trig + '. Set up a TradingView alert webhook (Collars/MR guide) to have this fill in automatically.">' +
     '<span class="rank-pip" style="background:transparent">⏱</span>' +
-    '<div class="' + (on ? 'badge-pass' : 'badge-na') + '">' + (on ? '✓' : '☐') + '</div>' +
+    '<div class="' + (manualOn ? 'badge-pass' : 'badge-na') + '">' + (manualOn ? '✓' : '☐') + '</div>' +
     '<span class="crit-label"><strong>Timing — your call:</strong> MR · 4H ' + trig + ' confirmed on my <strong>ETH</strong> chart ' +
-      (on ? '<span style="color:var(--green)">— confirmed</span>' : '<span style="color:var(--text-muted)">— tap to confirm (not scored)</span>') + '</span>' +
-    '<span class="crit-val ' + (on ? 'up' : '') + '">' + (on ? '✓ SET' : 'tap') + '</span>' +
+      (manualOn ? '<span style="color:var(--green)">— confirmed</span>' : '<span style="color:var(--text-muted)">— tap to confirm (not scored)</span>') + '</span>' +
+    '<span class="crit-val ' + (manualOn ? 'up' : '') + '">' + (manualOn ? '✓ SET' : 'tap') + '</span>' +
   '</div>';
+}
+function _mrAgo(ts) {
+  var m = (Date.now() - ts) / 60000;
+  if (m < 60) return Math.max(1, Math.round(m)) + 'm ago';
+  var h = m / 60;
+  if (h < 24) return Math.round(h) + 'h ago';
+  return Math.round(h / 24) + 'd ago';
 }
 
 var COL_IDS = { put: 'col-put', cc: 'col-cc', synth: 'col-synth', msl: 'col-msl' };
@@ -4109,6 +4146,7 @@ function applyServerScores(s) {
     week52L:     s.week52L,
     meanRev:     s.meanRev,
     weeklyMeanRev: s.weeklyMeanRev != null ? s.weeklyMeanRev : s.meanRev,
+    ethMr:       s.ethMr || null, // latest ETH Mean-BT signal pushed from TradingView (buy/sell + timestamp)
     sma200:      s.sma200,
     ivRank:      s.ivRank,
     ivRankSource: (s.synth && s.synth.ivRankSource) || s.ivRankSource || 'proxy',
