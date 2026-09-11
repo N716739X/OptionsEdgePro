@@ -3186,6 +3186,32 @@ function _mrAgo(ts) {
   if (h < 24) return Math.round(h) + 'h ago';
   return Math.round(h / 24) + 'd ago';
 }
+// Live ETH Mean-BT signal helpers (pushed in from TradingView, stored per ticker in cardData.ethMr).
+var _ETH_FRESH_MS = 5 * 24 * 60 * 60 * 1000; // a fired buy/sell is "active" for 5 days
+function _ethMr(ticker) {
+  var em = (cardData[(ticker || '').toUpperCase()] || {}).ethMr;
+  if (!em || !em.signal || !em.updatedAt) return null;
+  return em;
+}
+// Is there a FRESH ETH signal matching this direction? 'bottom' wants a buy, 'top' wants a sell.
+function ethMrActive(ticker, dir) {
+  var em = _ethMr(ticker);
+  if (!em) return false;
+  if ((Date.now() - em.updatedAt) > _ETH_FRESH_MS) return false;
+  return em.signal === (dir === 'top' ? 'sell' : 'buy');
+}
+// Price-bar chip showing the live ETH Mean-BT signal (empty string when none received).
+function ethMrChipHtml(ticker) {
+  var em = _ethMr(ticker);
+  if (!em) return '';
+  var fresh = (Date.now() - em.updatedAt) <= _ETH_FRESH_MS;
+  var isBuy = em.signal === 'buy';
+  var color = fresh ? (isBuy ? 'var(--green)' : 'var(--red)') : 'var(--text-muted)';
+  var valStr = (em.value != null) ? ' ' + fmt(em.value, 1) : '';
+  return '<div class="stat-group" title="Live ETH Mean-BT from your TradingView alert webhook (not scored).">' +
+    '<span class="stat-label">📡 ETH Mean-BT</span>' +
+    '<span class="stat-value" style="color:' + color + '">' + (isBuy ? 'BUY' : 'SELL') + valStr + ' · ' + _mrAgo(em.updatedAt) + (fresh ? '' : ' · stale') + '</span></div>';
+}
 
 var COL_IDS = { put: 'col-put', cc: 'col-cc', synth: 'col-synth', msl: 'col-msl' };
 
@@ -3269,7 +3295,7 @@ function buildColCard(ticker, d, strategy, rank, isBestTrade) {
 
   // Has the user hand-confirmed MR on their ETH chart? (CC wants +2 top; the rest want −2 bottom)
   var _mrDir = strategy === 'cc' ? 'top' : 'bottom';
-  var mrTag  = mrConfirmGet(ticker, _mrDir) ? 'MR ✓' : 'CONFIRM MR';
+  var mrTag  = ethMrActive(ticker, _mrDir) ? '📡 MR' : (mrConfirmGet(ticker, _mrDir) ? 'MR ✓' : 'CONFIRM MR');
 
   // MSL structure-weighted score (credit & risk gates count double) — the ONE metric MSL uses for
   // the letter grade, the IDEAL/WATCH badge, and the column sort, so all three always agree.
@@ -4309,6 +4335,7 @@ function priceBarHtml(ticker, pd, tfLabel) {
     '<div class="stat-group" title="The app\'s REGULAR-HOURS MR estimate — it can under-read the true extended-hours (ETH) Mean-BT that Laura/James use. Not scored; confirm ≤ −2 / ≥ +2 on your own ETH chart.">' +
       '<span class="stat-label">' + mrLabel + ' <span style="opacity:.55;font-weight:600;letter-spacing:0">(RTH est.)</span></span>' +
       '<span class="stat-value ' + mrZ.cls + '">' + (!isNaN(mrVal) ? fmt(mrVal,2) + ' · ' + mrZ.short : mrZ.label) + '</span></div>' +
+    ethMrChipHtml(ticker) +
     '<div class="stat-group"><span class="stat-label">200 SMA</span>' +
       '<span class="stat-value">' + fmtDollar(pd.sma200) + '</span></div>' +
     '<div class="stat-group"><span class="stat-label">vs SMA</span>' +
@@ -4697,7 +4724,7 @@ async function runPut(forceTicker) {
       var eDate = nextEarnings;
       suggWarnP.push('💡 <strong>Earnings workaround:</strong> ' + ticker + ' has earnings on ' + eDate + ' inside your expiry window. Consider a shorter DTE expiring <strong>before ' + eDate + '</strong> to avoid earnings risk while still capturing the oversold setup.');
     }
-    if (!c2 && !isNaN(pd.meanRev) && pd.meanRev <= -1 && pd.meanRev > -2) {
+    if (!c2 && !isNaN(pd.meanRev) && pd.meanRev <= -1 && pd.meanRev > -2 && !ethMrActive(ticker, 'bottom')) {
       suggWarnP.push('💡 <strong>MR approaching:</strong> Mean Reversion is ' + mrZone(pd.meanRev).label + ' — not yet at the −2 (Deeply Oversold) trigger. Wait for a continued dip before selling the put.');
     }
     if (!c3 && pd.sma200 && pd.price) {
@@ -4888,7 +4915,7 @@ async function runCC(forceTicker) {
       var eDate = nextEarnings;
       suggWarnC.push('💡 <strong>Earnings workaround:</strong> ' + ticker + ' has earnings on ' + eDate + ' inside your expiry window. Consider a shorter DTE expiring <strong>before ' + eDate + '</strong> to avoid the IV crush and gap risk.');
     }
-    if (!c2 && !isNaN(pd.meanRev) && pd.meanRev >= 1 && pd.meanRev < 2) {
+    if (!c2 && !isNaN(pd.meanRev) && pd.meanRev >= 1 && pd.meanRev < 2 && !ethMrActive(ticker, 'top')) {
       suggWarnC.push('💡 <strong>MR approaching:</strong> Mean Reversion is ' + mrZone(pd.meanRev).label + ' — not yet at the +2 (Deeply Overbought) trigger. Wait for a continued rally before selling the call.');
     }
     if (!c3 && pd.sma200 && pd.price) {
@@ -5142,7 +5169,7 @@ async function runCollar(forceTicker) {
 
     // Contextual suggestions
     var sug = [];
-    if (!isNaN(pd.meanRev)) {
+    if (!isNaN(pd.meanRev) && !ethMrActive(ticker, 'top')) {
       if (pd.meanRev < 1) sug.push('⚠️ <strong>Not a +2 spike:</strong> 4H MR is ' + fmt(pd.meanRev, 2) + ' (' + mrZone(pd.meanRev).label + '). Laura sells collars on a <strong>+2 or higher</strong> MR spike — that\'s when the call is expensive and the put is cheaper, so the call funds the put best.');
       else if (pd.meanRev < 2) sug.push('💡 <strong>MR approaching +2:</strong> 4H MR is ' + fmt(pd.meanRev, 2) + ' — close to Laura\'s +2 sell spike. A bit more upside and the call premium fattens.');
     }
@@ -5556,7 +5583,7 @@ async function runSynth(forceTicker) {
 
     // ── Contextual suggestions ──
     var suggWarn = [], suggGood = [];
-    if (!c1) {
+    if (!c1 && !ethMrActive(ticker, 'bottom')) {
       if (!isNaN(pd.meanRev) && pd.meanRev <= -1 && pd.meanRev > -2) {
         suggWarn.push('💡 <strong>MR approaching:</strong> 4H Mean Reversion is ' + mrZone(pd.meanRev).label + ' — not yet at the −2 (Deeply Oversold) entry. Wait for a continued dip before entering.');
       } else {
@@ -6643,7 +6670,7 @@ async function runMsl(forceTicker) {
     // Contextual suggestions
     var suggWarn = [], suggGood = [];
     // MR "approaching" is a useful watch; a flatly-neutral MR is covered by the status line below (no dupe).
-    if (!c1 && !isNaN(pd.meanRev) && pd.meanRev <= -1 && pd.meanRev > -2) {
+    if (!c1 && !ethMrActive(ticker, 'bottom') && !isNaN(pd.meanRev) && pd.meanRev <= -1 && pd.meanRev > -2) {
       suggWarn.push('💡 <strong>MR approaching:</strong> 4H Mean Reversion is ' + mrZone(pd.meanRev).label + ' — not yet at the −2 (Deeply Oversold) entry. Wait for a continued dip.');
     }
     if (!c2 && putCreditPct !== null) {
