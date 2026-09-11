@@ -1366,6 +1366,13 @@ async function handleMrWebhook(req, env, url) {
   if ((body.token || (url && url.searchParams.get('token'))) !== _mrToken(env)) return json({ error: 'bad token' }, 403);
   const ticker = _normTicker(body.ticker);
   if (!ticker) return json({ error: 'ticker required' }, 400);
+  // Clear intent — remove a ticker's signal (e.g. it went back to neutral, or to wipe test data).
+  const _sig0 = String(body.signal || '').toLowerCase();
+  if (body.clear === true || _sig0 === 'clear' || _sig0 === 'none' || _sig0 === 'flat' || _sig0 === 'reset' || _sig0 === 'neutral') {
+    await initDB(env.DB);
+    await env.DB.prepare("DELETE FROM mr_signals WHERE ticker = ?").bind(ticker).run();
+    return json({ ok: true, ticker, cleared: true });
+  }
   // Map the alert to a buy/sell signal. Accept explicit signal, or infer from a value/name.
   let signal = String(body.signal || '').toLowerCase();
   if (signal !== 'buy' && signal !== 'sell') {
