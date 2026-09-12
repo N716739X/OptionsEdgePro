@@ -7775,11 +7775,16 @@ async function runCompare(forceTicker) {
         '<div style="text-align:right;font-weight:700;font-size:12px">' + a + '</div>' +
         '<div style="text-align:right;font-weight:700;font-size:12px">' + b + '</div></div>';
     }
-    function heroCmp(label, a, b, hl) {
-      return '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;padding:10px 14px;border-bottom:1px solid var(--border)' + (hl ? ';background:rgba(0,255,204,0.05)' : '') + '">' +
+    function heroCmp(label, aMain, aSub, bMain, bSub, hl) {
+      var cell = function (main, sub) {
+        return '<div style="text-align:right">' +
+          '<div style="font-size:18px;font-weight:800;line-height:1.15">' + main + '</div>' +
+          (sub ? '<div style="font-size:10.5px;color:var(--text-muted);font-weight:600;margin-top:2px">' + sub + '</div>' : '') +
+        '</div>';
+      };
+      return '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;padding:11px 14px;border-bottom:1px solid var(--border)' + (hl ? ';background:rgba(0,255,204,0.05)' : '') + '">' +
         '<div style="align-self:center;color:var(--text-muted);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px">' + label + '</div>' +
-        '<div style="text-align:right;font-size:17px;font-weight:800">' + a + '</div>' +
-        '<div style="text-align:right;font-size:17px;font-weight:800">' + b + '</div></div>';
+        cell(aMain, aSub) + cell(bMain, bSub) + '</div>';
     }
     // ── Headline: Debit · Breakeven · Risk (the three that matter), side by side ──
     html += '<div style="border:1px solid var(--accent);border-radius:10px;overflow:hidden;margin-bottom:14px">' +
@@ -7788,14 +7793,20 @@ async function runCompare(forceTicker) {
         '<div style="text-align:right;font-weight:800;color:var(--accent);font-size:12px">SYNTHETIC LONG</div>' +
         '<div style="text-align:right;font-weight:800;color:var(--accent);font-size:12px">MSL</div></div>' +
       heroCmp('Debit',
-        (slNet100 != null ? '$' + fmt(slNet100, 0) + ' <span style="font-size:10px;color:var(--text-muted);font-weight:600">$' + fmt(sl.netCost, 2) + '/sh' + (sl.netCostPct != null ? ' · ' + fmt(sl.netCostPct, 1) + '%' : '') + '</span>' : '—'),
-        (mslNet100 != null ? '$' + fmt(mslNet100, 0) + ' <span style="font-size:10px;color:var(--text-muted);font-weight:600">$' + fmt(msl.netDebit, 2) + '/sh' + (msl.netDebitPct != null ? ' · ' + fmt(msl.netDebitPct, 1) + '%' : '') + '</span>' : '—')) +
+        (slNet100 != null ? '$' + fmt(slNet100, 0) : '—'),
+        (sl.netCost != null ? '$' + fmt(sl.netCost, 2) + '/sh' + (sl.netCostPct != null ? ' · ' + fmt(sl.netCostPct, 1) + '%' : '') : ''),
+        (mslNet100 != null ? '$' + fmt(mslNet100, 0) : '—'),
+        (msl.netDebit != null ? '$' + fmt(msl.netDebit, 2) + '/sh' + (msl.netDebitPct != null ? ' · ' + fmt(msl.netDebitPct, 1) + '%' : '') : '')) +
       heroCmp('Breakeven',
-        (sl.breakeven != null ? fmtDollar(sl.breakeven) + ' <span style="font-size:10px;color:var(--text-muted);font-weight:600">' + (sl.beAboveCur != null ? '+' + fmt(sl.beAboveCur, 1) + '%' : '') + '</span>' : '—'),
-        (msl.breakeven != null ? fmtDollar(msl.breakeven) + ' <span style="font-size:10px;color:var(--text-muted);font-weight:600">+' + fmt((msl.breakeven / pd.price - 1) * 100, 1) + '%</span>' : '—')) +
+        (sl.breakeven != null ? fmtDollar(sl.breakeven) : '—'),
+        (sl.beAboveCur != null ? '+' + fmt(sl.beAboveCur, 1) + '% vs price' : ''),
+        (msl.breakeven != null ? fmtDollar(msl.breakeven) : '—'),
+        (msl.breakeven != null ? '+' + fmt((msl.breakeven / pd.price - 1) * 100, 1) + '% vs price' : '')) +
       heroCmp('Risk',
-        (slMaxLoss != null ? '<span style="color:var(--red)">$' + fmt(slMaxLoss, 0) + '</span> <span style="font-size:10px;color:var(--text-muted);font-weight:600">$' + fmt(slMaxLoss / 100, 2) + '/sh · to $0</span>' : '—'),
-        (mslMaxRisk != null ? '<span style="color:var(--green)">$' + fmt(mslMaxRisk, 0) + '</span> <span style="font-size:10px;color:var(--text-muted);font-weight:600">$' + fmt(mslMaxRisk / 100, 2) + '/sh · capped</span>' : '—'), true) +
+        (slMaxLoss != null ? '<span style="color:var(--red)">$' + fmt(slMaxLoss, 0) + '</span>' : '—'),
+        (slMaxLoss != null ? '$' + fmt(slMaxLoss / 100, 2) + '/sh · to $0' : ''),
+        (mslMaxRisk != null ? '<span style="color:var(--green)">$' + fmt(mslMaxRisk, 0) + '</span>' : '—'),
+        (mslMaxRisk != null ? '$' + fmt(mslMaxRisk / 100, 2) + '/sh · capped' : ''), true) +
     '</div>';
 
     html += '<div style="border:1px solid var(--border);border-radius:10px;overflow:hidden;margin-bottom:14px">' +
