@@ -1616,6 +1616,7 @@ input, textarea, select { -webkit-user-select: text; user-select: text; }
   <div class="tab" data-tab="msl">MSL</div>
   <div class="tab" data-tab="msl-adjust">MSL Adjust</div>
   <div class="tab" data-tab="collar">Collars</div>
+  <div class="tab" data-tab="compare">SL vs MSL</div>
 </div>
 
 <!-- ═══ TICKER STRIP ═══ -->
@@ -1740,6 +1741,36 @@ input, textarea, select { -webkit-user-select: text; user-select: text; }
     </details>
     <div id="collar-positions"></div>
     <div id="collar-results"><div class="placeholder"><div class="ph-icon">🛡</div><p>Select a ticker above to analyze</p></div></div>
+  </div>
+</div>
+
+<!-- ═══ COMPARE (SL vs MSL) PANEL ═══ -->
+<div id="panel-compare" class="panel">
+  <div class="analyzer-container">
+    <div class="analyzer-status-row">
+      <span class="analyzer-label">SL vs MSL</span>
+      <span class="status-msg" id="compare-status"></span>
+      <input type="hidden" id="compare-ticker" />
+    </div>
+    <div style="font-size:12px;color:var(--text-muted);margin-bottom:10px;line-height:1.5">
+      Side-by-side: the <strong>Synthetic Long</strong> (same-strike ATM call+put, Course 301) vs the <strong>MSL</strong> (deep-ITM call + ATM put spread), same ticker &amp; LEAPS expiry. Pick a ticker above. Switch to <strong>My strikes</strong> to compare your own legs.
+    </div>
+    <div class="msl-mode-row">
+      <button id="cmp-mode-app" class="msl-mode on" onclick="setCmpMode('app')">App picks</button>
+      <button id="cmp-mode-custom" class="msl-mode" onclick="setCmpMode('custom')">My strikes</button>
+    </div>
+    <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;margin-bottom:10px">
+      <label style="font-size:11px;color:var(--text-muted);font-weight:700">Expiry<br><select id="cmp-expiry" onchange="var t=document.getElementById('compare-ticker').value.trim(); if(t) runCompare(t);" style="margin-top:3px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:6px 8px;font-size:12px"><option value="">Farthest LEAPS</option></select></label>
+    </div>
+    <div id="cmp-custom" style="display:none;flex-wrap:wrap;gap:12px;align-items:flex-end;margin-bottom:12px;border:1px solid var(--border);border-radius:8px;padding:10px 12px;background:rgba(0,0,0,0.12)">
+      <label style="font-size:11px;color:var(--text-muted);font-weight:700">SL strike (ATM)<br><input id="cmp-sl-strike" type="number" step="1" style="margin-top:3px;width:100px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:6px 8px;font-size:12px" /></label>
+      <span style="color:var(--accent);font-size:11px;font-weight:800;align-self:center;padding-bottom:6px">MSL →</span>
+      <label style="font-size:11px;color:var(--text-muted);font-weight:700">Buy Call<br><input id="cmp-msl-call" type="number" step="1" style="margin-top:3px;width:90px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:6px 8px;font-size:12px" /></label>
+      <label style="font-size:11px;color:var(--text-muted);font-weight:700">Sell Put<br><input id="cmp-msl-sold" type="number" step="1" style="margin-top:3px;width:90px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:6px 8px;font-size:12px" /></label>
+      <label style="font-size:11px;color:var(--text-muted);font-weight:700">Buy Put<br><input id="cmp-msl-bought" type="number" step="1" style="margin-top:3px;width:90px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:6px 8px;font-size:12px" /></label>
+      <button onclick="runCompare()" style="padding:8px 16px;background:var(--accent);border:none;border-radius:6px;color:#03121f;font-size:12px;font-weight:800;cursor:pointer">Compare my strikes</button>
+    </div>
+    <div id="compare-results"><div class="placeholder"><div class="ph-icon">⚖</div><p>Select a ticker above to compare</p></div></div>
   </div>
 </div>
 
@@ -6902,6 +6933,7 @@ function stripSelect(ticker) {
   else if (tabId === 'synth') { if (typeof _synthMode !== 'undefined' && _synthMode === 'grade') synthGradePrep(ticker); else runSynth(ticker); }
   else if (tabId === 'msl')   { if (typeof _mslMode !== 'undefined' && _mslMode === 'grade') mslGradePrep(ticker); else runMsl(ticker); }
   else if (tabId === 'collar') runCollar(ticker);
+  else if (tabId === 'compare') runCompare(ticker);
 }
 
 // Re-render columns + strip whenever card data updates
@@ -7598,6 +7630,187 @@ async function runMslAdjust() {
     setStatus('msladj-status', '✗ ' + e.message, 'error');
     resEl.innerHTML = '<div class="notice">' + e.message + '</div>';
   } finally { if (btn) btn.disabled = false; }
+}
+
+// ═══════════════════════════════════════════════════════
+// SL vs MSL COMPARISON
+// ═══════════════════════════════════════════════════════
+function _cmpIdxNear(chain, target) {
+  if (!chain || !chain.strike) return -1;
+  var idx = -1, best = Infinity;
+  for (var i = 0; i < chain.strike.length; i++) {
+    var k = chain.strike[i]; if (k == null) continue;
+    var mid = chain.mid ? chain.mid[i] : null; if (mid == null || mid <= 0) continue;
+    var d = Math.abs(k - target);
+    if (d < best) { best = d; idx = i; }
+  }
+  return idx;
+}
+// Deep-ITM ~50/50 I/E call (mirrors the MSL analyzer/worker): 0.45–0.55 band, then 0.40–0.60, OI-weighted.
+function _mslPickCall(callChain, price) {
+  function pick(lo, hi) {
+    var idx = -1, oiBest = -1, dBest = Infinity;
+    for (var i = 0; i < callChain.strike.length; i++) {
+      var k = callChain.strike[i]; if (k == null || k >= price) continue;
+      var mid = callChain.mid ? callChain.mid[i] : null; if (mid == null || mid <= 0) continue;
+      var intr = price - k, extr = mid - intr; if (extr <= 0) continue;
+      var r = intr / mid; if (r < lo || r > hi) continue;
+      var d = Math.abs(r - 0.5);
+      var oi = (callChain.openInterest && callChain.openInterest[i] != null) ? callChain.openInterest[i] : 0;
+      if (oi > oiBest || (oi === oiBest && d < dBest)) { oiBest = oi; dBest = d; idx = i; }
+    }
+    return idx;
+  }
+  var idx = pick(0.45, 0.55); if (idx < 0) idx = pick(0.40, 0.60);
+  if (idx < 0) { var dB = Infinity; for (var i = 0; i < callChain.strike.length; i++) { var k = callChain.strike[i]; if (k == null || k >= price) continue; var mid = callChain.mid ? callChain.mid[i] : null; if (mid == null || mid <= 0) continue; var intr = price - k, extr = mid - intr; if (extr <= 0) continue; var diff = Math.abs((intr / mid) - 0.5); if (diff < dB) { dB = diff; idx = i; } } }
+  return idx;
+}
+var _cmpMode = 'app';
+function setCmpMode(m) {
+  _cmpMode = m;
+  var a = document.getElementById('cmp-mode-app'), c = document.getElementById('cmp-mode-custom');
+  if (a) a.classList.toggle('on', m === 'app'); if (c) c.classList.toggle('on', m === 'custom');
+  var cust = document.getElementById('cmp-custom'); if (cust) cust.style.display = (m === 'custom') ? 'flex' : 'none';
+  var tk = document.getElementById('compare-ticker').value.trim();
+  if (tk && m === 'app') runCompare(tk); // custom waits for the Compare button
+}
+var _cmpExpTicker = null;
+function loadCmpExpirations() {
+  var t = (document.getElementById('compare-ticker').value || '').trim().toUpperCase();
+  var sel = document.getElementById('cmp-expiry'); if (!sel) return Promise.resolve();
+  if (!t) { sel.innerHTML = '<option value="">Farthest LEAPS</option>'; return Promise.resolve(); }
+  if (t === _cmpExpTicker && sel.options.length > 1) return Promise.resolve();
+  _cmpExpTicker = t;
+  return fetchExpirations(t).then(function(exps) {
+    var opts = (exps || []).slice().sort(function(a, b) { return dteFromStr(b) - dteFromStr(a); });
+    sel.innerHTML = '<option value="">Farthest LEAPS (auto)</option>' + opts.map(function(e) { return '<option value="' + e + '">' + expiryDisplay(e) + ' · ' + dteFromStr(e) + 'd</option>'; }).join('');
+  }).catch(function() {});
+}
+async function runCompare(forceTicker) {
+  var ticker = forceTicker || document.getElementById('compare-ticker').value.trim().toUpperCase();
+  if (!ticker) return;
+  var inp = document.getElementById('compare-ticker'); if (inp) inp.value = ticker;
+  document.getElementById('compare-results').innerHTML = '';
+  try {
+    setStatus('compare-status', spinner() + 'Price…', 'loading');
+    var pd = await fetchPriceData(ticker, '4h');
+    setStatus('compare-status', spinner() + 'Expirations…', 'loading');
+    var expirations = await fetchExpirations(ticker);
+    loadCmpExpirations();
+    var chosenExp = document.getElementById('cmp-expiry').value;
+    var expiry = chosenExp || (function () { var l = expirations.filter(function (e) { return dteFromStr(e) >= 540; }); if (!l.length) l = expirations.filter(function (e) { return dteFromStr(e) >= 365; }); if (!l.length) l = expirations.slice(); l.sort(function (a, b) { return dteFromStr(b) - dteFromStr(a); }); return l[0]; })();
+    if (!expiry) throw new Error('No LEAPS expiration available.');
+    var dte = dteFromStr(expiry);
+    setStatus('compare-status', spinner() + 'Chains…', 'loading');
+    var callChain = await fetchChain(ticker, expiry, 'call');
+    var putChain = await fetchChain(ticker, expiry, 'put');
+    if (!callChain || !callChain.strike || !putChain || !putChain.strike) throw new Error('Chain unavailable for ' + expiryDisplay(expiry) + '.');
+
+    var custom = _cmpMode === 'custom';
+    var sl, msl;
+    if (custom) {
+      var slK = parseFloat(document.getElementById('cmp-sl-strike').value);
+      var mC = parseFloat(document.getElementById('cmp-msl-call').value);
+      var mS = parseFloat(document.getElementById('cmp-msl-sold').value);
+      var mB = parseFloat(document.getElementById('cmp-msl-bought').value);
+      if (isNaN(slK)) throw new Error('Enter your SL strike.');
+      if (isNaN(mC) || isNaN(mS) || isNaN(mB)) throw new Error('Enter your MSL call, sold-put and bought-put strikes.');
+      if (mS <= mB) throw new Error('MSL sold-put strike must be above the bought-put strike.');
+      sl = synthComputeGrade(pd, callChain, putChain, _cmpIdxNear(callChain, slK), _cmpIdxNear(putChain, slK), dte);
+      msl = mslComputeGrade(pd, callChain, putChain, _cmpIdxNear(callChain, mC), _cmpIdxNear(putChain, mS), _cmpIdxNear(putChain, mB), dte);
+    } else {
+      sl = synthComputeGrade(pd, callChain, putChain, _cmpIdxNear(callChain, pd.price), _cmpIdxNear(putChain, pd.price), dte);
+      var ps = mslPickPutSpread(putChain, pd.price);
+      msl = mslComputeGrade(pd, callChain, putChain, _mslPickCall(callChain, pd.price), ps.soldPutIdx, ps.boughtPutIdx, dte);
+    }
+    if (!sl || !msl) throw new Error('Could not build both structures on ' + expiryDisplay(expiry) + '. Try another expiry or check your strikes.');
+
+    var slNet100 = sl.netCost != null ? sl.netCost * 100 : null;
+    var mslNet100 = msl.netDebit != null ? msl.netDebit * 100 : null;
+    var slMaxLoss = sl.maxLoss, mslMaxRisk = msl.mslMaxRisk;
+    var riskRedDollars = (slMaxLoss != null && mslMaxRisk != null) ? slMaxLoss - mslMaxRisk : null;
+    var riskRedPct = (slMaxLoss && mslMaxRisk != null) ? (1 - mslMaxRisk / slMaxLoss) * 100 : null;
+    var beDiffPct = (sl.breakeven && msl.breakeven != null) ? Math.abs(msl.breakeven - sl.breakeven) / sl.breakeven * 100 : null;
+    var beWithin10 = beDiffPct != null && beDiffPct <= 10;
+    var sl3x = (sl.callStrike != null && sl.netCost != null) ? sl.callStrike + 4 * sl.netCost : null;
+    var msl3x = (msl.callStrike != null && msl.netDebit != null) ? msl.callStrike + 4 * msl.netDebit : null;
+    var sl3xMove = (sl3x != null && pd.price) ? (sl3x / pd.price - 1) * 100 : null;
+    var msl3xMove = (msl3x != null && pd.price) ? (msl3x / pd.price - 1) * 100 : null;
+
+    var html = priceBarHtml(ticker, pd, '4H');
+    html += '<div style="font-size:11px;color:var(--text-muted);margin:2px 0 10px">Expiry <strong style="color:var(--accent)">' + expiryDisplay(expiry) + '</strong> · ' + dte + ' DTE · ' + (custom ? 'your strikes' : 'app picks') + '</div>';
+
+    function twoCol(label, a, b, hl) {
+      return '<div style="display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:8px;padding:7px 12px;border-bottom:1px solid var(--border)' + (hl ? ';background:rgba(0,255,204,0.05)' : '') + '">' +
+        '<div style="color:var(--text-muted);font-size:12px">' + label + '</div>' +
+        '<div style="text-align:right;font-weight:700;font-size:12px">' + a + '</div>' +
+        '<div style="text-align:right;font-weight:700;font-size:12px">' + b + '</div></div>';
+    }
+    html += '<div style="border:1px solid var(--border);border-radius:10px;overflow:hidden;margin-bottom:14px">' +
+      '<div style="display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:8px;padding:9px 12px;background:var(--surface2);font-weight:800">' +
+        '<div style="font-size:12px;color:var(--text-muted)">Metric</div>' +
+        '<div style="text-align:right;color:var(--accent)">SYNTHETIC LONG</div>' +
+        '<div style="text-align:right;color:var(--accent)">MSL</div></div>' +
+      twoCol('Structure',
+        (sl.callStrike != null ? fmtDollar(sl.callStrike) + ' call+put' : '—'),
+        (msl.callStrike != null ? fmtDollar(msl.callStrike) + 'C / ' + fmtDollar(msl.soldPutStrike) + ' / ' + fmtDollar(msl.boughtPutStrike) : '—')) +
+      twoCol('Net cost',
+        (slNet100 != null ? '$' + fmt(slNet100, 0) + (sl.netCostPct != null ? ' · ' + fmt(sl.netCostPct, 1) + '%' : '') : '—'),
+        (mslNet100 != null ? '$' + fmt(mslNet100, 0) + (msl.netDebitPct != null ? ' · ' + fmt(msl.netDebitPct, 1) + '%' : '') : '—')) +
+      twoCol('Breakeven',
+        (sl.breakeven != null ? fmtDollar(sl.breakeven) + (sl.beAboveCur != null ? ' (+' + fmt(sl.beAboveCur, 1) + '%)' : '') : '—'),
+        (msl.breakeven != null ? fmtDollar(msl.breakeven) + ' (+' + fmt((msl.breakeven / pd.price - 1) * 100, 1) + '%)' : '—')) +
+      twoCol('Max loss / risk',
+        (slMaxLoss != null ? '<span style="color:var(--red)">$' + fmt(slMaxLoss, 0) + '</span> stock→0' : '—'),
+        (mslMaxRisk != null ? '<span style="color:var(--green)">$' + fmt(mslMaxRisk, 0) + '</span> defined' : '—'), true) +
+      twoCol('Risk vs owning stock',
+        '≈ owning shares',
+        (msl.riskVsStockPct != null ? fmt(msl.riskVsStockPct, 0) + '% (MM60 ≤50)' : '—')) +
+      twoCol('3× profit target',
+        (sl3x != null ? fmtDollar(sl3x) + (sl3xMove != null ? ' (+' + fmt(sl3xMove, 0) + '%)' : '') : '—'),
+        (msl3x != null ? fmtDollar(msl3x) + (msl3xMove != null ? ' (+' + fmt(msl3xMove, 0) + '%)' : '') : '—')) +
+      twoCol('Structure score',
+        (sl.score != null ? sl.score + '/3' : '—'),
+        (msl.score != null ? msl.score + '/7 · wt ' + msl.weighted + '/8' : '—')) +
+    '</div>';
+
+    html += '<div class="btc-note" style="border-color:var(--accent);color:var(--text);margin-bottom:12px;line-height:1.55">' +
+      '<strong>Verdict:</strong> the MSL risks <strong>$' + (mslMaxRisk != null ? fmt(mslMaxRisk, 0) : '—') + '</strong> worst-case vs the SL\'s <strong>$' + (slMaxLoss != null ? fmt(slMaxLoss, 0) : '—') + '</strong>' +
+      (riskRedPct != null ? ' — about <strong>' + fmt(riskRedPct, 0) + '% less capital at risk</strong>' + (riskRedDollars != null ? ' ($' + fmt(riskRedDollars, 0) + ' less)' : '') : '') + '. ' +
+      (beDiffPct != null ? 'Its breakeven is <strong>' + fmt(beDiffPct, 1) + '% ' + (msl.breakeven >= sl.breakeven ? 'higher' : 'lower') + '</strong>' + (beWithin10 ? ' — ✅ within Laura\'s 10% rule' : ' — ⚠️ outside Laura\'s 10% rule') + '. ' : '') +
+      'Laura favors the MSL (and collars) on volatile names for exactly this: roughly half the risk, plus roll levers, for a slightly higher breakeven. The SL keeps a cleaner 1:1 but carries full downside like owning the shares.</div>';
+
+    var scen = [-30, -20, -10, 0, 10, 20, 50, 100];
+    function slPnl(S) { return (sl.breakeven != null) ? (S - sl.breakeven) * 100 : null; }
+    function mslPnl(S) {
+      if (msl.callStrike == null || msl.netDebit == null) return null;
+      return (Math.max(S - msl.callStrike, 0) - Math.max(msl.soldPutStrike - S, 0) + Math.max(msl.boughtPutStrike - S, 0) - msl.netDebit) * 100;
+    }
+    var grid = scen.map(function (p) {
+      var S = pd.price * (1 + p / 100);
+      var col = function (v) { return v == null ? '—' : '<span style="color:' + (v >= 0 ? 'var(--green)' : 'var(--red)') + '">' + (v >= 0 ? '+' : '') + '$' + fmt(v, 0) + '</span>'; };
+      return '<tr><td style="padding:5px 10px;font-weight:700">' + (p >= 0 ? '+' : '') + p + '%</td>' +
+        '<td style="padding:5px 10px;color:var(--text-muted)">' + fmtDollar(S) + '</td>' +
+        '<td style="padding:5px 10px;text-align:right">' + col(slPnl(S)) + '</td>' +
+        '<td style="padding:5px 10px;text-align:right">' + col(mslPnl(S)) + '</td></tr>';
+    }).join('');
+    html += '<div class="chain-section"><h3>P&amp;L at expiry — 1 contract each</h3><div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">' +
+      '<thead><tr style="color:var(--text-muted);text-transform:uppercase;font-size:10px"><th style="padding:5px 10px;text-align:left">Move</th><th style="padding:5px 10px;text-align:left">Price</th><th style="padding:5px 10px;text-align:right">SL</th><th style="padding:5px 10px;text-align:right">MSL</th></tr></thead>' +
+      '<tbody>' + grid + '</tbody></table></div></div>';
+
+    document.getElementById('compare-results').innerHTML = html;
+    setStatus('compare-status', 'Done', 'ok');
+    if (!custom) {
+      var g = function (id) { return document.getElementById(id); };
+      if (g('cmp-sl-strike') && !g('cmp-sl-strike').value) g('cmp-sl-strike').value = sl.callStrike;
+      if (g('cmp-msl-call') && !g('cmp-msl-call').value) g('cmp-msl-call').value = msl.callStrike;
+      if (g('cmp-msl-sold') && !g('cmp-msl-sold').value) g('cmp-msl-sold').value = msl.soldPutStrike;
+      if (g('cmp-msl-bought') && !g('cmp-msl-bought').value) g('cmp-msl-bought').value = msl.boughtPutStrike;
+    }
+  } catch (e) {
+    setStatus('compare-status', '✗ ' + e.message, 'error');
+    document.getElementById('compare-results').innerHTML = '<div class="notice">' + e.message + '</div>';
+  }
 }
 
 function navigateToAnalyzer(ticker, strategy) {
