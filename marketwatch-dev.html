@@ -7736,9 +7736,38 @@ async function runCompare(forceTicker) {
     var msl3x = (msl.callStrike != null && msl.netDebit != null) ? msl.callStrike + 4 * msl.netDebit : null;
     var sl3xMove = (sl3x != null && pd.price) ? (sl3x / pd.price - 1) * 100 : null;
     var msl3xMove = (msl3x != null && pd.price) ? (msl3x / pd.price - 1) * 100 : null;
+    // Cost multiple + crossover: below crossS the MSL's capped risk actually beats the SL; above it (a
+    // moderate drop) the SL can lose LESS, because the MSL hits its capped max sooner. Honest nuance.
+    var costMult = (slNet100 && mslNet100) ? mslNet100 / slNet100 : null;
+    var crossS = (sl.breakeven != null && mslMaxRisk != null) ? sl.breakeven - mslMaxRisk / 100 : null;
+    var crossPct = (crossS != null && pd.price) ? (crossS / pd.price - 1) * 100 : null;
 
     var html = priceBarHtml(ticker, pd, '4H');
     html += '<div style="font-size:11px;color:var(--text-muted);margin:2px 0 10px">Expiry <strong style="color:var(--accent)">' + expiryDisplay(expiry) + '</strong> · ' + dte + ' DTE · ' + (custom ? 'your strikes' : 'app picks') + '</div>';
+
+    // ---- Recommendation (heuristic from Laura's principles; she states no numeric SL-vs-MSL rule) ----
+    var rec, recCls, recWhy = [];
+    if (msl.c8 !== true) {
+      rec = 'WAIT — both heavy at this entry'; recCls = 'moderate';
+      recWhy.push('MSL risk is ' + (msl.riskVsStockPct != null ? fmt(msl.riskVsStockPct, 0) + '%' : '—') + ' of owning the stock — over Laura\'s 50% line. The call is pricey here (usually elevated IV); she waits for a lower price / lower IV. The SL is even heavier (full downside).');
+    } else if (!beWithin10) {
+      rec = 'SL — cleaner leverage'; recCls = 'strong';
+      recWhy.push('The MSL\'s breakeven is ' + (beDiffPct != null ? fmt(beDiffPct, 1) + '%' : '') + ' above the SL — outside Laura\'s 10% rule, so you\'d overpay for the downside protection. The SL keeps a clean 1:1 at a lower breakeven.');
+      if (riskRedPct != null) recWhy.push('Trade-off: you give up ~' + fmt(riskRedPct, 0) + '% risk reduction — only pick the SL if you have the margin buffer for full downside.');
+    } else if (msl.t1Pass === true) {
+      rec = 'MSL — best risk/reward'; recCls = 'strong';
+      if (riskRedPct != null) recWhy.push('About ' + fmt(riskRedPct, 0) + '% less capital at risk than the SL, for a breakeven only ' + (beDiffPct != null ? fmt(beDiffPct, 1) + '%' : '') + ' higher — inside Laura\'s 10% rule.');
+      recWhy.push('Credit &amp; risk gates both pass and you keep the roll levers — Laura\'s default on volatile names.');
+      if (crossPct != null && crossPct < -30) {
+        rec = 'MSL (lean) — mostly crash insurance'; recCls = 'moderate';
+        recWhy.push('Caveat: its risk cap only beats the SL below ~<strong>' + fmt(crossPct, 0) + '% (' + fmtDollar(crossS) + ')</strong> and it costs ' + (costMult != null ? fmt(costMult, 1) + '×' : 'more') + ' up front — in a moderate dip it can lose more. The edge is the capped tail + roll levers, not a cheaper drawdown.');
+      }
+    } else {
+      rec = 'SL — MSL not set up here'; recCls = 'moderate';
+      recWhy.push('The MSL\'s structure gates aren\'t both passing' + (msl.c2 !== true ? ' (put credit under 42% of width)' : '') + ', so its edge is weaker at these strikes. The SL is the cleaner play unless you can find a better put spread.');
+    }
+    html += '<div class="score-summary ' + recCls + '" style="margin-bottom:6px"><span class="score-label">🏆 Recommended: <strong>' + rec + '</strong></span></div>';
+    html += '<div style="font-size:11.5px;color:var(--text-muted);margin:0 0 14px;line-height:1.55">' + recWhy.map(function (w) { return '• ' + w; }).join('<br>') + '<br><span style="opacity:.7">(Guidance from Laura\'s principles — risk reduction, the 10% breakeven rule, and the ≤50%-of-stock gate — not a numeric rule she states. MR/timing is still your ETH-chart call.)</span></div>';
 
     function twoCol(label, a, b, hl) {
       return '<div style="display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:8px;padding:7px 12px;border-bottom:1px solid var(--border)' + (hl ? ';background:rgba(0,255,204,0.05)' : '') + '">' +
@@ -7778,6 +7807,7 @@ async function runCompare(forceTicker) {
       '<strong>Verdict:</strong> the MSL risks <strong>$' + (mslMaxRisk != null ? fmt(mslMaxRisk, 0) : '—') + '</strong> worst-case vs the SL\'s <strong>$' + (slMaxLoss != null ? fmt(slMaxLoss, 0) : '—') + '</strong>' +
       (riskRedPct != null ? ' — about <strong>' + fmt(riskRedPct, 0) + '% less capital at risk</strong>' + (riskRedDollars != null ? ' ($' + fmt(riskRedDollars, 0) + ' less)' : '') : '') + '. ' +
       (beDiffPct != null ? 'Its breakeven is <strong>' + fmt(beDiffPct, 1) + '% ' + (msl.breakeven >= sl.breakeven ? 'higher' : 'lower') + '</strong>' + (beWithin10 ? ' — ✅ within Laura\'s 10% rule' : ' — ⚠️ outside Laura\'s 10% rule') + '. ' : '') +
+      ((costMult != null || crossPct != null) ? 'But note: the MSL costs ' + (costMult != null ? '<strong>' + fmt(costMult, 1) + '×</strong> the SL up front' : 'more') + (crossPct != null ? ' and only loses less than the SL below ~<strong>' + fmtDollar(crossS) + ' (' + fmt(crossPct, 0) + '%)</strong> — in a moderate drop it can lose more (it hits its capped max sooner)' : '') + '. ' : '') +
       'Laura favors the MSL (and collars) on volatile names for exactly this: roughly half the risk, plus roll levers, for a slightly higher breakeven. The SL keeps a cleaner 1:1 but carries full downside like owning the shares.</div>';
 
     var scen = [-30, -20, -10, 0, 10, 20, 50, 100];
