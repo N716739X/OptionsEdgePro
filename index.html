@@ -3078,7 +3078,11 @@ function _recentTradingDay() {
   else if (day === 6) et.setDate(et.getDate() - 1);   // Sat → Fri
   return et.getFullYear() + '-' + ('0' + (et.getMonth() + 1)).slice(-2) + '-' + ('0' + et.getDate()).slice(-2);
 }
-async function fetchChain(ticker, expiration, side, oiBackfill) {
+// OI backfill is suppressed only while the dashboard's phase-3 is running (it fetches LEAPS chains for
+// EVERY ticker at once, so an extra dated call per chain would rate-limit and stall scoring). Single-
+// ticker analyzers run with it off, so they backfill and show the last settled OI.
+var _oiBackfillSuppressed = false;
+async function fetchChain(ticker, expiration, side) {
   var data = await fetchMD('options/chain/' + ticker + '/', {
     expiration: expiration,
     side: side
@@ -3087,10 +3091,11 @@ async function fetchChain(ticker, expiration, side, oiBackfill) {
   // and can drop out even while bid/ask/delta are live).
   if (data && Array.isArray(data.openInterest) && data.openInterest.length &&
       data.openInterest.every(function (v) { return v == null || v === 0; })) {
-    // Backfill from a dated request ONLY when explicitly asked (single-ticker analyzers). The dashboard's
-    // phase-3 fetches LEAPS chains for every ticker at once, so backfilling there floods the rate limit
-    // and stalls scoring — those callers omit the flag and just get "—".
-    if (oiBackfill) {
+    if (_oiBackfillSuppressed) {
+      data.openInterest = data.openInterest.map(function () { return null; }); // dashboard fast path — no extra call
+    } else {
+      // Analyzer: backfill the last settled OI from a dated request (Greeks null there, so only the OI
+      // numbers are borrowed) and merge by strike.
       try {
         var hist = await fetchMD('options/chain/' + ticker + '/', { expiration: expiration, side: side, date: _recentTradingDay() });
         if (hist && Array.isArray(hist.strike) && Array.isArray(hist.openInterest)) {
@@ -3103,8 +3108,6 @@ async function fetchChain(ticker, expiration, side, oiBackfill) {
       } catch (e) {
         data.openInterest = data.openInterest.map(function () { return null; });
       }
-    } else {
-      data.openInterest = data.openInterest.map(function () { return null; }); // fast path — no extra call
     }
   }
   return data;
@@ -4178,6 +4181,7 @@ function triggerPhase3() {
 // burst, which used to leave cards stuck on "Scoring…" forever. Interleaving Synth+MSL
 // per ticker lets each ticker's MSL reuse the LEAPS chains its Synth just fetched.
 function _runPhase3Pass(list, round) {
+  _oiBackfillSuppressed = true; // no per-chain dated OI backfill during the dashboard's bulk phase-3
   var tasks = [];
   list.forEach(function(t){
     tasks.push(function(){ return runSynthPhase3(t); });
@@ -4186,6 +4190,7 @@ function _runPhase3Pass(list, round) {
   var i = 0, active = 0, LIMIT = 3, finished = false;
   function done() {
     if (finished) return; finished = true;
+    _oiBackfillSuppressed = false; // pass finished — analyzers may backfill OI again
     var stuck = list.filter(function(t){ return cardData[t] && cardData[t].phase < 3; });
     if (stuck.length && round < 2) {
       // back off and retry only the tickers that failed — gives the upstream limit time to clear
