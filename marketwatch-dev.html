@@ -3072,10 +3072,18 @@ function expiryDisplay(d) {
 }
 
 async function fetchChain(ticker, expiration, side) {
-  return await fetchMD('options/chain/' + ticker + '/', {
+  var data = await fetchMD('options/chain/' + ticker + '/', {
     expiration: expiration,
     side: side
   });
+  // Feed gap: MarketData occasionally returns openInterest:0 for EVERY strike (OI publishes once
+  // daily and can drop out even while bid/ask/delta are live). All-zero across a liquid chain isn't
+  // real — null it out so it shows "—" and doesn't falsely fail liquidity checks or warn "thin OI".
+  if (data && Array.isArray(data.openInterest) && data.openInterest.length &&
+      data.openInterest.every(function (v) { return v == null || v === 0; })) {
+    data.openInterest = data.openInterest.map(function () { return null; });
+  }
+  return data;
 }
 
 // Earnings before expiry check (uses hardcoded dates)
