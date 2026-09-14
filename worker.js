@@ -89,6 +89,17 @@ function json(data, status = 200) {
   });
 }
 
+// Feed gap: MarketData sometimes returns openInterest:0 for EVERY strike (OI publishes once daily and
+// can drop out even while bid/ask/delta are live). All-zero across a liquid chain isn't real — null it
+// so it reads as "OI unavailable" (criteria/warnings skip it) instead of falsely failing liquidity.
+function neutralOi(ch) {
+  if (ch && Array.isArray(ch.openInterest) && ch.openInterest.length &&
+      ch.openInterest.every(v => v == null || v === 0)) {
+    ch.openInterest = ch.openInterest.map(() => null);
+  }
+  return ch;
+}
+
 // ── Route handlers ────────────────────────────────────────────────────────────
 
 // POST /auth/signup
@@ -1111,9 +1122,9 @@ async function scoreTicker(ticker, env) {
 
   if (bestExpiry) {
     try {
-      const putChain = await cachedFetch(
+      const putChain = neutralOi(await cachedFetch(
         'https://api.marketdata.app/v1/options/chain/' + ticker + '/?expiration=' + bestExpiry + '&side=put&token=' + env.MD_TOKEN
-      );
+      ));
 
       // IV rank from chain
       if (putChain?.iv?.length > 0) {
@@ -1183,9 +1194,9 @@ async function scoreTicker(ticker, env) {
   let ccStrike = null, ccDelta = null, ccPremium = null;
   if (ccExpiry) {
     try {
-      const callChain = await cachedFetch(
+      const callChain = neutralOi(await cachedFetch(
         'https://api.marketdata.app/v1/options/chain/' + ticker + '/?expiration=' + ccExpiry + '&side=call&token=' + env.MD_TOKEN
-      );
+      ));
       if (callChain?.strike) {
         // Laura OG (MM13): sell at overhead resistance (~9% OTM), taking whatever
         // delta comes with it. Anchor on % OTM with a wide delta band so high-IV
@@ -1238,7 +1249,7 @@ async function scoreTicker(ticker, env) {
     try {
       const lc = await cachedFetch('https://api.marketdata.app/v1/options/chain/' + ticker + '/?expiration=' + leapsExpiry + '&side=call&token=' + env.MD_TOKEN).catch(() => null);
       const lp = await cachedFetch('https://api.marketdata.app/v1/options/chain/' + ticker + '/?expiration=' + leapsExpiry + '&side=put&token=' + env.MD_TOKEN).catch(() => null);
-      leapsCall = lc; leapsPut = lp;
+      leapsCall = neutralOi(lc); leapsPut = neutralOi(lp);
     } catch (e) { /* chain unavailable — falls back to un-scored (client phase-3) */ }
   }
   const synthCh = scoreSynthChains(price, weeklyMeanRev, leapsExpiry, leapsDte, leapsCall, leapsPut);
