@@ -90,29 +90,13 @@ function json(data, status = 200) {
 }
 
 // Feed gap: MarketData sometimes returns openInterest:0 for EVERY strike (OI publishes once daily and
-// can drop out even while bid/ask/delta are live). When a chain comes back all-zero, backfill the last
-// settled OI from a DATED request (Greeks are null on dated requests, so we only borrow the OI numbers
-// and merge them into the live chain by strike). If the backfill can't fill, null OI → reads as "—".
-function _recentTradingDayET() {
-  const et = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
-  const day = et.getDay();
-  if (day === 0) et.setDate(et.getDate() - 2);        // Sun → Fri
-  else if (day === 6) et.setDate(et.getDate() - 1);   // Sat → Fri
-  return et.getFullYear() + '-' + ('0' + (et.getMonth() + 1)).slice(-2) + '-' + ('0' + et.getDate()).slice(-2);
-}
-async function backfillOi(ch, baseUrl) {
-  if (!ch || !Array.isArray(ch.openInterest) || !ch.openInterest.length) return ch;
-  if (!ch.openInterest.every(v => v == null || v === 0)) return ch; // OI present — nothing to do
-  try {
-    const hist = await cachedFetch(baseUrl + '&date=' + _recentTradingDayET()).catch(() => null);
-    if (hist && Array.isArray(hist.strike) && Array.isArray(hist.openInterest)) {
-      const byStrike = {};
-      for (let i = 0; i < hist.strike.length; i++) if (hist.openInterest[i] != null) byStrike[hist.strike[i]] = hist.openInterest[i];
-      ch.openInterest = ch.strike.map(k => (byStrike[k] != null ? byStrike[k] : null));
-      return ch;
-    }
-  } catch (e) { /* fall through */ }
-  ch.openInterest = ch.openInterest.map(() => null); // couldn't backfill → "OI unavailable"
+// can drop out even while bid/ask/delta are live). On the dashboard hot path we only null it (no extra
+// call — OI isn't scored here); the analyzer does the dated-request backfill where OI is actually shown.
+function neutralOi(ch) {
+  if (ch && Array.isArray(ch.openInterest) && ch.openInterest.length &&
+      ch.openInterest.every(v => v == null || v === 0)) {
+    ch.openInterest = ch.openInterest.map(() => null);
+  }
   return ch;
 }
 
@@ -1138,8 +1122,9 @@ async function scoreTicker(ticker, env) {
 
   if (bestExpiry) {
     try {
-      const _putUrl = 'https://api.marketdata.app/v1/options/chain/' + ticker + '/?expiration=' + bestExpiry + '&side=put&token=' + env.MD_TOKEN;
-      const putChain = await backfillOi(await cachedFetch(_putUrl), _putUrl);
+      const putChain = neutralOi(await cachedFetch(
+        'https://api.marketdata.app/v1/options/chain/' + ticker + '/?expiration=' + bestExpiry + '&side=put&token=' + env.MD_TOKEN
+      ));
 
       // IV rank from chain
       if (putChain?.iv?.length > 0) {
@@ -1209,8 +1194,9 @@ async function scoreTicker(ticker, env) {
   let ccStrike = null, ccDelta = null, ccPremium = null;
   if (ccExpiry) {
     try {
-      const _ccUrl = 'https://api.marketdata.app/v1/options/chain/' + ticker + '/?expiration=' + ccExpiry + '&side=call&token=' + env.MD_TOKEN;
-      const callChain = await backfillOi(await cachedFetch(_ccUrl), _ccUrl);
+      const callChain = neutralOi(await cachedFetch(
+        'https://api.marketdata.app/v1/options/chain/' + ticker + '/?expiration=' + ccExpiry + '&side=call&token=' + env.MD_TOKEN
+      ));
       if (callChain?.strike) {
         // Laura OG (MM13): sell at overhead resistance (~9% OTM), taking whatever
         // delta comes with it. Anchor on % OTM with a wide delta band so high-IV
@@ -1261,11 +1247,9 @@ async function scoreTicker(ticker, env) {
     leapsExpiry = leapsExps[0];
     leapsDte = dteFromStr(leapsExpiry);
     try {
-      const _lcU = 'https://api.marketdata.app/v1/options/chain/' + ticker + '/?expiration=' + leapsExpiry + '&side=call&token=' + env.MD_TOKEN;
-      const _lpU = 'https://api.marketdata.app/v1/options/chain/' + ticker + '/?expiration=' + leapsExpiry + '&side=put&token=' + env.MD_TOKEN;
-      const lc = await cachedFetch(_lcU).catch(() => null);
-      const lp = await cachedFetch(_lpU).catch(() => null);
-      leapsCall = await backfillOi(lc, _lcU); leapsPut = await backfillOi(lp, _lpU);
+      const lc = await cachedFetch('https://api.marketdata.app/v1/options/chain/' + ticker + '/?expiration=' + leapsExpiry + '&side=call&token=' + env.MD_TOKEN).catch(() => null);
+      const lp = await cachedFetch('https://api.marketdata.app/v1/options/chain/' + ticker + '/?expiration=' + leapsExpiry + '&side=put&token=' + env.MD_TOKEN).catch(() => null);
+      leapsCall = neutralOi(lc); leapsPut = neutralOi(lp);
     } catch (e) { /* chain unavailable — falls back to un-scored (client phase-3) */ }
   }
   const synthCh = scoreSynthChains(price, weeklyMeanRev, leapsExpiry, leapsDte, leapsCall, leapsPut);
