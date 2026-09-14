@@ -100,6 +100,23 @@ function neutralOi(ch) {
   return ch;
 }
 
+// Split a combined-side chain (fetched without &side=) into {call, put} objects, so we can pull both
+// sides in ONE request instead of two — halving the heaviest LEAPS calls under load. Returns null if
+// the response can't be split (no `side` array), so the caller falls back to two side-filtered fetches.
+function splitChainBySide(ch) {
+  if (!ch || !Array.isArray(ch.strike) || !ch.strike.length ||
+      !Array.isArray(ch.side) || ch.side.length !== ch.strike.length) return null;
+  const keys = Object.keys(ch).filter(k => Array.isArray(ch[k]) && ch[k].length === ch.strike.length);
+  const call = {}, put = {};
+  keys.forEach(k => { call[k] = []; put[k] = []; });
+  for (let i = 0; i < ch.strike.length; i++) {
+    const dst = (String(ch.side[i]).toLowerCase() === 'put') ? put : call;
+    keys.forEach(k => dst[k].push(ch[k][i]));
+  }
+  if (ch.s) { call.s = ch.s; put.s = ch.s; }
+  return { call, put };
+}
+
 // ── Route handlers ────────────────────────────────────────────────────────────
 
 // POST /auth/signup
@@ -1247,9 +1264,18 @@ async function scoreTicker(ticker, env) {
     leapsExpiry = leapsExps[0];
     leapsDte = dteFromStr(leapsExpiry);
     try {
-      const lc = await cachedFetch('https://api.marketdata.app/v1/options/chain/' + ticker + '/?expiration=' + leapsExpiry + '&side=call&token=' + env.MD_TOKEN).catch(() => null);
-      const lp = await cachedFetch('https://api.marketdata.app/v1/options/chain/' + ticker + '/?expiration=' + leapsExpiry + '&side=put&token=' + env.MD_TOKEN).catch(() => null);
-      leapsCall = neutralOi(lc); leapsPut = neutralOi(lp);
+      // One combined-side request (both calls & puts) instead of two — halves the heaviest LEAPS calls
+      // so the worker scores server-side under load instead of punting to the fragile client phase-3.
+      const both = await cachedFetch('https://api.marketdata.app/v1/options/chain/' + ticker + '/?expiration=' + leapsExpiry + '&token=' + env.MD_TOKEN).catch(() => null);
+      const split = splitChainBySide(both);
+      if (split) {
+        leapsCall = neutralOi(split.call); leapsPut = neutralOi(split.put);
+      } else {
+        // Fallback: the combined response couldn't be split — fetch each side separately.
+        const lc = await cachedFetch('https://api.marketdata.app/v1/options/chain/' + ticker + '/?expiration=' + leapsExpiry + '&side=call&token=' + env.MD_TOKEN).catch(() => null);
+        const lp = await cachedFetch('https://api.marketdata.app/v1/options/chain/' + ticker + '/?expiration=' + leapsExpiry + '&side=put&token=' + env.MD_TOKEN).catch(() => null);
+        leapsCall = neutralOi(lc); leapsPut = neutralOi(lp);
+      }
     } catch (e) { /* chain unavailable — falls back to un-scored (client phase-3) */ }
   }
   const synthCh = scoreSynthChains(price, weeklyMeanRev, leapsExpiry, leapsDte, leapsCall, leapsPut);
